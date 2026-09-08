@@ -73,9 +73,11 @@ class GhApi:
             try:
                 completed = subprocess.run(
                     arguments, capture_output=True, text=True,
-                    check=False)
+                    encoding='utf-8', errors='strict', check=False)
             except OSError as error:
                 raise RuntimeError(f'could not run gh: {error}') from error
+            except UnicodeError as error:
+                raise RuntimeError('could not decode gh response as UTF-8') from error
         lines = completed.stdout.splitlines()
         match = _STATUS_LINE.match(lines[0]) if lines else None
         if match is None:

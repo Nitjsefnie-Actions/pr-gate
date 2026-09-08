@@ -43,5 +43,15 @@ def test_workflow_audit_includes_composite_metadata(tmp):
     assert 'zizmor --no-progress action.yml .github/workflows/' in runs
 
 
+def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
+    del tmp
+    source = (ROOT / 'README.md').read_text(encoding='utf-8')
+    example = re.search(r'```yaml\n(.*?)\n```', source, re.DOTALL)
+    assert example is not None
+    workflow = yaml.load(example[1], Loader=yaml.BaseLoader)
+    assert workflow['jobs']['gate']['steps'][0]['uses'] == (
+        'Nitjsefnie-Actions/pr-gate@0000000000000000000000000000000000000000')
+
+
 if __name__ == '__main__':
     raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prworkflows_'))

@@ -28,7 +28,7 @@ jobs:
     timeout-minutes: 5
     steps:
       # Replace this placeholder with a reviewed 40-character commit SHA.
-      - uses: Nitjsefnie/pr-gate@0000000000000000000000000000000000000000
+      - uses: Nitjsefnie-Actions/pr-gate@0000000000000000000000000000000000000000
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}

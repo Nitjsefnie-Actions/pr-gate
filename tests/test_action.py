@@ -17,6 +17,10 @@ from _prgate import (
 )
 
 BASE = '1234567890abcdef1234567890abcdef12345678'
+POLICY_REVISIONS = (
+    (BASE, 'ffffffffffffffffffffffffffffffffffffffff'),
+    ('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee'),
+)
 
 
 class TemplateApi(FakeApi):
@@ -39,12 +43,15 @@ class TemplateApi(FakeApi):
 
 def test_template_is_fetched_from_actual_base_with_custom_path(tmp):
     del tmp
-    api = TemplateApi()
-    assert _gate_module().run(api, 'owner/repo', '99', 'alice', None,
-                              'policy/PR template.md') == 0
-    assert api.template_reads == [(
-        'GET', f'repos/owner/repo/contents/policy/PR%20template.md?ref={BASE}')]
-    assert api.writes == []
+    for base, head in POLICY_REVISIONS:
+        api = TemplateApi()
+        api.pull['base'] = {'sha': base}
+        api.pull['head'] = {'sha': head}
+        assert _gate_module().run(api, 'owner/repo', '99', 'alice', None,
+                                  'policy/PR template.md') == 0
+        assert api.template_reads == [(
+            'GET', f'repos/owner/repo/contents/policy/PR%20template.md?ref={base}')]
+        assert api.writes == []
 
 
 def test_unavailable_or_invalid_base_template_prevents_writes(tmp):
@@ -111,6 +118,13 @@ def _action_bash(*, windows=None, environment=None):
 
 
 def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
+    for index, (base, head) in enumerate(POLICY_REVISIONS):
+        directory = Path(tmp) / str(index)
+        directory.mkdir()
+        _run_packaged_action(directory, base, head)
+
+
+def _run_packaged_action(tmp, base, head):
     metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
     assert metadata['runs']['using'] == 'composite'
     for name in ('github-token', 'repository', 'pull-request-number', 'pull-request-author'):
@@ -128,7 +142,8 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
                    rendered=_valid_html(repo=inputs['repository']),
                    issues={'101': _issue('sasha')})
     fixture['pull']['body'] = _valid_body()
-    fixture['pull']['base'] = {'sha': BASE}
+    fixture['pull']['base'] = {'sha': base}
+    fixture['pull']['head'] = {'sha': head}
     fixture_path = Path(tmp) / 'fixture.json'
     fixture_path.write_text(json.dumps(fixture), encoding='utf-8')
     calls_path = Path(tmp) / 'calls.jsonl'
@@ -146,7 +161,7 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
     assert result.returncode == 0, (result.stdout, result.stderr, calls)
     assert _recorded_writes(calls) == []
     assert any(call['argv'][4] ==
-               f'repos/another-owner/project/contents/policy/PR%20template.md?ref={BASE}'
+               f'repos/another-owner/project/contents/policy/PR%20template.md?ref={base}'
                for call in calls), calls
     assert any(call['input'] == {'text': _valid_body(), 'mode': 'gfm',
                                  'context': 'another-owner/project'} for call in calls)

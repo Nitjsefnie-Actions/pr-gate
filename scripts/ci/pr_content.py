@@ -26,17 +26,19 @@ def _visible(text):
 
 
 def _footer_line(content):
-    parts = []
+    parts = [[]]
     for kind, value in content:
         if kind == 'text':
-            parts.append(value)
+            parts[-1].append(value)
         elif value in ('p', 'div', 'br'):
-            parts.append('\n')
+            parts.append([])
         elif value not in _INLINE:
             return None
-    lines = [_visible(line) for line in ''.join(parts).splitlines()]
+    # Literal HTML whitespace collapses within a line; only element boundaries
+    # separate normal-flow blocks. Keep those breaks out of the text channel.
+    lines = [_visible(''.join(part)) for part in parts]
     lines = [line for line in lines if line]
-    return lines[0] if len(lines) == 1 else None
+    return lines[0] if len(lines) == 1 and len(lines[0].splitlines()) == 1 else None
 
 
 def _bug_items(content):
