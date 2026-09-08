@@ -3,6 +3,7 @@ import base64
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -75,6 +76,40 @@ def _expression(value, inputs):
     return inputs[match[1]]
 
 
+def _action_bash(*, windows=None, environment=None):
+    environment = os.environ if environment is None else environment
+    windows = os.name == 'nt' if windows is None else windows
+    path = environment.get('PATH', '')
+    if not windows:
+        bash = shutil.which('bash', path=path)
+        if bash is None:
+            raise RuntimeError('Bash was not found on PATH for action tests')
+        return bash
+
+    # Actions uses Git for Windows for `shell: bash`. A plain Windows PATH
+    # lookup can instead select System32's WSL shim, which is a different shell.
+    roots = []
+    git = shutil.which('git.exe', path=path)
+    if git is not None:
+        directory = Path(git).resolve().parent
+        if directory.name.casefold() in ('cmd', 'bin'):
+            root = directory.parent
+            if root.name.casefold() in ('mingw32', 'mingw64'):
+                root = root.parent
+            roots.append(root)
+    for key in ('ProgramFiles', 'ProgramW6432', 'ProgramFiles(x86)'):
+        if environment.get(key):
+            roots.append(Path(environment[key]) / 'Git')
+    if environment.get('LOCALAPPDATA'):
+        roots.append(Path(environment['LOCALAPPDATA']) / 'Programs' / 'Git')
+    for root in roots:
+        for relative in ('bin/bash.exe', 'usr/bin/bash.exe'):
+            bash = root / relative
+            if bash.is_file():
+                return str(bash)
+    raise RuntimeError('Git for Windows Bash was not found; install Git for Windows for action tests')
+
+
 def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
     metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
     assert metadata['runs']['using'] == 'composite'
@@ -105,7 +140,7 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
                    'STUB_FIXTURES': str(fixture_path), 'STUB_CALLS': str(calls_path)}
     environment.update({key: _expression(value, inputs)
                         for key, value in steps[0]['env'].items()})
-    result = subprocess.run(['bash', '-c', steps[0]['run']], cwd=consumer,
+    result = subprocess.run([_action_bash(), '-c', steps[0]['run']], cwd=consumer,
                             env=environment, capture_output=True, text=True, timeout=30)
     calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
     assert result.returncode == 0, (result.stdout, result.stderr, calls)
@@ -120,6 +155,43 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
 def test_empty_discovery_is_nonzero(tmp):
     del tmp
     assert _util.runner(_util.collect({}), tmp_prefix='empty_') == 1
+
+
+def _executable(path):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text('fixture executable\n', encoding='utf-8')
+    path.chmod(0o755)
+    return path
+
+
+def test_windows_shell_selection_avoids_the_wsl_path_shim(tmp):
+    shim = _executable(Path(tmp) / 'System32' / ('bash.exe' if os.name == 'nt' else 'bash'))
+    git = _executable(Path(tmp) / 'Git' / 'cmd' / 'git.exe')
+    bash = _executable(Path(tmp) / 'Git' / 'bin' / 'bash.exe')
+    environment = {'PATH': os.pathsep.join((str(shim.parent), str(git.parent)))}
+    assert Path(_action_bash(windows=True, environment=environment)).samefile(bash)
+
+
+def test_windows_shell_selection_checks_standard_git_installation(tmp):
+    programs = Path(tmp) / 'Program Files'
+    bash = _executable(programs / 'Git' / 'bin' / 'bash.exe')
+    environment = {'PATH': '', 'ProgramFiles': str(programs)}
+    assert Path(_action_bash(windows=True, environment=environment)).samefile(bash)
+
+
+def test_missing_windows_git_bash_fails_clearly(tmp):
+    shim = _executable(Path(tmp) / 'System32' / ('bash.exe' if os.name == 'nt' else 'bash'))
+    try:
+        _action_bash(windows=True, environment={'PATH': str(shim.parent)})
+    except RuntimeError as error:
+        assert 'Git for Windows Bash' in str(error)
+    else:
+        raise AssertionError('a WSL-only PATH was accepted as Git for Windows Bash')
+
+
+def test_posix_shell_selection_uses_path_bash(tmp):
+    bash = _executable(Path(tmp) / ('bash.exe' if os.name == 'nt' else 'bash'))
+    assert Path(_action_bash(windows=False, environment={'PATH': str(bash.parent)})).samefile(bash)
 
 
 if __name__ == '__main__':
