@@ -1,0 +1,32 @@
+name: Pull request admission gate
+description: Validate rendered pull requests against base-commit policy and assigned issues.
+author: Nitjsefnie
+inputs:
+  github-token:
+    description: Token with contents read, issues read, and pull-requests write permissions.
+    required: true
+  repository:
+    description: Consumer repository in owner/name form.
+    required: true
+  pull-request-number:
+    description: Number of the pull request to check.
+    required: true
+  pull-request-author:
+    description: Login of the pull request author.
+    required: true
+  template-path:
+    description: Consumer template path, read at the pull request base SHA.
+    default: .github/PULL_REQUEST_TEMPLATE.md
+runs:
+  using: composite
+  steps:
+    - name: Check pull request admission
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ inputs.repository }}
+        PR: ${{ inputs.pull-request-number }}
+        ACTOR: ${{ inputs.pull-request-author }}
+        TEMPLATE_PATH: ${{ inputs.template-path }}
+        PR_GATE_ACTION_PATH: ${{ github.action_path }}
+      run: python "$PR_GATE_ACTION_PATH/scripts/ci/pr_gate.py"
