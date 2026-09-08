@@ -1,0 +1,27 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "05:17"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: ci
+    groups:
+      # Init, analyze and SARIF upload must move together to one CodeQL revision.
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
+
+  - package-ecosystem: pip
+    directory: /
+    versioning-strategy: increase-if-necessary
+    schedule:
+      interval: weekly
+      day: wednesday
+      time: "05:41"
+    open-pull-requests-limit: 4
+    commit-message:
+      prefix: build
