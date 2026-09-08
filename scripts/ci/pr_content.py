@@ -23,11 +23,14 @@ BUGS_ERROR = (
     '`#N Literal issue title`, naming existing issues with their exact titles.')
 
 
-def _visible(text):
-    return _COLLAPSIBLE_WHITESPACE.sub(' ', text).strip(' ')
+def _append_text(runs, text, preserve):
+    if runs and runs[-1][0] == preserve:
+        runs[-1][1].append(text)
+    else:
+        runs.append((preserve, [text]))
 
 
-def _footer_part(runs):
+def _visible_runs(runs):
     if not runs:
         return ''
     pieces = [''.join(text) if preserve else _COLLAPSIBLE_WHITESPACE.sub(' ', ''.join(text))
@@ -46,11 +49,7 @@ def _footer_line(content):
     code_depth = 0
     for kind, value in content:
         if kind == 'text':
-            preserve = code_depth > 0
-            if parts[-1] and parts[-1][-1][0] == preserve:
-                parts[-1][-1][1].append(value)
-            else:
-                parts[-1].append((preserve, [value]))
+            _append_text(parts[-1], value, code_depth > 0)
         elif value == 'code':
             code_depth += 1 if kind == 'start' else -1
         elif value in ('p', 'div', 'br'):
@@ -59,7 +58,7 @@ def _footer_line(content):
             return None
     # Normal text collapses, code text preserves, and structural breaks stay
     # separate from both. All context comes from the existing rendered tokens.
-    lines = [_footer_part(part) for part in parts]
+    lines = [_visible_runs(part) for part in parts]
     lines = [line for line in lines if line]
     return lines[0] if len(lines) == 1 and len(lines[0].splitlines()) == 1 else None
 
@@ -73,7 +72,7 @@ def _bug_items(content):
     for kind, value in content:
         if kind == 'text':
             if 'li' in stack:
-                parts.append(value)
+                _append_text(parts, value, 'code' in stack)
             elif value.strip():
                 return None
         elif kind == 'start':
@@ -99,7 +98,7 @@ def _bug_items(content):
             if len(stack) < wrappers:
                 wrappers -= 1
             if value == 'li':
-                items.append(_visible(''.join(parts)))
+                items.append(_visible_runs(parts))
     return items if not stack and items else None
 
 
