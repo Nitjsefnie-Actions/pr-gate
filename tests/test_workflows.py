@@ -11,6 +11,7 @@ REVIEWED_ACTION_PINS = {
     'actions/checkout': '3d3c42e5aac5ba805825da76410c181273ba90b1',
     'actions/setup-python': '5fda3b95a4ea91299a34e894583c3862153e4b97',
     'Nitjsefnie-Actions/claim': 'd9976f1f803f7a662eed3be17772800b7925e650',
+    'Nitjsefnie-Actions/pr-gate': '44437212f1b931f53433b16455bb05aff67ad21e',
     'github/codeql-action/init': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
     'github/codeql-action/analyze': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
     'github/codeql-action/upload-sarif': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
@@ -85,6 +86,8 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'tests.yml': ({'contents': 'read'}, 'suites', None, '20'),
         'actionlint.yml': ({'contents': 'read'}, 'actionlint', None, '15'),
         'claim.yml': ({'issues': 'write'}, 'claim', None, '5'),
+        'pr-gate.yml': ({'contents': 'read', 'issues': 'read',
+                         'pull-requests': 'write'}, 'gate', None, '5'),
         'codeql.yml': ({}, 'analyze', {
             'contents': 'read', 'actions': 'read', 'security-events': 'write'}, '30'),
         'scorecard.yml': ({'contents': 'read'}, 'analysis', {
@@ -104,8 +107,39 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         assert 'concurrency' not in job, name
         assert job['runs-on'] == ('${{ matrix.os }}' if name == 'tests.yml'
                                   else 'ubuntu-latest'), name
-        if name not in ('claim.yml', 'scorecard.yml'):
+        if name not in ('claim.yml', 'scorecard.yml', 'pr-gate.yml'):
             assert 'if' not in job, name
+
+
+def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
+    del tmp
+    workflow = _workflow('pr-gate.yml')
+    assert set(workflow) == {'name', 'on', 'permissions', 'concurrency', 'jobs'}, (
+        'pr gate must not add workflow execution overrides')
+    assert workflow['on'] == {
+        'pull_request_target': {'types': ['opened', 'edited', 'reopened']}}, (
+        'pr gate must handle only opened, edited and reopened PR targets')
+    assert workflow.get('concurrency') == {
+        'group': 'pr-gate-${{ github.event.pull_request.number }}',
+        'cancel-in-progress': 'false'}, 'pr gate must serialize each PR without cancellation'
+    job = workflow['jobs']['gate']
+    assert set(job) == {'if', 'runs-on', 'timeout-minutes', 'steps'}, (
+        'pr gate must not add job overrides or suppress failures')
+    assert ' '.join(job['if'].split()) == (
+        "github.event.pull_request.user.type != 'Bot'"), 'pr gate must skip exactly Bot authors'
+    assert len(job['steps']) == 1, 'pr gate must execute only its pinned action'
+    step = job['steps'][0]
+    assert set(step) == {'uses', 'with'}, (
+        'pr gate needs no checkout, shell, step condition or failure suppression')
+    assert step['uses'] == (
+        'Nitjsefnie-Actions/pr-gate@44437212f1b931f53433b16455bb05aff67ad21e'), (
+        'pr gate must execute its reviewed action revision')
+    assert step['with'] == {
+        'github-token': '${{ github.token }}',
+        'repository': '${{ github.repository }}',
+        'pull-request-number': '${{ github.event.pull_request.number }}',
+        'pull-request-author': '${{ github.event.pull_request.user.login }}'}, (
+        'pr gate must pass exactly the four documented PR inputs')
 
 
 def test_claim_only_processes_serialized_open_issue_commands(tmp):
@@ -232,7 +266,8 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
     del tmp
     required = [
         'SECURITY.md', '.github/dependabot.yml', '.github/workflows/claim.yml',
-        '.github/workflows/codeql.yml', '.github/workflows/scorecard.yml']
+        '.github/workflows/codeql.yml', '.github/workflows/scorecard.yml',
+        '.github/workflows/pr-gate.yml']
     ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
     assert ignore[0] == '*'
     for name in required:
