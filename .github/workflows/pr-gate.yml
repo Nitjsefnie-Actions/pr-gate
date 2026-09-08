@@ -1,0 +1,30 @@
+name: pr gate
+
+# Privileged base-branch admission runs only the reviewed, immutable
+# SHA-pinned pr-gate action.
+# Metadata is passed as inputs; no PR-head code is checked out or executed.
+on: # zizmor: ignore[dangerous-triggers]
+  pull_request_target:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    if: github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: Nitjsefnie-Actions/pr-gate@44437212f1b931f53433b16455bb05aff67ad21e
+        with:
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          pull-request-number: ${{ github.event.pull_request.number }}
+          pull-request-author: ${{ github.event.pull_request.user.login }}
