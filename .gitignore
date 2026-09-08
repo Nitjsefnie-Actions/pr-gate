@@ -46,5 +46,6 @@ tests/*
 !tests/test_pr_content.py
 !tests/test_pr_rendered_content.py
 !tests/pr_content_renderings.json
+!tests/pr_code_whitespace.json
 !tests/test_action.py
 !tests/test_workflows.py
