@@ -72,16 +72,19 @@ class GhApi:
                 arguments.extend(('--input', str(path)))
             try:
                 completed = subprocess.run(
-                    arguments, capture_output=True, text=True,
-                    encoding='utf-8', errors='strict', check=False)
+                    arguments, capture_output=True, check=False)
+                # Decode in this thread: Windows text-mode pipe readers can
+                # otherwise lose decoding exceptions in their reader threads.
+                stdout = completed.stdout.decode('utf-8', errors='strict')
+                stderr = completed.stderr.decode('utf-8', errors='strict')
             except OSError as error:
                 raise RuntimeError(f'could not run gh: {error}') from error
             except UnicodeError as error:
                 raise RuntimeError('could not decode gh response as UTF-8') from error
-        lines = completed.stdout.splitlines()
+        lines = stdout.splitlines()
         match = _STATUS_LINE.match(lines[0]) if lines else None
         if match is None:
-            detail = (' '.join(completed.stderr.split())
+            detail = (' '.join(stderr.split())
                       or 'no HTTP status in output')
             raise RuntimeError(f'could not read gh response: {detail}')
         try:

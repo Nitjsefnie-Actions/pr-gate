@@ -180,5 +180,33 @@ def test_footer_attribution_cannot_be_split_across_visible_blocks(tmp):
         assert api.pull['state'] == 'closed', markup
 
 
+def test_bug_list_can_have_transparent_outer_containers(tmp):
+    del tmp
+    listing = '<ul><li>#104 The bug</li></ul>'
+    for markup in ('<div>\n' + listing + '\n</div>',
+                   '<section><div>' + listing + '</div></section>',
+                   '<span>' + listing + '</span>'):
+        api = _case(bugs='- #104 The bug', issues={
+            '101': _issue('alice'), '104': {**_issue(), 'title': 'The bug'}})
+        api.rendered = api.rendered.replace(listing, markup)
+        assert _run(api) == 0
+        assert api.pull['state'] == 'open' and api.writes == [], markup
+
+
+def test_bug_containers_do_not_hide_narrative_or_nested_and_mixed_lists(tmp):
+    del tmp
+    listing = '<ul><li>#104 The bug</li></ul>'
+    for markup in ('<div>Before' + listing + '</div>',
+                   '<div>' + listing + 'After</div>',
+                   '<div><ul><li>#104 The bug' + listing + '</li></ul></div>',
+                   '<div>' + listing + '<ol><li>#104 The bug</li></ol></div>',
+                   '<div><p>#104 The bug</p></div>'):
+        api = _case(bugs='- #104 The bug', issues={
+            '101': _issue('alice'), '104': {**_issue(), 'title': 'The bug'}})
+        api.rendered = api.rendered.replace(listing, markup)
+        assert _run(api) == 0
+        assert api.pull['state'] == 'closed', markup
+
+
 if __name__ == '__main__':
     raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prcontent_'))

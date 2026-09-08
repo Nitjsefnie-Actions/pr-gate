@@ -59,5 +59,27 @@ else:
     assert result.returncode == 0, (result.stdout, result.stderr)
 
 
+def test_protocol_is_collected_as_bytes_before_caller_decoding(tmp):
+    payload = (b'HTTP/2 200 OK\ncontent-type: application/json; charset=utf-8\n\n'
+               b'{"title":"caf\xc3\xa9"}\n')
+    checks = r'''
+import subprocess
+actual_run = subprocess.run
+observed = []
+def observe_run(*args, **kwargs):
+    result = actual_run(*args, **kwargs)
+    assert isinstance(result.stdout, bytes), type(result.stdout).__name__
+    assert isinstance(result.stderr, bytes), type(result.stderr).__name__
+    observed.append(result)
+    return result
+subprocess.run = observe_run
+response = api.request('GET', 'repos/owner/repo/issues/1')
+assert len(observed) == 1
+assert response.data == {'title': 'caf\u00e9'}, response.data
+'''
+    result = _request_in_c_locale(tmp, payload, checks)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
 if __name__ == '__main__':
     raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prtransport_'))
