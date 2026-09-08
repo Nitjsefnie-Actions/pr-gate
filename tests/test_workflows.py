@@ -6,6 +6,18 @@ import _util
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# Dependency upgrades deliberately update this reviewed contract alongside YAML.
+REVIEWED_ACTION_PINS = {
+    'actions/checkout': '3d3c42e5aac5ba805825da76410c181273ba90b1',
+    'actions/setup-python': '5fda3b95a4ea91299a34e894583c3862153e4b97',
+    'Nitjsefnie-Actions/claim': 'd9976f1f803f7a662eed3be17772800b7925e650',
+    'github/codeql-action/init': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
+    'github/codeql-action/analyze': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
+    'github/codeql-action/upload-sarif': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
+    'ossf/scorecard-action': '2d1146689b8cda280b9bc96326124645441f03bc',
+    'actions/upload-artifact': '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+}
+
 
 def _workflow(name):
     path = ROOT / '.github/workflows' / name
@@ -180,6 +192,8 @@ def test_all_action_references_are_immutable_and_share_family_pins(tmp):
                 reference = step['uses']
                 assert re.fullmatch(r'[\w.-]+/[\w./-]+@[0-9a-f]{40}', reference), reference
                 action, pin = reference.split('@')
+                assert pin == REVIEWED_ACTION_PINS.get(action), (
+                    f'{path.name}: {action} must use its reviewed revision')
                 family = '/'.join(action.split('/')[:2])
                 families.setdefault(family, set()).add(pin)
                 if action == 'actions/checkout':
@@ -187,6 +201,15 @@ def test_all_action_references_are_immutable_and_share_family_pins(tmp):
     assert families
     for family, pins in families.items():
         assert len(pins) == 1, f'{family} must use one revision across all action paths'
+
+
+def test_security_analysis_propagates_job_and_step_failures(tmp):
+    del tmp
+    for name in ('codeql.yml', 'scorecard.yml'):
+        for job in _workflow(name)['jobs'].values():
+            for node in [job, *job['steps']]:
+                assert node.get('continue-on-error', 'false') == 'false', (
+                    f'{name}: analysis job and step failures must propagate')
 
 
 def test_dependabot_updates_actions_and_pip_and_groups_codeql(tmp):
