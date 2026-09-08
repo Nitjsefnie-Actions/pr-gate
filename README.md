@@ -103,6 +103,7 @@ remain responsible for assigning issues and their own merge policy.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, exact checks, security and TDD
 requirements, and commit attribution. Use the shipped issue and PR templates.
 Participation follows [Contributor Covenant 2.1](CODE_OF_CONDUCT.md).
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 The parser and controller originate in the Daedalus/Overflow gate; captured
 GitHub renderings are retained as regression fixtures. Code is [MIT licensed](LICENSE).

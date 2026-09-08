@@ -4,12 +4,14 @@
 !README.md
 !CONTRIBUTING.md
 !CODE_OF_CONDUCT.md
+!SECURITY.md
 !action.yml
 !requirements-test.txt
 !run_tests.py
 !.github/
 .github/*
 !.github/PULL_REQUEST_TEMPLATE.md
+!.github/dependabot.yml
 !.github/ISSUE_TEMPLATE/
 .github/ISSUE_TEMPLATE/*
 !.github/ISSUE_TEMPLATE/bug-report.md
@@ -17,6 +19,9 @@
 .github/workflows/*
 !.github/workflows/tests.yml
 !.github/workflows/actionlint.yml
+!.github/workflows/claim.yml
+!.github/workflows/codeql.yml
+!.github/workflows/scorecard.yml
 !scripts/
 scripts/*
 !scripts/ci/

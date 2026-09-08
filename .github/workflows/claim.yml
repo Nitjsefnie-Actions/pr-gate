@@ -1,0 +1,29 @@
+name: claim
+
+on:
+  issue_comment:
+    types: [created]
+
+# Assignment needs no checkout or access to repository contents.
+permissions:
+  issues: write
+
+concurrency:
+  # Both contributors racing to claim an issue must receive an answer.
+  group: claim-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+jobs:
+  claim:
+    # This saves runners; the action enforces the exact command and issue rules.
+    if: >-
+      github.event.issue.pull_request == null
+      && github.event.issue.state == 'open'
+      && github.event.comment.user.type != 'Bot'
+      && (contains(github.event.comment.body, '/claim')
+          || contains(github.event.comment.body, '/unclaim')
+          || contains(github.event.comment.body, '/release'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: Nitjsefnie-Actions/claim@d9976f1f803f7a662eed3be17772800b7925e650 # v1.0.0
