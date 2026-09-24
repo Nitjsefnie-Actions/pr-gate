@@ -304,6 +304,65 @@ def test_closing_notice_names_the_push_needed_after_the_reopen(tmp):
     _assert_ci_recovery_note(_comment_body(writes[0]))
 
 
+def test_the_recovery_guard_rejects_contract_violating_bodies(tmp):
+    """The guard's two arms are driven here, not assumed.
+
+    A forbidden-spelling arm that no test exercises is not a control:
+    six realistic violations of this contract passed the guard before
+    this test existed, because the arm listed spellings instead of the
+    behaviour. Each violation is appended to the real reopen body, and
+    each required term is removed from it, so both arms are shown to
+    fire; the correct body, and a correct body with an innocent
+    sentence added, are shown to pass.
+    """
+    del tmp
+    api = _api(
+        state='closed', comments=[_gate_comment(closed=True)],
+        timeline=[_closed_event()])
+    code, writes, _output, _error = _execute(api, _valid_body())
+    assert code == 0
+    body = _comment_body(writes[2])
+    _assert_ci_recovery_note(body)
+    _assert_ci_recovery_note(f'{body} The gate thanks you for reading this.')
+
+    violations = (
+        'You should approve the pending runs to release them.',
+        'Go to the Actions tab and approve them.',
+        'Ask a reviewer to approve the checks.',
+        'The runs will start automatically in a moment.',
+        'The checks will run by themselves.',
+        'The runs kick off on their own.',
+    )
+    survived = []
+    for violation in violations:
+        try:
+            _assert_ci_recovery_note(f'{body} {violation}')
+        except AssertionError:
+            continue
+        survived.append(violation)
+    assert survived == [], survived
+
+    removals = (
+        ('push', 'send it onward'),
+        ('empty commit', 'a trivial change'),
+        ('held', 'queued'),
+        ('approval', 'sign-off'),
+        ('github-actions[bot]', 'the automation account'),
+        ('github_token', 'its own token'),
+    )
+    accepted = []
+    rendered = ' '.join(body.split()).lower()
+    for term, replacement in removals:
+        mutated = rendered.replace(term, replacement)
+        assert term in rendered and term not in mutated, (term, mutated)
+        try:
+            _assert_ci_recovery_note(mutated)
+        except AssertionError:
+            continue
+        accepted.append(term)
+    assert accepted == [], accepted
+
+
 def test_human_closed_pull_is_not_written(tmp):
     del tmp
     api = _api(
