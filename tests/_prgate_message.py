@@ -28,22 +28,38 @@ def _assert_ci_recovery_note(body):
     """The reopen is bot-authored, so its CI runs are held; say so, and
     name the push that releases them.
 
-    Properties, not one frozen string: the author must be told to push,
-    told an empty commit is acceptable, and told why the runs are held,
-    and must not be sent to approve anything themselves. The comparison
-    is over rendered text, so single newlines count as the spaces GitHub
-    renders them as; only an unrendered break, a hard paragraph edge,
-    would change a word.
+    Two arms, and only the first is a property. The REQUIRED arm is
+    load-bearing: whatever else the notice says, it must tell the author
+    to push, must say an empty commit is acceptable, and must name the
+    bot, its token and the held-for-approval reason — dropping any one
+    of those from the message fails here, which
+    test_the_recovery_guard_rejects_contract_violating_bodies drives
+    term by term.
+
+    The FORBIDDEN arm is a spelling set, not a property, and it is NOT
+    exhaustive. It lists the phrasings this contract has been observed to
+    break with — instructions to approve the held runs, and promises
+    that the runs start on their own — and a violation phrased outside
+    this set passes. Read it as a cheap net whose coverage is the
+    evidenced set, never as the control that proves the text honest.
+
+    The comparison is over rendered text, so single newlines count as
+    the spaces GitHub renders them as; only an unrendered break, a hard
+    paragraph edge, would change a word.
     """
     text = ' '.join(body.split()).lower()
     for required in ('push', 'empty commit', 'held', 'approval',
                      'github-actions[bot]', 'github_token'):
         assert required in text, (required, body)
+    # Not exhaustive by construction: a new spelling is a new entry.
     for forbidden in ('approve the run', 'approve the workflow',
                       'approve these runs', 'approve it', 'please approve',
-                      'click approve', 'ask a maintainer to approve',
-                      'runs automatically', 'will run on its own',
-                      'runs on its own'):
+                      'click approve', 'you should approve', 'actions tab',
+                      'ask a maintainer to approve',
+                      'ask a reviewer to approve', 'runs automatically',
+                      'start automatically', 'will run automatically',
+                      'by themselves', 'on their own',
+                      'will run on its own', 'runs on its own'):
         assert forbidden not in text, (forbidden, body)
 
 
