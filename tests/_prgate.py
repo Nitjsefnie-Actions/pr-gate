@@ -16,8 +16,8 @@ import _util  # noqa: E402
 # pylint: disable-next=unused-import
 from _prgate_message import (  # noqa: E402
     BOT, CLOSED_FIRST, CLOSED_MARKER, MARKER, OPEN_FIRST, REOPEN_FIRST,
-    RESOLVED_FIRST, _assert_gate_message, _assert_no_writes,
-    _comment_body,
+    RESOLVED_FIRST, _assert_ci_recovery_note, _assert_gate_message,
+    _assert_no_writes, _comment_body,
 )
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
