@@ -13,9 +13,10 @@ import _util  # noqa: E402
 from _prgate import (  # noqa: E402
     BOT, CLOSED_FIRST, MARKER, OPEN_FIRST, REOPEN_FIRST,
     RESOLVED_FIRST, TEMPLATE,
-    _api, _assert_gate_message, _assert_no_writes, _assert_script_error,
+    _api, _assert_ci_recovery_note, _assert_gate_message, _assert_no_writes,
+    _assert_script_error,
     _assert_script_runs_through_gh_on_path,
-    _capture, _closed_event, _comment_page_fields, _execute,
+    _capture, _closed_event, _comment_body, _comment_page_fields, _execute,
     _execute_without_runtime_escape, _gate_comment, _gate_module,
     _html_body, _inline_marker_comment, _issue, _markdown_code_spans,
     _PaginationApi,
@@ -242,6 +243,30 @@ def test_gate_closed_admissible_pull_is_commented_then_reopened(tmp):
     assert writes[1][2] == {'state': 'open'}
 
 
+def test_reopen_notice_names_the_push_that_releases_ci(tmp):
+    """The reopen strands the CI it triggers, so it carries the recovery.
+
+    A bot-authored reopen makes GitHub create the runs in an
+    approval-required state instead of starting them, and the gate
+    cannot release them. The reopen notice is the only comment the
+    author meets at the stranded head, so it must name the push that
+    releases the checks, and must not send the author to approve them.
+    """
+    del tmp
+    api = _api(
+        state='closed', comments=[_gate_comment(closed=True)],
+        timeline=[_closed_event()])
+    code, writes, _output, _error = _execute(api, _valid_body())
+    assert code == 0
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7'),
+        ('PATCH', 'repos/owner/repo/pulls/99'),
+        ('PATCH', 'repos/owner/repo/issues/comments/7')]
+    for write in (writes[0], writes[2]):
+        _assert_gate_message(write, REOPEN_FIRST, closed=(write is writes[0]))
+        _assert_ci_recovery_note(_comment_body(write))
+
+
 def test_gate_closed_inadmissible_pull_updates_comment_and_stays_closed(tmp):
     del tmp
     body = _valid_body('none')
@@ -256,6 +281,27 @@ def test_gate_closed_inadmissible_pull_updates_comment_and_stays_closed(tmp):
     _assert_gate_message(
         writes[0], CLOSED_FIRST,
         ['No checked issue is assigned to you.'], closed=True)
+
+
+def test_closing_notice_names_the_push_needed_after_the_reopen(tmp):
+    """Fixing the body is not the end of it, and the close says so.
+
+    The closing comment is where the author learns that a fix will bring
+    a reopen, so it is where the reopen's cost is stated: the reopen is
+    bot-authored, its CI is held, and one more push is what releases it.
+    """
+    del tmp
+    body = _valid_body('none')
+    api = _api(
+        state='closed', issues={}, comments=[_gate_comment(closed=True)],
+        timeline=[_closed_event()],
+        rendered=_valid_html(references=_text_html('none')))
+    code, writes, _output, _error = _execute(api, body)
+    assert code == 0
+    _assert_gate_message(
+        writes[0], CLOSED_FIRST,
+        ['No checked issue is assigned to you.'], closed=True)
+    _assert_ci_recovery_note(_comment_body(writes[0]))
 
 
 def test_human_closed_pull_is_not_written(tmp):

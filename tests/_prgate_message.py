@@ -24,6 +24,29 @@ def _comment_body(write):
     return write[2]['body']
 
 
+def _assert_ci_recovery_note(body):
+    """The reopen is bot-authored, so its CI runs are held; say so, and
+    name the push that releases them.
+
+    Properties, not one frozen string: the author must be told to push,
+    told an empty commit is acceptable, and told why the runs are held,
+    and must not be sent to approve anything themselves. The comparison
+    is over rendered text, so single newlines count as the spaces GitHub
+    renders them as; only an unrendered break, a hard paragraph edge,
+    would change a word.
+    """
+    text = ' '.join(body.split()).lower()
+    for required in ('push', 'empty commit', 'held', 'approval',
+                     'github-actions[bot]', 'github_token'):
+        assert required in text, (required, body)
+    for forbidden in ('approve the run', 'approve the workflow',
+                      'approve these runs', 'approve it', 'please approve',
+                      'click approve', 'ask a maintainer to approve',
+                      'runs automatically', 'will run on its own',
+                      'runs on its own'):
+        assert forbidden not in text, (forbidden, body)
+
+
 def _gate_reasons(body):
     """The reasons a gate comment lists, or None when it lists none.
 

@@ -264,8 +264,13 @@ def _inadmissible_text(actor, reasons, closed):
             f'{MARKER}\n{CLOSED_MARKER}')
         ending = (
             'The gate re-checks every edit of this closed pull request and '
-            'reopens it\nautomatically once every condition passes. Nothing '
-            'here is lost.')
+            'reopens it\nautomatically once every condition passes. Fixing '
+            'the body is not the\nend of it, though: that reopen is '
+            f'authored by `{BOT}`\nwith the workflow\'s own `GITHUB_TOKEN`, '
+            'so the CI runs it triggers\nare created with no jobs and held '
+            'for approval. Push to the\nbranch once the reopen lands — an '
+            'empty commit is enough — and the\nruns your own push triggers '
+            'run normally.')
     else:
         opening = (
             f'@{actor} — this pull request needs changes before it can be '
@@ -295,6 +300,18 @@ def _reopen_text(actor):
     return (
         f'@{actor} — the body now names a claimed issue and matches '
         'the pull request\ntemplate, so I am reopening it automatically.\n'
+        '\n'
+        'One step is still yours. This reopen is authored by '
+        f'`{BOT}` with\nthe workflow\'s own `GITHUB_TOKEN`, and GitHub '
+        'creates the CI runs a\n`reopened` event from that token triggers '
+        'without jobs and held for\napproval: it does not refuse them, and '
+        'it does not start them. This\ngate cannot release them, so the '
+        'head this reopen leaves behind has no CI\nverdict yet.\n'
+        '\n'
+        'Push to the branch once more to get one; any push does it, and an '
+        'empty\ncommit is enough: `git commit --allow-empty -m "rerun the '
+        'checks"` then `git\npush`. That push is yours, so the runs it '
+        'triggers run as your own event.\n'
         f'{MARKER}\n')
 
 
