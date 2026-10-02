@@ -8,6 +8,7 @@
 !action.yml
 !requirements-test.txt
 !requirements-zizmor.txt
+!requirements-pip-audit.txt
 !run_tests.py
 !.gitleaks.toml
 !.github/
@@ -25,6 +26,7 @@
 !.github/workflows/pr-gate.yml
 !.github/workflows/codeql.yml
 !.github/workflows/scorecard.yml
+!.github/workflows/audit.yml
 !.github/workflows/secrets.yml
 !scripts/
 scripts/*
