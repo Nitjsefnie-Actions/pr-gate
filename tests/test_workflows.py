@@ -29,9 +29,9 @@ REVIEWED_ACTION_PINS = {
     'actions/setup-python': '5fda3b95a4ea91299a34e894583c3862153e4b97',
     'Nitjsefnie-Actions/claim': '6ae0d102c79d2feec867520795b318b7ca33904a',
     'Nitjsefnie-Actions/pr-gate': 'b641821e74822ca7983d487f8c75865dcdebfaa8',
-    'github/codeql-action/init': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
-    'github/codeql-action/analyze': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
-    'github/codeql-action/upload-sarif': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
+    'github/codeql-action/init': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
+    'github/codeql-action/analyze': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
+    'github/codeql-action/upload-sarif': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
     'ossf/scorecard-action': '2d1146689b8cda280b9bc96326124645441f03bc',
     'actions/upload-artifact': '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
 }
