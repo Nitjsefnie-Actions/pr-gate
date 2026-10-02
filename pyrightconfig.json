@@ -1,0 +1,15 @@
+{
+    "typeCheckingMode": "basic",
+    "pythonVersion": "3.13",
+    "pythonPlatform": "All",
+    "include": [
+        "run_tests.py",
+        "scripts/ci",
+        "tests"
+    ],
+    "exclude": [
+        "**/__pycache__",
+        ".venv"
+    ],
+    "reportMissingModuleSource": "none"
+}

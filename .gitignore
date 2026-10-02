@@ -9,6 +9,10 @@
 !requirements-test.txt
 !requirements-zizmor.txt
 !requirements-pip-audit.txt
+!requirements-lint.txt
+!pyrightconfig.json
+!pyright-baseline.json
+!.pylintrc
 !run_tests.py
 !.gitleaks.toml
 !.github/
@@ -23,6 +27,8 @@
 .github/workflows/*
 !.github/workflows/tests.yml
 !.github/workflows/actionlint.yml
+!.github/workflows/lint.yml
+!.github/workflows/types.yml
 !.github/workflows/claim.yml
 !.github/workflows/pr-gate.yml
 !.github/workflows/codeql.yml
@@ -38,6 +44,7 @@ scripts/ci/*
 !scripts/ci/pr_content.py
 !scripts/ci/pr_policy.py
 !scripts/ci/pr_gate.py
+!scripts/ci/type_ratchet.py
 !tests/
 tests/*
 !tests/_util.py
@@ -63,3 +70,4 @@ tests/*
 !tests/test_pr_bug_whitespace.py
 !tests/test_action.py
 !tests/test_workflows.py
+!tests/test_type_ratchet.py
