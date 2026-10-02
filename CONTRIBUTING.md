@@ -105,7 +105,13 @@ Co-Authored-By: GPT-6 Astra <noreply@openai.com>
 ```
 
 Substitute the model that actually authored the work; omit effort or context
-suffixes. Stage explicit paths, keep commits focused, and verify before pushing.
+suffixes. Stage explicit paths, keep commits focused, and verify before
+pushing. Commit subjects follow Conventional Commits (`type: summary`, with an
+optional scope), and a workflow's `name:` under `.github/workflows/` is a
+scope only with the `ci` type — `ci(claim)` changes the workflow, while any
+other type on that scope is refused by `scripts/ci/commit_scopes.py`, which
+derives the workflow-name set from the workflows themselves; take any other
+scope from the file or area the commit is about.
 Published action revisions are immutable commit SHAs; do not create mutable
 release tags as a substitute for reviewable pins.
 

@@ -37,8 +37,12 @@ on:
     # the `pull_request` event below, and an unfiltered `push` schedules
     # the same commit a second time under a different ref, which the
     # `concurrency` group cannot collapse.
+    # Deliberately unfiltered by path, unlike tests/lint/types: a
+    # documentation-only push to main runs no other workflow at all, so a
+    # conflict marker committed into README.md would reach main without any
+    # check reading it — the merge-marker step below exists so that push
+    # still gets checked.
     branches: [main]
-    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE]
   pull_request:
   workflow_dispatch:
 
@@ -70,6 +74,67 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Check no tracked file carries a merge-conflict marker
+        # a3363ac landed on main with `<<<<<<< HEAD` and the `>>>>>>> 0d9bffc`
+        # line still in README.md, and three review rounds and every gate in
+        # this repository read straight past them: a conflict marker is text
+        # that looks like prose in a Markdown file, so only a mechanical check
+        # can see it. git grep reads the tracked files out of the working
+        # tree, which on a clean checkout is the repository as shipped, and
+        # -I keeps a binary from being reported as a match. The three markers
+        # are matched in the shapes git writes them: `<<<<<<< ` and `>>>>>>> `
+        # carry the label after seven characters, and the separator is exactly
+        # seven `=`; diff3's extra `||||||| base` line changes nothing, because
+        # the other three are still written. This job rather than the suites
+        # one because this workflow's push trigger is deliberately unfiltered
+        # (see the push trigger's own comment), so it runs for the
+        # documentation-only commit that carries the marker as well as for the
+        # code change.
+        run: |
+          # git grep exits 1 for "no match" and above 1 for an error it could
+          # not run, and a guard that reads its own error as a clean tree is
+          # the false green this step exists to prevent.
+          found=0
+          git grep -nI -E '^(<{7}( |$)|>{7}( |$)|={7}$)' -- . || found=$?
+          if [ "$found" -gt 1 ]; then
+            echo "git grep exited $found, so no marker was looked for."
+            exit "$found"
+          fi
+          if [ "$found" -eq 0 ]; then
+            echo "A merge-conflict marker is committed. Resolve the conflict, rebase onto the target branch and push again."
+            exit 1
+          fi
+
+      - name: Require this head to carry main's gate-defining commits
+        # `main requires green checks` leaves strict_required_status_checks_policy
+        # false, so a green head vouches only for the tree this run checked
+        # out: a commit that lands on main touching a file a required check
+        # reads is never applied to a pull request before it merges, and the
+        # merge then publishes a tree no green run ever saw. This is the only
+        # check that compares the two.
+        #
+        # In a job that is ALREADY a required status context, because a new job
+        # would be a new context — which means editing the ruleset — and a
+        # `paths:` filter on any workflow with a required job would stop this
+        # reporting at all and block every pull request instead (see the same
+        # trap documented on actionlint.yml's pull_request trigger).
+        #
+        # Before setup-python and every install: work done against a base
+        # main has already moved on from is work whose verdict does not
+        # carry, and a head that fails here never pays for what follows.
+        run: python3 scripts/ci/gate_base_freshness.py
+
+      - name: Refuse a commit whose scope names a workflow outside the ci type
+        # CONTRIBUTING's scope rule allows a workflow's `name:` as a scope
+        # only with type `ci`, and prose no gate reads is a convention — a
+        # rule that exists only in prose is one nobody has to obey. In this
+        # job rather than a new one: a new job would be a new required status
+        # context, which means editing the ruleset, and a job that is already
+        # required is where the freshness step went for the same reason.
+        # After the freshness step: both compare the head against freshly
+        # fetched main, and both must read the rebased head.
+        run: python3 scripts/ci/commit_scopes.py
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -117,9 +182,45 @@ jobs:
         id: install_zizmor
         run: python -m pip install --require-hashes -r requirements-zizmor.txt
 
+      - name: Install PyYAML
+        # The actionlint step's wrapper generator imports yaml; PyYAML is a
+        # development tool here (the suites install it from
+        # requirements-test.txt), installed for this job from its own
+        # hash-pinned manifest, the same shape as requirements-zizmor.txt.
+        run: python -m pip install --require-hashes -r requirements-actionlint.txt
+
       - name: actionlint
         id: actionlint
-        run: ./actionlint -color .github/workflows/*.yml
+        # actionlint accepts workflows, not a composite action as a top-level
+        # file. The generated workflow gives it one: the action's inputs
+        # become workflow_dispatch inputs and its steps are copied verbatim,
+        # so actionlint checks the steps' expressions and shell blocks
+        # against the inputs they actually run with. This generated workflow
+        # is lint input only and is never executed.
+        run: |
+          python - <<'PYTHON'
+          import os
+          from pathlib import Path
+          import yaml
+
+          action = yaml.safe_load(Path("action.yml").read_text())
+          assert action["runs"]["using"] == "composite"
+          inputs = {
+              name: {"description": spec["description"], "type": "string"}
+              for name, spec in action.get("inputs", {}).items()
+          }
+          workflow = {
+              "on": {"workflow_dispatch": {"inputs": inputs}},
+              "permissions": {},
+              "jobs": {"action": {
+                  "runs-on": "ubuntu-latest",
+                  "steps": [{"uses": "./"}] + action["runs"]["steps"],
+              }},
+          }
+          target = Path(os.environ["RUNNER_TEMP"]) / "pr-gate-action-workflow.yml"
+          target.write_text(yaml.safe_dump(workflow, sort_keys=False))
+          PYTHON
+          ./actionlint -color .github/workflows/*.yml "$RUNNER_TEMP/pr-gate-action-workflow.yml"
 
       - name: zizmor
         # Runs even when actionlint is red, so one push reports both gates —
