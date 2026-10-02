@@ -11,8 +11,8 @@ name: codeql
 #
 # The weekly cron is not redundant with push: CodeQL's query packs are
 # updated continuously, and a new query only ever runs against code that
-# has changed since it shipped. The cron sits off the hour: the top of the
-# hour is when every cron on GitHub fires at once and jobs queue.
+# has changed since it shipped. Without the cron, a rule published today
+# would never be applied to a file last touched last year.
 
 on:
   # Every branch, not just main. Scorecard's SAST check asks whether the
@@ -24,14 +24,16 @@ on:
   # Deliberately not a pull_request trigger: a pull_request run analyses the
   # merge preview, a commit no branch ever points at, so its results surface
   # only as annotations on the pull request, never as alerts on a branch.
-  # The push runs already analyse every pull request head before it merges.
+  # The push runs already analyse every same-repo pull request head before
+  # it merges.
   push:
     paths-ignore:
       - '**/*.md'
       - 'LICENSE'
       - '.gitignore'
   schedule:
-    # Wednesday 03:47 UTC, off the hour.
+    # Wednesday 03:47 UTC. Off the hour and off Monday deliberately: the top
+    # of the hour is when every cron on GitHub fires at once and jobs queue.
     - cron: '47 3 * * 3'
   workflow_dispatch:
 
