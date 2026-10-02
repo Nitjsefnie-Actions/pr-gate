@@ -6,8 +6,12 @@ close, and automatically reopen a corrected PR that it closed itself.
 
 ## Usage
 
-Replace the **40 zeroes below** with a reviewed full commit SHA from this
-repository. Do not substitute a mutable branch or tag.
+Pin the action to a reviewed full commit SHA from this repository. The
+`# vX.Y.Z` comment after the pin names the reviewed release carrying that
+SHA; the version comment is documentation, never the pin itself — do not
+substitute a mutable branch or tag. Dependabot moves the SHA and its version
+comment in this repository's own workflow when a release is cut, and the
+pin-sync test forces this example to follow.
 
 ```yaml
 name: pr gate
@@ -35,8 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      # Replace this placeholder with a reviewed 40-character commit SHA.
-      - uses: Nitjsefnie-Actions/pr-gate@0000000000000000000000000000000000000000
+      - uses: Nitjsefnie-Actions/pr-gate@b641821e74822ca7983d487f8c75865dcdebfaa8 # v1.0.0
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
