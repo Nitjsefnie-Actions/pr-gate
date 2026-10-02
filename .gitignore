@@ -9,6 +9,7 @@
 !requirements-test.txt
 !requirements-zizmor.txt
 !requirements-pip-audit.txt
+!requirements-actionlint.txt
 !requirements-lint.txt
 !pyrightconfig.json
 !pyright-baseline.json
@@ -46,6 +47,8 @@ scripts/ci/*
 !scripts/ci/pr_policy.py
 !scripts/ci/pr_gate.py
 !scripts/ci/type_ratchet.py
+!scripts/ci/gate_base_freshness.py
+!scripts/ci/commit_scopes.py
 !tests/
 tests/*
 !tests/_util.py
@@ -72,3 +75,5 @@ tests/*
 !tests/test_action.py
 !tests/test_workflows.py
 !tests/test_type_ratchet.py
+!tests/test_gate_base_freshness.py
+!tests/test_commit_scopes.py

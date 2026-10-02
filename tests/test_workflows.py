@@ -15,6 +15,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 import yaml
@@ -203,10 +204,73 @@ def test_workflow_audit_includes_composite_metadata(tmp):
     del tmp
     workflow = _workflow('actionlint.yml')
     assert workflow['permissions'] == {'contents': 'read'}
-    assert 'paths' not in workflow['on']['push']
-    runs = [step['run'] for step in workflow['jobs']['actionlint']['steps'] if 'run' in step]
-    assert './actionlint -color .github/workflows/*.yml' in runs
-    assert 'zizmor --no-progress action.yml .github/workflows/' in runs
+    assert workflow['on']['push'] == {'branches': ['main']}
+    steps = workflow['jobs']['actionlint']['steps']
+    names = [step.get('name') for step in steps]
+    # The four ported checks run on the runner's system python3 and sit
+    # before any download: cheap refusals precede setup-python and every
+    # install step, so a stale, marker-carrying or mis-scoped head never
+    # pays for the installs that follow.
+    assert steps[0]['uses'].startswith('actions/checkout@')
+    assert names[1] == 'Check no tracked file carries a merge-conflict marker'
+    assert names[2] == "Require this head to carry main's gate-defining commits"
+    assert names[3] == ('Refuse a commit whose scope names a workflow '
+                        'outside the ci type')
+    for step in steps[1:4]:
+        assert set(step) == {'name', 'run'}, (
+            'each ported check is a plain run step: no id, if, env or '
+            'failure suppression')
+    marker = steps[1]['run']
+    assert "git grep -nI -E '^(<{7}( |$)|>{7}( |$)|={7}$)' -- ." in marker
+    assert '${{' not in marker
+    assert steps[2]['run'] == 'python3 scripts/ci/gate_base_freshness.py'
+    assert steps[3]['run'] == 'python3 scripts/ci/commit_scopes.py'
+
+    def _run_of(name):
+        return next(step['run'] for step in steps if step.get('name') == name)
+
+    actionlint_run = _run_of('actionlint')
+    assert ('./actionlint -color .github/workflows/*.yml '
+            '"$RUNNER_TEMP/pr-gate-action-workflow.yml"') in actionlint_run, (
+        'the audit must read the generated wrapper, not only the workflows')
+    assert "python - <<'PYTHON'" in actionlint_run, (
+        'the wrapper is generated in the step, never a committed copy')
+    assert 'zizmor --no-progress action.yml .github/workflows/' in _run_of('zizmor')
+
+
+# The actionlint step derives its lint input from action.yml, never a
+# hand-kept copy: the step's own generation code is executed against the
+# real action.yml and the wrapper it writes is pinned here.
+def test_the_generated_wrapper_mirrors_the_composite_action(tmp):
+    step = _named_run(_workflow('actionlint.yml')['jobs']['actionlint']['steps'],
+                      'actionlint')
+    heredoc = step.split("python - <<'PYTHON'\n", 1)[1].split('\nPYTHON\n', 1)[0]
+    staging = Path(tmp) / 'stage'
+    staging.mkdir()
+    (staging / 'action.yml').write_text(
+        (ROOT / 'action.yml').read_text(encoding='utf-8'), encoding='utf-8')
+    wrapper_dir = Path(tmp) / 'runner-temp'
+    wrapper_dir.mkdir()
+    environment = dict(os.environ)
+    environment['RUNNER_TEMP'] = str(wrapper_dir)
+    subprocess.run([sys.executable, '-c', heredoc], cwd=staging,
+                   env=environment, check=True, capture_output=True, text=True)
+    loader = yaml.BaseLoader
+    action = yaml.load((staging / 'action.yml').read_text(encoding='utf-8'),
+                       Loader=loader)
+    wrapper = yaml.load(
+        (wrapper_dir / 'pr-gate-action-workflow.yml').read_text(encoding='utf-8'),
+        Loader=loader)
+    inputs = {name: {'description': spec['description'], 'type': 'string'}
+              for name, spec in action['inputs'].items()}
+    assert wrapper['on'] == {'workflow_dispatch': {'inputs': inputs}}
+    assert wrapper['permissions'] == {}
+    assert wrapper['jobs']['action']['runs-on'] == 'ubuntu-latest'
+    steps = wrapper['jobs']['action']['steps']
+    assert steps[0] == {'uses': './'}
+    assert steps[1:] == action['runs']['steps'], (
+        'the wrapper carries the composite steps verbatim so actionlint '
+        'reads the action, not a retyped copy')
 
 
 def test_zizmor_pin_is_hash_pinned_and_dependabot_visible(tmp):
@@ -467,9 +531,9 @@ def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
         'README gate condition must equal the shipped workflow gate condition')
 
 
-def test_required_pr_checks_are_unfiltered_and_keep_main_push_filters(tmp):
+def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_actionlint(tmp):
     del tmp
-    for name in ('tests.yml', 'actionlint.yml', 'lint.yml', 'types.yml'):
+    for name in ('tests.yml', 'lint.yml', 'types.yml'):
         events = _workflow(name)['on']
         assert set(events) == {'push', 'pull_request', 'workflow_dispatch'}, name
         assert not (events['pull_request'] or {}), f'{name}: filtered PR trigger'
@@ -477,6 +541,16 @@ def test_required_pr_checks_are_unfiltered_and_keep_main_push_filters(tmp):
             'branches': ['main'],
             'paths-ignore': ['README.md', 'CONTRIBUTING.md',
                              'CODE_OF_CONDUCT.md', 'LICENSE']}, name
+    # actionlint is the one required workflow whose push trigger carries no
+    # paths-ignore: a documentation-only push to main runs no other
+    # workflow at all, so the merge-marker check it hosts would never see
+    # a marker committed to README.md — the gap issue 41 closes.
+    events = _workflow('actionlint.yml')['on']
+    assert set(events) == {'push', 'pull_request', 'workflow_dispatch'}
+    assert not (events['pull_request'] or {}), 'filtered PR trigger'
+    assert events['push'] == {'branches': ['main']}, (
+        'a documentation-only push to main must still run the '
+        'merge-marker check')
 
 
 def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
@@ -906,7 +980,10 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
         '.github/workflows/lint.yml', '.github/workflows/types.yml',
         '.gitleaks.toml', 'pyrightconfig.json', 'pyright-baseline.json',
         '.pylintrc', 'requirements-lint.txt', 'setup.cfg',
-        'scripts/ci/type_ratchet.py', 'tests/test_type_ratchet.py']
+        'requirements-actionlint.txt',
+        'scripts/ci/type_ratchet.py', 'tests/test_type_ratchet.py',
+        'scripts/ci/gate_base_freshness.py', 'tests/test_gate_base_freshness.py',
+        'scripts/ci/commit_scopes.py', 'tests/test_commit_scopes.py']
     ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
     assert ignore[0] == '*'
     for name in required:
@@ -1108,6 +1185,65 @@ def test_audit_step_fails_loud_when_the_glob_matches_no_manifest(tmp):
     assert result.returncode != 0
     assert 'requirements' in result.stderr and 'nothing to audit' in result.stderr
     assert calls == [] and sleeps == []
+
+
+# The corpus's rehearsal rule, run-workflow-step-scripts-dont-read-them: the
+# marker step is executable code, and a text pin cannot tell a working exit
+# decode from a neutered one. The step's own run block is executed under
+# bash -e, red over a planted marker tree and green over a clean one.
+def test_marker_step_executes_as_shipped(tmp):
+    step = _named_run(_workflow('actionlint.yml')['jobs']['actionlint']['steps'],
+                      'Check no tracked file carries a merge-conflict marker')
+    script = Path(tmp) / 'marker-step.sh'
+    script.write_text(step, encoding='utf-8', newline='\n')
+
+    def _run_step(repo):
+        return subprocess.run([_action_bash(), '-e', str(script)], cwd=repo,
+                              capture_output=True, text=True, timeout=120)
+
+    def _git(*arguments):
+        return subprocess.run(['git', '-C', str(repo), *arguments], check=True,
+                              capture_output=True, text=True).stdout
+
+    repo = Path(tmp) / 'repo'
+    subprocess.run(['git', 'init', '-b', 'main', str(repo)], check=True,
+                   capture_output=True)
+    _git('config', 'user.name', 'fixture')
+    _git('config', 'user.email', 'fixture@example.com')
+    _git('config', 'commit.gpgsign', 'false')
+    (repo / 'clean.md').write_text('# clean\n', encoding='utf-8', newline='\n')
+    _git('add', '--', 'clean.md')
+    _git('commit', '-m', 'clean: no marker')
+    result = _run_step(repo)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    (repo / 'clean.md').write_text(
+        '# conflict\n<<<<<<< HEAD\nours\n=======\ntheirs\n>>>>>>> other\n',
+        encoding='utf-8', newline='\n')
+    _git('add', '--', 'clean.md')
+    _git('commit', '-m', 'conflict: a planted marker')
+    result = _run_step(repo)
+    assert result.returncode == 1, (result.stdout, result.stderr)
+    assert 'A merge-conflict marker is committed' in result.stdout
+    assert re.search(r'^clean\.md:\d+:', result.stdout, re.MULTILINE), (
+        'the step must name the file and line it reddened')
+
+
+# Dependabot updates each hash-pinned manifest in its own pull request, so
+# two manifests carrying PyYAML can drift apart silently; the actionlint
+# job's generator and the suites must keep importing the same PyYAML.
+def test_pyyaml_pin_agrees_across_the_hash_pinned_manifests(tmp):
+    del tmp
+    pins = {}
+    for name in ('requirements-test.txt', 'requirements-actionlint.txt'):
+        matches = [entry for entry in _manifest_entries(ROOT / name)
+                   if entry.startswith('PyYAML==')]
+        assert len(matches) == 1, f'{name}: expected exactly one PyYAML pin'
+        # requirements-test.txt is deliberately unhashed, so the pin that
+        # must agree is the name==version token, not the whole entry.
+        pins[name] = matches[0].split()[0]
+    assert pins['requirements-test.txt'] == pins['requirements-actionlint.txt'], (
+        'the two manifests must pin the same PyYAML release: the actionlint '
+        'job and the suites import the same module')
 
 
 if __name__ == '__main__':
