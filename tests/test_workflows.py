@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REVIEWED_ACTION_PINS = {
     'actions/checkout': '3d3c42e5aac5ba805825da76410c181273ba90b1',
     'actions/setup-python': '5fda3b95a4ea91299a34e894583c3862153e4b97',
-    'Nitjsefnie-Actions/claim': '6ae0d102c79d2feec867520795b318b7ca33904a',
+    'Nitjsefnie-Actions/claim': '8abff4f2f27d59b984528cb736f64b9391952a25',
     'Nitjsefnie-Actions/pr-gate': 'b641821e74822ca7983d487f8c75865dcdebfaa8',
     'github/codeql-action/init': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
     'github/codeql-action/analyze': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
@@ -576,7 +576,10 @@ def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_vers
         'REVIEWED_ACTION_PINS')
 
 
-def test_claim_only_processes_serialized_open_issue_commands(tmp):
+# The job prefilters only bots and command words; the action itself declines
+# a /claim on a pull request or a closed issue with a reply, so an issue-kind
+# or issue-state limb here would leave the commander with no answer.
+def test_claim_prefilters_only_bots_and_command_words(tmp):
     del tmp
     workflow = _workflow('claim.yml')
     assert workflow['on'] == {'issue_comment': {'types': ['created']}}
@@ -587,16 +590,19 @@ def test_claim_only_processes_serialized_open_issue_commands(tmp):
     job = workflow['jobs']['claim']
     condition = job.get('if', '')
     assert ' '.join(condition.split()) == (
-        'github.event.issue.pull_request == null '
-        "&& github.event.issue.state == 'open' "
-        "&& github.event.comment.user.type != 'Bot' "
+        "github.event.comment.user.type != 'Bot' "
         "&& (contains(github.event.comment.body, '/claim') "
         "|| contains(github.event.comment.body, '/unclaim') "
         "|| contains(github.event.comment.body, '/release'))"
-    ), 'claim must guard issue kind, state, commenter and all three commands'
+    ), 'claim must guard exactly the commenter and all three commands'
     assert len(job['steps']) == 1, 'claim must execute only its pinned action'
     step = job['steps'][0]
-    assert set(step) == {'uses'}, 'claim needs no checkout, shell, inputs or step condition'
+    assert set(step) == {'uses', 'with'}, (
+        'claim needs no checkout, shell or step condition; the two inputs '
+        'are the step\'s whole configuration')
+    assert step['with'] == {
+        'max-claims': 'read=2, triage=4, write=6, maintain=10, admin=-1',
+        'expire': '7'}, 'claim must pass exactly the two documented inputs'
     assert re.fullmatch(r'Nitjsefnie-Actions/claim@[0-9a-f]{40}', step['uses'])
 
 
