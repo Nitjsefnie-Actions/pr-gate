@@ -742,7 +742,7 @@ def test_security_analysis_propagates_job_and_step_failures(tmp):
                     f'{name}: analysis job and step failures must propagate')
 
 
-def test_dependabot_updates_actions_and_pip_and_groups_codeql(tmp):
+def test_dependabot_updates_actions_and_pip_weekly_in_utc_and_groups_whole_families(tmp):
     del tmp
     path = ROOT / '.github/dependabot.yml'
     assert path.is_file(), 'missing Dependabot configuration'
@@ -751,17 +751,31 @@ def test_dependabot_updates_actions_and_pip_and_groups_codeql(tmp):
     updates = config['updates']
     assert len(updates) == 2
     assert {entry['package-ecosystem'] for entry in updates} == {'github-actions', 'pip'}
-    for entry in updates:
+    actions = next(entry for entry in updates
+                   if entry['package-ecosystem'] == 'github-actions')
+    pip = next(entry for entry in updates if entry['package-ecosystem'] == 'pip')
+    for entry in (actions, pip):
         assert entry['directory'] == '/'
         assert entry['schedule']['interval'] == 'weekly'
-    actions = next(entry for entry in updates if entry['package-ecosystem'] == 'github-actions')
-    assert actions['groups']['codeql-action']['patterns'] == ['github/codeql-action*']
-    security = actions['groups']['codeql-action-security']
-    assert security['applies-to'] == 'security-updates'
-    assert security['patterns'] == ['github/codeql-action*']
-    # The version group must keep relying on Dependabot's `applies-to` default;
-    # naming a kind here would stop the other kind from being grouped.
-    assert list(actions['groups']['codeql-action']) == ['patterns']
+        assert entry['schedule']['timezone'] == 'Etc/UTC', (
+            'the weekly run must land at a stated UTC time')
+    assert actions['commit-message'] == {'prefix': 'ci', 'include': 'scope'}, (
+        '`include: scope` is what turns the bare `ci` prefix into `ci(deps): ...`')
+    assert pip['commit-message'] == {'prefix': 'build', 'include': 'scope'}, (
+        '`include: scope` is what turns the bare `build` prefix into '
+        '`build(deps): ...`')
+    assert actions['groups']['github-actions']['patterns'] == ['*'], (
+        'every action bump rides in one version-update pull request, '
+        'codeql-action included: `init` and `analyze` must stay on one revision')
+    assert actions['groups']['github-actions-security'] == {
+        'applies-to': 'security-updates', 'patterns': ['*']}, (
+        'security updates are enabled on this repository, so a security bump '
+        'would otherwise arrive outside the version group')
+    # The version group must keep relying on Dependabot's `applies-to`
+    # default: naming `security-updates` there would leave version updates
+    # ungrouped, and naming the default explicitly is dead configuration
+    # this shape pin refuses.
+    assert list(actions['groups']['github-actions']) == ['patterns']
 
 
 def test_security_policy_and_workflow_inventory_are_shipped(tmp):
