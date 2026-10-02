@@ -154,9 +154,7 @@ def _body_detail(data):
     and nothing else. Rendering is compact JSON with sorted keys, so
     the same body always renders identically, collapsed to one line and
     cut at `_BODY_DETAIL_LIMIT` characters. An absent or empty body
-    renders as the empty string, which keeps the status-only message
-    the `_read`/`_page` surfaces (and every pinned fixture with no
-    body) already carry.
+    renders as the empty string and the message stays status-only.
     """
     if not data:
         return ''
@@ -312,8 +310,10 @@ def _inadmissible_text(actor, reasons, closed):
             f'{MARKER}\n{CLOSED_MARKER}')
         ending = (
             'The gate re-checks every edit of this closed pull request and '
-            'reopens it\nautomatically once every condition passes. Fixing '
-            'the body is not the\nend of it, though: that reopen is '
+            'reopens it\nautomatically once every condition passes. If '
+            'GitHub refuses the reopen,\nthe gate comments here with what '
+            'happened and how to recover. Fixing\nthe body is not the end '
+            'of it, though: that reopen is '
             f'authored by `{BOT}`\nwith the workflow\'s own `GITHUB_TOKEN`, '
             'so the CI runs it triggers\nare created with no jobs and held '
             'for approval. Push to the\nbranch once the reopen lands — an '
@@ -546,10 +546,11 @@ def _run(api, repo, pr, actor, template, template_path):
             except _GateError as error:
                 if error.status is None or error.status >= 500:
                     raise
-                # A 4xx is GitHub's refusal, not a failed transport: the
-                # pull request stays closed and gate-owned, and the author
-                # needs the reason and the way out. A concurrent
-                # modification still aborts without a refusal comment.
+                # A status below 500 is GitHub refusing the write, not a
+                # failed transport: the pull request stays closed and
+                # gate-owned, and the author needs the reason and the way
+                # out. A concurrent modification still aborts without a
+                # refusal comment.
                 _revalidate(
                     api, pull_endpoint, state, timeline_endpoint, closer)
                 _write_comment(
