@@ -335,6 +335,13 @@ def test_lint_workflow_runs_both_defect_linters_from_the_pinned_manifest(tmp):
                     if 'requirements-lint.txt' in step.get('run', '')), None)
     assert install is not None, 'the lint toolchain must be installed first'
     install_index = steps.index(install)
+    test_install = next((step for step in steps
+                         if 'requirements-test.txt' in step.get('run', '')),
+                        None)
+    assert test_install is not None, (
+        'pylint resolves `import yaml` in the suites, so the test '
+        'dependencies must be installed before the linters run')
+    test_install_index = steps.index(test_install)
     linters = [step for step in steps
                if step.get('run', '').startswith('git ls-files')]
     assert len(linters) == 2, (
@@ -343,6 +350,10 @@ def test_lint_workflow_runs_both_defect_linters_from_the_pinned_manifest(tmp):
         'both linters must run after the toolchain install')
     assert steps.index(linters[1]) > install_index, (
         'both linters must run after the toolchain install')
+    assert steps.index(linters[0]) > test_install_index, (
+        'both linters must run after the test dependencies install')
+    assert steps.index(linters[1]) > test_install_index, (
+        'both linters must run after the test dependencies install')
     # One push reports both gates: pylint still runs when pycodestyle is
     # red, never when the install itself failed (actionlint.yml's pattern).
     assert '!cancelled()' in linters[1].get('if', ''), (

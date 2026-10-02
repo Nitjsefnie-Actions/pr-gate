@@ -3,7 +3,7 @@
   "coverage": {
     "python": {
       "floor": 91.9,
-      "measured": 93.4,
+      "measured": 93.6,
       "cell": "ubuntu-latest / Python 3.13"
     }
   }
