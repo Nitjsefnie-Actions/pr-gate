@@ -1,10 +1,12 @@
 """CI executes the shipped suite and audits the reusable action itself.
 
 The audit.yml step tests execute the workflow's own run-block text under
-``bash -e`` with stubs standing in only for the external boundary — the
-pip-audit executable (PyPI and the advisory database over the network) and
-sleep (time). Fakes live only at that external boundary, per CONTRIBUTING;
-everything between the stubs is the script text parsed out of the workflow,
+``bash -e`` with fakes standing in only at the external boundary — the
+pip-audit executable (PyPI and the advisory database over the network) as a
+PATH stub, and sleep (time) as a BASH_ENV shell function, because a Git Bash
+PATH stub for sleep never intercepts and the real sleep would run the
+backoff. Fakes live only at that external boundary, per CONTRIBUTING;
+everything between them is the script text parsed out of the workflow,
 never retyped.
 """
 import fnmatch
@@ -514,8 +516,9 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
 
 # Test doubles for the audit step's external boundary only. pip-audit stands
 # in for the PyPI/advisory-network side of the step (its whole observable
-# contract here is an argv line and an exit status plus output); sleep stands
-# in for time, so the attempt-scaled backoff is pinned without waiting.
+# contract here is an argv line and an exit status plus output); the sleep
+# function stands in for time, so the attempt-scaled backoff is pinned
+# without waiting.
 _PIP_AUDIT_STUB = r"""#!/usr/bin/env bash
 # Test double for the pip-audit executable: appends one line per call ("$*")
 # to $PIP_AUDIT_LOG and replays the call-th "exit|payload" line of
@@ -546,10 +549,9 @@ esac
 exit "${line%%|*}"
 """
 
-_SLEEP_STUB = r"""#!/usr/bin/env bash
-# Test double for sleep: records its argument so the backoff formula is
-# pinned without waiting in real time.
-printf '%s\n' "$*" >> "$SLEEP_LOG"
+_SLEEP_FUNCTION = r"""sleep() {
+  printf '%s\n' "$@" >> "$SLEEP_LOG"
+}
 """
 
 
@@ -561,10 +563,11 @@ def _run_audit_step(tmp, plan, manifests=()):
                                     encoding='utf-8', newline='\n')
     stubs = Path(tmp) / 'stubs'
     stubs.mkdir()
-    for name, source in (('pip-audit', _PIP_AUDIT_STUB), ('sleep', _SLEEP_STUB)):
-        stub = stubs / name
-        stub.write_text(source, encoding='utf-8', newline='\n')
-        stub.chmod(0o755)
+    stub = stubs / 'pip-audit'
+    stub.write_text(_PIP_AUDIT_STUB, encoding='utf-8', newline='\n')
+    stub.chmod(0o755)
+    bash_env = Path(tmp) / 'bash-env.bash'
+    bash_env.write_text(_SLEEP_FUNCTION, encoding='utf-8', newline='\n')
     plan_path = Path(tmp) / 'plan.txt'
     plan_path.write_text(''.join(f'{line}\n' for line in plan),
                          encoding='utf-8', newline='\n')
@@ -573,6 +576,7 @@ def _run_audit_step(tmp, plan, manifests=()):
                       encoding='utf-8', newline='\n')
     environment = dict(os.environ)
     environment['PATH'] = os.pathsep.join((str(stubs), environment['PATH']))
+    environment['BASH_ENV'] = str(bash_env)
     environment.update(
         PIP_AUDIT_LOG=str(Path(tmp) / 'calls.log'),
         PIP_AUDIT_COUNT=str(Path(tmp) / 'calls.count'),
@@ -588,41 +592,60 @@ def _run_audit_step(tmp, plan, manifests=()):
     return result, lines(Path(tmp) / 'calls.log'), lines(Path(tmp) / 'sleeps.log')
 
 
-def test_audit_step_runs_one_invocation_over_every_staged_manifest(tmp):
+def _audited_manifests(calls):
+    audited = []
+    for call in calls:
+        argv = call.split()
+        requirements = [argv[index + 1] for index, token in enumerate(argv)
+                        if token == '--requirement']
+        assert len(requirements) == 1, calls
+        audited.append(requirements[0])
+    return audited
+
+
+def test_audit_step_runs_one_invocation_per_staged_manifest(tmp):
     manifests = ('requirements-pip-audit.txt', 'requirements-test.txt',
                  'requirements-zizmor.txt')
     result, calls, sleeps = _run_audit_step(
-        tmp, ['0|No vulnerabilities found'], manifests)
+        tmp, ['0|No vulnerabilities found'] * len(manifests), manifests)
     assert result.returncode == 0, (result.stdout, result.stderr)
-    assert len(calls) == 1, calls
-    argv = calls[0].split()
-    assert argv[argv.index('--progress-spinner') + 1] == 'off'
-    requirements = [argv[index + 1] for index, token in enumerate(argv)
-                    if token == '--requirement']
-    assert sorted(requirements) == sorted(manifests), calls
+    assert len(calls) == len(manifests), calls
+    for call in calls:
+        argv = call.split()
+        assert argv[argv.index('--progress-spinner') + 1] == 'off'
+    assert sorted(_audited_manifests(calls)) == sorted(manifests), calls
     assert 'No vulnerabilities found' in result.stdout
     assert sleeps == []
 
 
 def test_audit_step_reports_findings_immediately_without_a_retry(tmp):
     result, calls, sleeps = _run_audit_step(
-        tmp, ['1|Found 2 vulnerabilities'], ('requirements-test.txt',))
+        tmp, ['1|Found 2 vulnerabilities'],
+        ('requirements-a-findings.txt', 'requirements-b-clean.txt'))
     assert result.returncode == 1
     assert 'Found 2 vulnerabilities' in result.stderr
+    # Glob order puts requirements-a-findings.txt first; a finding there must
+    # end the step before any later manifest is audited.
     assert len(calls) == 1, calls
+    assert '--requirement requirements-a-findings.txt' in calls[0], calls
     assert sleeps == []
 
 
 def test_audit_step_retries_a_reset_connection_then_succeeds(tmp):
+    failing = 'requirements-a-retry.txt'
+    clean = 'requirements-b-clean.txt'
     result, calls, sleeps = _run_audit_step(
-        tmp, ['1|err Connection reset by peer', '0|No vulnerabilities found'],
-        ('requirements-test.txt',))
+        tmp, ['1|err Connection reset by peer', '0|No vulnerabilities found',
+              '0|No vulnerabilities found'],
+        (failing, clean))
     assert result.returncode == 0
     # The failed attempt's diagnostic reaches this stdout only if the step
     # captured stderr into audit.out (`2>&1`) AND the retry arm printed the
     # captured file back (`tail -n 5 audit.out`); removing either loses it.
     assert 'Connection reset by peer' in result.stdout, result.stdout
-    assert len(calls) == 2, calls
+    # The retry re-runs ONLY the failing manifest, in place: the clean
+    # manifest is audited once, after the failing manifest resolves.
+    assert _audited_manifests(calls) == [failing, failing, clean], calls
     assert sleeps == ['15'], sleeps
 
 
@@ -631,7 +654,7 @@ def test_audit_step_retries_a_503_service_unavailable(tmp):
         tmp, ['1|503 Service Unavailable', '0|No vulnerabilities found'],
         ('requirements-test.txt',))
     assert result.returncode == 0
-    assert len(calls) == 2, calls
+    assert _audited_manifests(calls) == ['requirements-test.txt'] * 2, calls
     assert sleeps == ['15'], sleeps
 
 
@@ -640,7 +663,7 @@ def test_audit_step_retries_a_429_too_many_requests(tmp):
         tmp, ['1|429 Too Many Requests', '0|No vulnerabilities found'],
         ('requirements-test.txt',))
     assert result.returncode == 0
-    assert len(calls) == 2, calls
+    assert _audited_manifests(calls) == ['requirements-test.txt'] * 2, calls
     assert sleeps == ['15'], sleeps
 
 
@@ -651,7 +674,7 @@ def test_audit_step_retries_a_pip_audit_service_error(tmp):
               '0|No vulnerabilities found'],
         ('requirements-test.txt',))
     assert result.returncode == 0
-    assert len(calls) == 2, calls
+    assert _audited_manifests(calls) == ['requirements-test.txt'] * 2, calls
     assert sleeps == ['15'], sleeps
 
 
@@ -662,16 +685,18 @@ def test_audit_step_exits_immediately_on_a_non_retryable_4xx(tmp):
         ('requirements-test.txt',))
     assert result.returncode == 1
     assert 'non-retryable 4xx' in result.stderr
-    assert len(calls) == 1, calls
+    assert _audited_manifests(calls) == ['requirements-test.txt'], calls
     assert sleeps == []
 
 
 def test_audit_step_exhausts_three_attempts_on_a_transport_failure(tmp):
+    manifest = 'requirements-test.txt'
     result, calls, sleeps = _run_audit_step(
-        tmp, ['1|Connection reset by peer'] * 3, ('requirements-test.txt',))
+        tmp, ['1|Connection reset by peer'] * 3, (manifest,))
     assert result.returncode == 1
     assert 'exhausted 3 attempts' in result.stderr
-    assert len(calls) == 3, calls
+    assert manifest in result.stderr, result.stderr
+    assert _audited_manifests(calls) == [manifest] * 3, calls
     assert sleeps == ['15', '30', '45'], sleeps
 
 
