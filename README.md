@@ -92,10 +92,14 @@ A corrective edit retries the same PR, and a gate-owned close reopens once all
 conditions pass. That reopen is authored by the bot with the workflow's own
 `GITHUB_TOKEN`, so GitHub creates the CI runs it triggers without jobs and
 held for approval; the author pushes once more afterwards — an empty commit
-is enough — to get a verdict, and the reopen comment says so. Ownership
-survives interrupted reopen operations; maintainer closures and changes in
-state/closer prevent unsafe writes. Assignment changes alone do not trigger
-the workflow: edit or reopen the PR to request another check.
+is enough — to get a verdict, and the reopen comment says so. The bot reopen
+can also be counted by GitHub as an unattributed change, and a merge ruleset
+that requires extra approval for unattributed changes can hold the merge
+even with every check green; the reopen comment tells the author to close
+and reopen the PR themselves once before merging when that happens.
+Ownership survives interrupted reopen operations; maintainer closures and
+changes in state/closer prevent unsafe writes. Assignment changes alone do
+not trigger the workflow: edit or reopen the PR to request another check.
 
 A successfully enforced decision exits zero, including a comment or close.
 Analysis/API failures exit nonzero. This is an admission mechanic, not a red

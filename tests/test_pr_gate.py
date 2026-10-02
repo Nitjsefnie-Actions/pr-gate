@@ -288,7 +288,10 @@ def test_closing_notice_names_the_push_needed_after_the_reopen(tmp):
 
     The closing comment is where the author learns that a fix will bring
     a reopen, so it is where the reopen's cost is stated: the reopen is
-    bot-authored, its CI is held, and one more push is what releases it.
+    bot-authored, its CI is held, one more push is what releases the
+    checks, and the merge can still demand the author's own close and
+    reopen before it — the same recovery the reopen notice carries, read
+    here while the pull request is still closed.
     """
     del tmp
     body = _valid_body('none')
@@ -304,9 +307,39 @@ def test_closing_notice_names_the_push_needed_after_the_reopen(tmp):
     _assert_ci_recovery_note(_comment_body(writes[0]))
 
 
+def test_resolved_notice_keeps_the_reopen_followup_conditionally(tmp):
+    """The resolved notice replaces the reopen notice, so it re-states it.
+
+    When the author edits the body of the now-open pull request, the
+    gate patches its marker comment to the resolved notice, erasing the
+    close-and-reopen guidance the reopen notice carried. The resolved
+    notice therefore carries it too — conditionally, because the gate
+    reaches this notice without knowing whether it closed and reopened
+    this pull request earlier, and the phrasing must stay truthful when
+    it never did.
+    """
+    del tmp
+    api = _api(comments=[_gate_comment()])
+    code, writes, _output, _error = _execute(api, _valid_body())
+    assert code == 0
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7')]
+    _assert_gate_message(writes[0], RESOLVED_FIRST)
+    body = _comment_body(writes[0])
+    text = ' '.join(body.split()).lower()
+    for required in ('if the gate closed and reopened', 'close and reopen',
+                     'before merging', 'unattributed'):
+        assert required in text, (required, body)
+
+
 def test_the_recovery_guard_rejects_contract_violating_bodies(tmp):
     """The guard's two arms are driven here, not assumed.
 
+    The REQUIRED arm is the property arm: each term in it is load-bearing,
+    and each is driven by being removed from the real reopen body in
+    turn. The FORBIDDEN arm is a spelling set, not a property, and it is
+    not exhaustive: its entries are driven by appending each phrasing the
+    contract has been observed to break with to the real reopen body.
     A forbidden-spelling arm that no test exercises is not a control:
     six realistic violations of this contract passed the guard before
     this test existed, because the arm listed spellings instead of the
@@ -349,6 +382,10 @@ def test_the_recovery_guard_rejects_contract_violating_bodies(tmp):
         ('approval', 'sign-off'),
         ('github-actions[bot]', 'the automation account'),
         ('github_token', 'its own token'),
+        ('close and reopen', 'reopen'),
+        ('unattributed', 'unrecognized'),
+        ('ruleset', 'policy'),
+        ('green', 'passing'),
     )
     accepted = []
     rendered = ' '.join(body.split()).lower()

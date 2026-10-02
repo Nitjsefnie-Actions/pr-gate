@@ -26,13 +26,18 @@ def _comment_body(write):
 
 def _assert_ci_recovery_note(body):
     """The reopen is bot-authored, so its CI runs are held; say so, and
-    name the push that releases them.
+    name the push that releases them and the author close-and-reopen
+    that unattributed-change rulesets can demand before merging.
 
     Two arms, and only the first is a property. The REQUIRED arm is
     load-bearing: whatever else the notice says, it must tell the author
-    to push, must say an empty commit is acceptable, and must name the
-    bot, its token and the held-for-approval reason — dropping any one
-    of those from the message fails here, which
+    to push, must say an empty commit is acceptable, must name the bot,
+    its token and the held-for-approval reason, and must carry the
+    close-and-reopen instruction together with the unattributed-change
+    reason — GitHub can count the bot reopen as an unattributed change,
+    and a ruleset requiring extra approval for unattributed changes can
+    hold the merge even with every check green. Dropping any one of
+    those from the message fails here, which
     test_the_recovery_guard_rejects_contract_violating_bodies drives
     term by term.
 
@@ -49,7 +54,8 @@ def _assert_ci_recovery_note(body):
     """
     text = ' '.join(body.split()).lower()
     for required in ('push', 'empty commit', 'held', 'approval',
-                     'github-actions[bot]', 'github_token'):
+                     'github-actions[bot]', 'github_token',
+                     'close and reopen', 'unattributed', 'ruleset', 'green'):
         assert required in text, (required, body)
     # Not exhaustive by construction: a new spelling is a new entry.
     for forbidden in ('approve the run', 'approve the workflow',
