@@ -584,6 +584,29 @@ def test_attempt_and_success_reopen_texts_split_the_claim(tmp):
     assert 'has been reopened' not in refused_attempt, refused_attempt
 
 
+def test_closing_notice_names_the_refusal_possibility(tmp):
+    """The close may promise only what GitHub grants.
+
+    The closing comment tells the author a correction reopens the PR,
+    and the reopen is refused exactly when the branch moved under the
+    close. A close that cannot mention that refusal sends the author
+    back to edit the body with no hint that the strand has another
+    way out, so the closed text carries the refusal possibility and
+    the recovery comment it leads to.
+    """
+    del tmp
+    body = _valid_body('none')
+    api = _api(
+        state='closed', issues={}, comments=[_gate_comment(closed=True)],
+        timeline=[_closed_event()],
+        rendered=_valid_html(references=_text_html('none')))
+    code, writes, _output, _error = _execute(api, body)
+    assert code == 0
+    text = ' '.join(_comment_body(writes[0]).split()).lower()
+    for term in ('refuses the reopen', 'how to recover'):
+        assert term in text, (term, text)
+
+
 def test_human_closed_pull_is_not_written(tmp):
     del tmp
     api = _api(

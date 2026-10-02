@@ -91,7 +91,10 @@ close the PR, as can a claim failure with at least one checked issue reference;
 more than twenty references, or no checked reference at all, leave the PR open
 with a corrective comment unless a layout or content failure closes it first.
 A corrective edit retries the same PR, and a gate-owned close reopens once all
-conditions pass. That reopen is authored by the bot with the workflow's own
+conditions pass. When GitHub refuses that reopen — a force-push while the
+pull request was closed is the usual cause — the gate says so in its comment,
+with the two ways out: a maintainer reopen, or a fresh pull request from the
+same branch. That reopen is authored by the bot with the workflow's own
 `GITHUB_TOKEN`, so GitHub creates the CI runs it triggers without jobs and
 held for approval; the author pushes once more afterwards — an empty commit
 is enough — to get a verdict, and the reopen comment says so. The bot reopen
