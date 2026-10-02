@@ -27,7 +27,7 @@ name: actionlint
 # watches for version bumps.
 #
 # Suppressions belong at the offending line as a `# zizmor: ignore[rule]`
-# comment WITH a justification (see eslint.yml), never as a raised
+# comment WITH a justification, never as a raised
 # --min-severity here: a threshold silences the next finding too, and the
 # next one is the one nobody has thought about yet.
 
@@ -123,7 +123,7 @@ jobs:
 
       - name: zizmor
         # Runs even when actionlint is red, so one push reports both gates —
-        # the same pattern lint.yml uses for pylint/pycodestyle. Not when
+        # the pattern lint.yml reuses for pycodestyle/pylint. Not when
         # the install itself failed, which would report a tool bug as a
         # clean audit.
         if: ${{ !cancelled() && steps.install_zizmor.outcome == 'success' }}
