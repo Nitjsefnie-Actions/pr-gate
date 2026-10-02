@@ -157,6 +157,10 @@ def test_duplicate_closing_reference_is_looked_up_once(tmp):
 
 
 def test_keyword_overflow_reports_overflow_only(tmp):
+    """The checked bound separates two outcomes: past it the gate reports
+    only the overflow, and at it a fully unassigned checked set closes
+    the pull request.
+    """
     del tmp
     numbers = list(range(101, 122))
     body = _valid_body(' '.join(f'Fixes #{number}' for number in numbers))
@@ -181,6 +185,15 @@ def test_keyword_overflow_reports_overflow_only(tmp):
     assert code == 0
     assert len(_issue_gets(api)) == 20
     assert reason not in _comment_body(writes[0])
+    unassigned = (
+        'Issues ' + ', '.join(f'`#{number}`' for number in numbers[:-1])
+        + f' and `#{numbers[-1]}` are not assigned to you.')
+    assert _output == 'closed\n'
+    assert _write_sequence(writes) == [
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+    _assert_gate_message(
+        writes[0], CLOSED_FIRST, [unassigned], closed=True)
 
 
 def test_unclaimed_issue_comments_naming_the_issue(tmp):
