@@ -40,5 +40,22 @@ jobs:
         env:
           PYTHONDONTWRITEBYTECODE: "1"
         run: python run_tests.py
+      # Coverage is measured and gated on exactly one matrix cell so the
+      # reported number names a single reproducible environment. The floor
+      # lives in .github/ci-thresholds.json and is never restated here; the
+      # summary renders whether or not the gate fails.
+      - name: Measure scripts/ci coverage
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: coverage run --source=scripts/ci run_tests.py
+      - name: Record the coverage summary
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        run: python -m coverage report --format=markdown --precision=1 >> "$GITHUB_STEP_SUMMARY"
+      - name: Coverage gate
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
+        run: |
+          floor="$(python -c 'import json; print(json.load(open(".github/ci-thresholds.json"))["coverage"]["python"]["floor"])')"
+          python -m coverage report --fail-under="$floor" --precision=1
       - name: Lint Python
         run: python -m ruff check --select E9,F63,F7,F82 .
