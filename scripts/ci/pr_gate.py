@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import NamedTuple
 
 if __package__:
+    # pylint: disable-next=relative-beyond-top-level
     from .pr_policy import base_template
+    # pylint: disable-next=relative-beyond-top-level
     from .pr_content import bug_issue_errors, section_content
     # pylint: disable-next=relative-beyond-top-level
     from .pr_body import (

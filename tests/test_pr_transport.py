@@ -3,7 +3,6 @@ import json
 import os
 import subprocess
 import sys
-from pathlib import Path
 
 import _util
 from _prgate import ROOT, _write_gh_stub

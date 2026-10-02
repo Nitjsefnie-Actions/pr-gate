@@ -5,7 +5,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 from pathlib import Path
 
 import yaml
@@ -114,7 +113,8 @@ def _action_bash(*, windows=None, environment=None):
             bash = root / relative
             if bash.is_file():
                 return str(bash)
-    raise RuntimeError('Git for Windows Bash was not found; install Git for Windows for action tests')
+    raise RuntimeError('Git for Windows Bash was not found; '
+                       'install Git for Windows for action tests')
 
 
 def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
