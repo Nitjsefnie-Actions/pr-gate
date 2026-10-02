@@ -114,8 +114,7 @@ version, a `feat` commit the minor, and anything else the patch. `v*` tags
 are permanent reviewability metadata naming reviewed states; consumer pins
 stay full SHAs with `# vX.Y.Z` version comments. Dependabot is expected to
 propose moving the workflow's pin — SHA and version comment together — when
-a release is cut; the first such proposal (for v1.0.1) is the probe that
-demonstrates it.
+a release is cut.
 
 Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Enforcement reports go privately
 to Nitjsefnie at [zmatek.peter@gmail.com](mailto:zmatek.peter@gmail.com).
