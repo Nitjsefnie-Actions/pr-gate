@@ -11,7 +11,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _util  # noqa: E402
 from _prgate import (  # noqa: E402
-    BOT, CLOSED_FIRST, MARKER, OPEN_FIRST, REOPEN_FIRST,
+    BOT, CLOSED_FIRST, CLOSED_MARKER, MARKER, OPEN_FIRST, REOPEN_FIRST,
     RESOLVED_FIRST, TEMPLATE,
     _api, _assert_ci_recovery_note, _assert_gate_message, _assert_no_writes,
     _assert_script_error,
@@ -25,6 +25,8 @@ from _prgate import (  # noqa: E402
 )
 from _prfootnotes import (  # noqa: E402
     NESTED_HEADING_HTML, NESTED_HEADING_NOTE)
+from _prgate_message import (  # noqa: E402
+    ATTEMPT_FIRST, REFUSED_FIRST)
 from _prgate_race import (  # noqa: E402
     _assert_closed_admissible_reclose_aborts_state,
     _assert_closed_inadmissible_reclose_aborts,
@@ -242,7 +244,7 @@ def test_gate_closed_admissible_pull_is_commented_then_reopened(tmp):
         ('PATCH', 'repos/owner/repo/issues/comments/7'),
         ('PATCH', 'repos/owner/repo/pulls/99'),
         ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    _assert_gate_message(writes[0], REOPEN_FIRST, closed=True)
+    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
     _assert_gate_message(writes[2], REOPEN_FIRST)
     assert writes[1][2] == {'state': 'open'}
 
@@ -266,8 +268,9 @@ def test_reopen_notice_names_the_push_that_releases_ci(tmp):
         ('PATCH', 'repos/owner/repo/issues/comments/7'),
         ('PATCH', 'repos/owner/repo/pulls/99'),
         ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    for write in (writes[0], writes[2]):
-        _assert_gate_message(write, REOPEN_FIRST, closed=(write is writes[0]))
+    for write, first in (
+            (writes[0], ATTEMPT_FIRST), (writes[2], REOPEN_FIRST)):
+        _assert_gate_message(write, first, closed=(write is writes[0]))
         _assert_ci_recovery_note(_comment_body(write))
 
 
@@ -423,6 +426,10 @@ class _RefusedReopenApi(FakeApi):
 
     def request(self, method, endpoint, payload=None):
         if method == 'PATCH' and endpoint == 'repos/owner/repo/pulls/99':
+            # Recorded like FakeApi records any write, but the refusal
+            # applies none of the state change a 2xx PATCH would.
+            self.calls.append((method, endpoint, payload))
+            self.writes.append((method, endpoint, payload))
             return _Response(self.refusal_status, self.refusal_data)
         return super().request(method, endpoint, payload)
 
@@ -475,6 +482,106 @@ def test_write_failure_message_carries_the_response_body(tmp):
     assert str(bare) == (
         'GitHub returned 500 for repos/owner/repo/pulls/99')
     assert bare.status == 500
+
+
+def test_reopen_refusal_reports_githubs_reason_and_recovery(tmp):
+    """A refused reopen leaves an author-facing comment, not a status.
+
+    GitHub refuses the reopen PATCH of a force-pushed, closed pull
+    request with 422, and `gh pr reopen` by hand refuses the same way,
+    so this comment is the only place the reason and the way out can
+    reach the author. The gate writes the attempt comment first, still
+    gate-owned, then rewrites the same comment with the refusal: it
+    quotes GitHub's reason, names the force-push cause, gives both
+    recovery paths, and keeps the marker pair, so a later edit still
+    retries. The run still exits 1, and the refusal is prose — a
+    bullet would read as a reasons list.
+    """
+    del tmp
+    api = _RefusedReopenApi()
+    code, writes, _output, error = _execute(api, _valid_body())
+    assert code == 1
+    assert error == (
+        'pr gate failed: GitHub returned 422 for '
+        'repos/owner/repo/pulls/99: Validation Failed; '
+        '{"code":"invalid","field":"head","resource":"PullRequest"}\n')
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7'),
+        ('PATCH', 'repos/owner/repo/pulls/99'),
+        ('PATCH', 'repos/owner/repo/issues/comments/7')]
+    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
+    _assert_ci_recovery_note(_comment_body(writes[0]))
+    refusal = _assert_gate_message(writes[2], REFUSED_FIRST, closed=True)
+    assert 'Validation Failed' in refusal, refusal
+    assert 'force-pushed' in refusal, refusal
+    assert 'maintainer' in refusal and 'reopen' in refusal, refusal
+    assert 'fresh pull request' in refusal, refusal
+    assert 'Editing the body again' in refusal, refusal
+    assert api.pull['state'] == 'closed'
+
+
+def test_reopen_500_failure_stays_commentless(tmp):
+    """The refusal comment belongs to the 4xx arm only.
+
+    A 5xx on the reopen PATCH is an interrupted retry, not a refusal:
+    the gate exits 1 with the attempt comment still carrying the closed
+    marker and posts nothing further. The recovery suite drives 500s
+    but cannot tell a refusal write from a retry write, so this pins
+    the write count the split must preserve.
+    """
+    del tmp
+    api = _api(
+        state='closed', comments=[_gate_comment(closed=True)],
+        timeline=[_closed_event()],
+        fail={'PATCH repos/owner/repo/pulls/99'})
+    code, writes, _output, error = _execute(api, _valid_body())
+    assert code == 1
+    assert error == (
+        'pr gate failed: GitHub returned 500 for '
+        'repos/owner/repo/pulls/99\n')
+    # The double records the failed PATCH itself, so the refusal control
+    # is the comment writes: one attempt rewrite, and no refusal rewrite.
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+    assert _write_sequence(
+        [item for item in writes if item[1].endswith('/comments/7')]) == [
+            ('PATCH', 'repos/owner/repo/issues/comments/7')]
+    assert api.pull['state'] == 'closed'
+    assert CLOSED_MARKER in api.comments[0]['body'].splitlines()
+
+
+def test_attempt_and_success_reopen_texts_split_the_claim(tmp):
+    """Only the post-PATCH text may say the reopen has landed.
+
+    While the patch is still untried the comment must not claim it,
+    because GitHub can refuse it and the last comment on the PR would
+    then promise a reopen that never happened. The attempt text and
+    the success text are driven through the real flow here: both carry
+    the CI recovery contract, the success text states the reopen as
+    accomplished, and the attempt text never carries that wording —
+    the positive half is what makes that absence assertable.
+    """
+    del tmp
+    api = _api(
+        state='closed', comments=[_gate_comment(closed=True)],
+        timeline=[_closed_event()])
+    code, writes, _output, _error = _execute(api, _valid_body())
+    assert code == 0
+    attempt, success = (_comment_body(writes[0]), _comment_body(writes[2]))
+    for body in (attempt, success):
+        _assert_ci_recovery_note(body)
+    rendered_attempt = ' '.join(attempt.split())
+    rendered_success = ' '.join(success.split())
+    assert 'has been reopened' in rendered_success, rendered_success
+    assert 'has been reopened' not in rendered_attempt, rendered_attempt
+
+    refused = _RefusedReopenApi()
+    code, writes, _output, _error = _execute(refused, _valid_body())
+    assert code == 1
+    refused_attempt = ' '.join(_comment_body(writes[0]).split())
+    _assert_ci_recovery_note(_comment_body(writes[0]))
+    assert 'has been reopened' not in refused_attempt, refused_attempt
 
 
 def test_human_closed_pull_is_not_written(tmp):

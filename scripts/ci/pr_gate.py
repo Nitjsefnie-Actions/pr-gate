@@ -350,10 +350,20 @@ Fix every item above, including these two repository requirements:
 """
 
 
-def _reopen_text(actor):
+def _attempt_text(actor):
+    """The comment written before the reopen PATCH runs.
+
+    Nothing here claims the reopen landed: GitHub can refuse it, and
+    when it does, this same comment is rewritten with the refusal and
+    the way out. The CI paragraphs describe what the author must do
+    once the reopen does land; they are the recovery for the success
+    case the attempt is reaching for.
+    """
     return (
-        f'@{actor} — the body now names a claimed issue and matches '
-        'the pull request\ntemplate, so I am reopening it automatically.\n'
+        f'@{actor} — every condition now passes; the gate is attempting '
+        'the automatic reopen.\n'
+        'If GitHub refuses it, this comment is replaced with the refusal '
+        'and the way out.\n'
         '\n'
         'One step is still yours. This reopen is authored by '
         f'`{BOT}` with\nthe workflow\'s own `GITHUB_TOKEN`, and GitHub '
@@ -372,6 +382,55 @@ def _reopen_text(actor):
         'extra\napproval for unattributed changes can hold the merge even '
         'with every\ncheck green. If that happens, close and reopen this '
         'pull request\nyourself once before merging.\n'
+        f'{MARKER}\n')
+
+
+def _reopen_text(actor):
+    """The comment the attempt is rewritten with once the reopen PATCH
+    has landed: the reopen is stated as accomplished.
+    """
+    return (
+        f'@{actor} — every condition now passes; the pull request has '
+        'been reopened automatically.\n'
+        '\n'
+        'One step is still yours. This reopen is authored by '
+        f'`{BOT}` with\nthe workflow\'s own `GITHUB_TOKEN`, and GitHub '
+        'creates the CI runs a\n`reopened` event from that token triggers '
+        'without jobs and held for\napproval: it does not refuse them, and '
+        'it does not start them. This\ngate cannot release them, so the '
+        'head this reopen leaves behind has no CI\nverdict yet.\n'
+        '\n'
+        'Push to the branch once more to get one; any push does it, and an '
+        'empty\ncommit is enough: `git commit --allow-empty -m "rerun the '
+        'checks"` then `git\npush`. That push is yours, so the runs it '
+        'triggers run as your own event.\n'
+        f'{MARKER}\n')
+
+
+def _refusal_text(actor, error):
+    """The comment the attempt is rewritten with when GitHub refuses
+    the reopen PATCH.
+
+    Prose only: `_assert_gate_message` reads any rendered bullet as a
+    reasons list, and this comment carries no reasons. The marker pair
+    stays, so the gate still owns the close and a later edit of the
+    body still retries the gate.
+    """
+    return (
+        f'@{actor} — the automatic reopen was refused; this pull request '
+        'is still closed.\n'
+        '\n'
+        f'GitHub\'s reason: {error}\n'
+        '\n'
+        'That usually means the branch was force-pushed while the pull '
+        'request was\nclosed, so the head GitHub recorded for it no longer '
+        'matches the branch.\n'
+        '\n'
+        'Editing the body again cannot clear this state. Two ways out: ask '
+        'a\nmaintainer to reopen this pull request, or open a fresh pull '
+        'request from\nthe same branch with the same body. The commits are '
+        'still on the branch,\nand a fresh pull request passes this gate '
+        'outright on `opened`.\n'
         f'{MARKER}\n')
 
 
@@ -479,10 +538,24 @@ def _run(api, repo, pr, actor, template, template_path):
             # A retry can finish the transition or reconcile an already-open PR.
             _write_comment(
                 api, repo, pr, comment,
-                _reopen_text(actor) + f'{CLOSED_MARKER}\n')
+                _attempt_text(actor) + f'{CLOSED_MARKER}\n')
             _revalidate(
                 api, pull_endpoint, state, timeline_endpoint, closer)
-            _write(api, 'PATCH', pull_endpoint, {'state': 'open'})
+            try:
+                _write(api, 'PATCH', pull_endpoint, {'state': 'open'})
+            except _GateError as error:
+                if error.status is None or error.status >= 500:
+                    raise
+                # A 4xx is GitHub's refusal, not a failed transport: the
+                # pull request stays closed and gate-owned, and the author
+                # needs the reason and the way out. A concurrent
+                # modification still aborts without a refusal comment.
+                _revalidate(
+                    api, pull_endpoint, state, timeline_endpoint, closer)
+                _write_comment(
+                    api, repo, pr, comment,
+                    _refusal_text(actor, str(error)) + f'{CLOSED_MARKER}\n')
+                raise
             _revalidate(
                 api, pull_endpoint, 'open', timeline_endpoint, closer)
             _write_comment(api, repo, pr, comment, _reopen_text(actor))
