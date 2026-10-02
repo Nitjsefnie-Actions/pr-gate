@@ -4,6 +4,7 @@ import re
 from urllib.parse import quote
 
 if __package__:
+    # pylint: disable-next=relative-beyond-top-level
     from .pr_body import template_rules
 else:
     from pr_body import template_rules

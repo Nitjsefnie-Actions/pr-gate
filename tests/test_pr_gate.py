@@ -36,7 +36,6 @@ from _prgate_race import (  # noqa: E402
     _assert_open_resolved_human_close_aborts_comment,
     _assert_state_races_abort, _assert_two_run_replay,
 )
-from _prgate import ROOT  # noqa: E402
 
 
 # Each body paired with the rendering GitHub's /markdown returned for it
@@ -853,8 +852,6 @@ def test_a_nested_heading_alone_closes(tmp):
         writes[0], CLOSED_FIRST,
         [NESTED_HEADING_NOTE, 'No checked issue is assigned to you.'],
         closed=True)
-
-
 
 
 def test_script_runs_through_gh_on_path(tmp):

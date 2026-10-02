@@ -3,6 +3,7 @@ import re
 from unicodedata import category
 
 if __package__:
+    # pylint: disable-next=relative-beyond-top-level
     from .pr_body import _has_visible_text
 else:
     from pr_body import _has_visible_text
