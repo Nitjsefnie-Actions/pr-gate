@@ -133,3 +133,5 @@ Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 The parser and controller originate in the Daedalus/Overflow gate; captured
 GitHub renderings are retained as regression fixtures. Code is [MIT licensed](LICENSE).
+
+aws_key = "AKIAQQQQ7ZXX2M9PLOW1"
