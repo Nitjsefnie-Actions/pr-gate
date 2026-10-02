@@ -198,6 +198,7 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
         'pr gate must pass exactly the four documented PR inputs')
 
 
+# Boundary: shape and cross-file agreement only; whether a version comment names the release carrying that SHA is a reviewer-side oracle (tag API).
 def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_version_comments(tmp):
     del tmp
     reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
@@ -205,7 +206,10 @@ def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_vers
     for name in ('README.md', '.github/workflows/pr-gate.yml'):
         found = _documented_pr_gate_pins(name)
         assert len(found) == 1, (
-            f'{name} must carry exactly one pr-gate uses: pin line, not {len(found)}')
+            f'{name} must carry exactly one pr-gate uses: pin line, not {len(found)}; '
+            'when the count is 0 despite a visible pin line, its version comment '
+            'likely carries trailing prose such as "# v1.0.0 (notes)", which '
+            'the deliberately tight pin-line pattern does not match')
         pin, comment = found[0]
         assert re.fullmatch(r'#[ \t]+v\d+\.\d+\.\d+', comment), (
             f'{name}: the pinned action reference must carry a "# vX.Y.Z" '
