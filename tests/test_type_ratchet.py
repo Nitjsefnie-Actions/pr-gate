@@ -94,6 +94,17 @@ def test_missing_general_diagnostics_key_counts_zero_errors(tmp):
     assert '0 measured' in result.stdout
 
 
+def test_non_dict_diagnostic_entry_fails_loudly(tmp):
+    _baseline(tmp / 'baseline.json', 0)
+    result = _run('--baseline', str(tmp / 'baseline.json'),
+                  document={'generalDiagnostics': ['not a diagnostic'],
+                            'summary': {'filesAnalyzed': 1}})
+    assert result.returncode == 2, (
+        'an unreadable diagnostic entry is a broken gate: an undercount '
+        'must never read as a clean one')
+    assert result.stderr
+
+
 def test_document_read_from_stdin_when_no_path_argument(tmp):
     _baseline(tmp / 'baseline.json', 0)
     result = _run('--baseline', str(tmp / 'baseline.json'),

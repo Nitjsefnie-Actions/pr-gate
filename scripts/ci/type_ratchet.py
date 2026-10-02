@@ -39,9 +39,12 @@ def count_errors(document):
     diagnostics = document.get('generalDiagnostics', [])
     if not isinstance(diagnostics, list):
         raise ValueError('"generalDiagnostics" is not a list')
+    for diagnostic in diagnostics:
+        if not isinstance(diagnostic, dict):
+            raise ValueError(
+                '"generalDiagnostics" carries a non-object entry')
     return sum(1 for diagnostic in diagnostics
-               if isinstance(diagnostic, dict)
-               and diagnostic.get('severity') == 'error')
+               if diagnostic.get('severity') == 'error')
 
 
 def load_baseline(path):

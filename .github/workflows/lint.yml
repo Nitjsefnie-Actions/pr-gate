@@ -12,9 +12,10 @@ name: lint
 #
 #   pylint — where are the DEFECTS? Unused imports/variables, undefined
 #   names, dangerous defaults, redefined names, bare excepts. The checked
-#   in .pylintrc turns every style/convention/refactor opinion off
-#   (disable=all + enable=E,W) so a red build is always a finding about
-#   correctness, never about taste.
+#   in .pylintrc turns the style categories off (disable=C, R, I) and
+#   names exactly the error/warning messages a real finding forced, with
+#   no category enable to undo them, so a red build is always a finding
+#   about correctness, never about taste.
 #
 # Both tools are hash-pinned in requirements-lint.txt, which Dependabot
 # watches for version bumps; a version inside a run: block is invisible
