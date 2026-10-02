@@ -404,6 +404,12 @@ def _reopen_text(actor):
         'empty\ncommit is enough: `git commit --allow-empty -m "rerun the '
         'checks"` then `git\npush`. That push is yours, so the runs it '
         'triggers run as your own event.\n'
+        '\n'
+        'Merging can stay blocked even so: GitHub can count this bot '
+        'reopen\nas an unattributed change, and a ruleset that requires '
+        'extra\napproval for unattributed changes can hold the merge even '
+        'with every\ncheck green. If that happens, close and reopen this '
+        'pull request\nyourself once before merging.\n'
         f'{MARKER}\n')
 
 
