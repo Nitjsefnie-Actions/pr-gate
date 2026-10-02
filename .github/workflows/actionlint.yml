@@ -22,7 +22,9 @@ name: actionlint
 #
 # Both tools are pinned. actionlint is verified by checksum rather than
 # trusted from the release page, because a linter that runs before every
-# other gate is a supply-chain position worth defending.
+# other gate is a supply-chain position worth defending. zizmor is
+# hash-pinned in requirements-zizmor.txt at the repo root, which Dependabot
+# watches for version bumps.
 #
 # Suppressions belong at the offending line as a `# zizmor: ignore[rule]`
 # comment WITH a justification (see eslint.yml), never as a raised
@@ -81,9 +83,7 @@ jobs:
 
       - name: Install zizmor
         id: install_zizmor
-        run: |
-          python -m pip install --upgrade pip
-          pip install zizmor==1.29.0
+        run: python -m pip install --require-hashes -r requirements-zizmor.txt
 
       - name: actionlint
         id: actionlint

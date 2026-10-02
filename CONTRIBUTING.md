@@ -37,7 +37,9 @@ discovery/execution. Individual suites also run directly, for example
 `python tests/test_action.py` or `python tests/test_pr_rendered_content.py`.
 CI runs the same tests and Python lint on Linux, Windows, and macOS across all
 four supported Python versions. The separate workflow audit pins actionlint
-1.7.12 and zizmor 1.29.0; its installation steps checksum-verify actionlint.
+1.7.12 and zizmor — zizmor's version lives in `requirements-zizmor.txt`,
+hash-verified at install time and updated by Dependabot; its installation
+steps checksum-verify actionlint.
 Zizmor can run offline locally; disclose that limitation when reporting results.
 No separate static type checker is currently configured.
 

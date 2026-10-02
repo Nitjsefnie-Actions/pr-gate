@@ -7,6 +7,7 @@
 !SECURITY.md
 !action.yml
 !requirements-test.txt
+!requirements-zizmor.txt
 !run_tests.py
 !.github/
 .github/*
