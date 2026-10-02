@@ -117,6 +117,17 @@ def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
     for step in coverage_steps:
         assert step['if'] == measured_if, (
             'every coverage step must pin the one measured cell exactly')
+    # An exact `if:` is fail-green on its own: a matrix edit dropping either
+    # operand leaves the condition matching no cell, the gate silently stops
+    # running, and nothing else names the cell the coverage steps depend on.
+    # Tie both operands back into the pinned matrix lists.
+    matrix = _workflow('tests.yml')['jobs']['suites']['strategy']['matrix']
+    assert 'ubuntu-latest' in matrix['os'], (
+        "the coverage steps' matrix.os operand 'ubuntu-latest' must stay in "
+        'the pinned os matrix, or the gate runs on no cell')
+    assert '3.13' in matrix['python'], (
+        "the coverage steps' matrix.python operand '3.13' must stay in the "
+        'pinned python matrix, or the gate runs on no cell')
     unmeasured_runs = ['python run_tests.py',
                        'python -m ruff check --select E9,F63,F7,F82 .',
                        'python -m pip install -r requirements-test.txt']
@@ -171,7 +182,12 @@ def test_coverage_thresholds_floor_is_seeded_below_measurement(tmp):
         'floor must be a number with exactly one decimal place')
     assert re.search(r'"measured":\s*\d+\.\d\b', text), (
         'measured must be a number with exactly one decimal place')
-    assert isinstance(python['floor'], float) and isinstance(python['measured'], float)
+    assert isinstance(python['floor'], float), (
+        'coverage.python.floor must be a JSON float, '
+        f"got {python['floor']!r}")
+    assert isinstance(python['measured'], float), (
+        'coverage.python.measured must be a JSON float, '
+        f"got {python['measured']!r}")
     assert 0 <= python['floor'] <= python['measured'] <= 100, (
         'the floor seeds below the measured value and never above it')
     ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
