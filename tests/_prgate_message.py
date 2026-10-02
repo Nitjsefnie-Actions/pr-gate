@@ -14,8 +14,14 @@ RESOLVED_FIRST = (
     '@alice — every condition now passes; nothing further is needed '
     'from you.')
 REOPEN_FIRST = (
-    '@alice — the body now names a claimed issue and matches the pull '
-    'request')
+    '@alice — every condition now passes; the pull request has been '
+    'reopened automatically.')
+ATTEMPT_FIRST = (
+    '@alice — every condition now passes; the gate is attempting the '
+    'automatic reopen.')
+REFUSED_FIRST = (
+    '@alice — the automatic reopen was refused; this pull request is '
+    'still closed.')
 REASONS_END = (
     'Fix every item above, including these two repository requirements:')
 
