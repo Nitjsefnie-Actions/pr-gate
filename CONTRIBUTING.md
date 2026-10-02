@@ -13,7 +13,10 @@ so they need no token and make no live PR/comment/state changes.
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -r requirements-test.txt -r requirements-lint.txt
+python -m pip install -r requirements-test.txt
+# --require-hashes flips pip into hash-checking mode for the whole
+# invocation, so the unhashed test manifest installs separately.
+python -m pip install --require-hashes -r requirements-lint.txt
 ```
 
 On Windows, create the environment with `python -m venv .venv` and activate
