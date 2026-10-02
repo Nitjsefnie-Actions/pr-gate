@@ -673,7 +673,11 @@ def test_pin_sync_step_fails_when_a_file_carries_no_pin_line(tmp):
     assert ("Expected exactly one 'uses: Nitjsefnie-Actions/pr-gate@' line "
             'in README.md') in result.stdout, result.stdout
     assert 'found 0' in result.stdout, result.stdout
-    assert 'trailing prose' in result.stdout, result.stdout
+    assert 'removed, renamed, or re-spelled' in result.stdout, result.stdout
+    assert 'trailing prose' not in result.stdout, (
+        'the count-0 cause must not blame comment trailing prose: the '
+        "count-guard's grep pattern ends at '@', so nothing on the far side "
+        'of the @ can move the count')
 
 
 def test_pin_sync_step_fails_when_a_file_carries_two_pin_lines(tmp):

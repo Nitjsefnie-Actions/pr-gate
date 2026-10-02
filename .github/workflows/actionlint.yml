@@ -89,7 +89,7 @@ jobs:
           for file in README.md .github/workflows/pr-gate.yml; do
             if [ "$(grep -c 'uses: Nitjsefnie-Actions/pr-gate@' "$file")" -ne 1 ]; then
               echo "Expected exactly one 'uses: Nitjsefnie-Actions/pr-gate@' line in $file, found $(grep -c 'uses: Nitjsefnie-Actions/pr-gate@' "$file")."
-              echo "A count of 0 usually means the pin line's '# vX.Y.Z' comment carries trailing prose; a count above 1 means a second 'uses:' line joined the file."
+              echo "A count of 0 usually means the 'uses:' pin line was removed, renamed, or re-spelled so it no longer matches; a count above 1 means a second 'uses:' line joined the file."
               exit 1
             fi
           done
