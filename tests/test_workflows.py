@@ -518,8 +518,9 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
 # in for time, so the attempt-scaled backoff is pinned without waiting.
 _PIP_AUDIT_STUB = r"""#!/usr/bin/env bash
 # Test double for the pip-audit executable: appends one line per call ("$*")
-# to $PIP_AUDIT_LOG and replays the call-th "exit|output" line of
-# $PIP_AUDIT_PLAN.
+# to $PIP_AUDIT_LOG and replays the call-th "exit|payload" line of
+# $PIP_AUDIT_PLAN. A payload prefixed "err " is emitted on stderr (the way
+# pip-audit reports a failed attempt's diagnostic); anything else on stdout.
 set -e
 printf '%s\n' "$*" >> "$PIP_AUDIT_LOG"
 index=0
@@ -533,7 +534,15 @@ if [ -z "$line" ]; then
   echo "pip-audit stub: the plan has no call ${index}" >&2
   exit 99
 fi
-printf '%s\n' "${line#*|}"
+payload=${line#*|}
+case $payload in
+  'err '*)
+    printf '%s\n' "${payload#err }" >&2
+    ;;
+  *)
+    printf '%s\n' "$payload"
+    ;;
+esac
 exit "${line%%|*}"
 """
 
@@ -606,9 +615,13 @@ def test_audit_step_reports_findings_immediately_without_a_retry(tmp):
 
 def test_audit_step_retries_a_reset_connection_then_succeeds(tmp):
     result, calls, sleeps = _run_audit_step(
-        tmp, ['1|Connection reset by peer', '0|No vulnerabilities found'],
+        tmp, ['1|err Connection reset by peer', '0|No vulnerabilities found'],
         ('requirements-test.txt',))
     assert result.returncode == 0
+    # The failed attempt's diagnostic reaches this stdout only if the step
+    # captured stderr into audit.out (`2>&1`) AND the retry arm printed the
+    # captured file back (`tail -n 5 audit.out`); removing either loses it.
+    assert 'Connection reset by peer' in result.stdout, result.stdout
     assert len(calls) == 2, calls
     assert sleeps == ['15'], sleeps
 
