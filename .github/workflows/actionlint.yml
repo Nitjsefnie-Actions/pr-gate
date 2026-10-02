@@ -75,6 +75,32 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Check the README pin matches pr-gate.yml
+        # Dependabot's github-actions ecosystem reads workflow files and action
+        # metadata, never markdown, so it bumps .github/workflows/pr-gate.yml
+        # alone and nothing moves README.md's pin. This step is the mechanism
+        # that keeps the two synchronized: a workflow-only bump goes red here
+        # until the README pin is moved to the same release SHA under the same
+        # version comment. The pin-sync test in tests/test_workflows.py holds
+        # the workflow to this step's branches.
+        run: |
+          # Exactly one pin line per file: a second 'uses:' line would make
+          # the comparison below read whichever grep happens to list first.
+          for file in README.md .github/workflows/pr-gate.yml; do
+            if [ "$(grep -c 'uses: Nitjsefnie-Actions/pr-gate@' "$file")" -ne 1 ]; then
+              echo "Expected exactly one 'uses: Nitjsefnie-Actions/pr-gate@' line in $file, found $(grep -c 'uses: Nitjsefnie-Actions/pr-gate@' "$file")."
+              echo "A count of 0 usually means the pin line's '# vX.Y.Z' comment carries trailing prose; a count above 1 means a second 'uses:' line joined the file."
+              exit 1
+            fi
+          done
+          readme_pin=$(grep 'uses: Nitjsefnie-Actions/pr-gate@' README.md | sed 's/.*@//')
+          workflow_pin=$(grep 'uses: Nitjsefnie-Actions/pr-gate@' .github/workflows/pr-gate.yml | sed 's/.*@//')
+          if [ "$readme_pin" != "$workflow_pin" ]; then
+            echo "README.md pins '$readme_pin' but .github/workflows/pr-gate.yml pins '$workflow_pin'."
+            echo "Move the README pin to the same release SHA with its # vX.Y.Z comment; Dependabot keeps pr-gate.yml current."
+            exit 1
+          fi
+
       - name: Install actionlint
         # Downloaded and checksum-verified rather than piped from the
         # install script: `curl | bash` would make this job trust whatever
