@@ -1,8 +1,21 @@
-"""CI executes the shipped suite and audits the reusable action itself."""
-from pathlib import Path
+"""CI executes the shipped suite and audits the reusable action itself.
+
+The audit.yml step tests execute the workflow's own run-block text under
+``bash -e`` with stubs standing in only for the external boundary — the
+pip-audit executable (PyPI and the advisory database over the network) and
+sleep (time). Fakes live only at that external boundary, per CONTRIBUTING;
+everything between the stubs is the script text parsed out of the workflow,
+never retyped.
+"""
+import fnmatch
+import os
 import re
+import subprocess
+from pathlib import Path
+
 import yaml
 import _util
+from test_action import _action_bash
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,6 +52,30 @@ def _documented_pr_gate_pins(relative_path):
     """Return (pin, version comment) per pr-gate uses: line, comments kept."""
     source = (ROOT / relative_path).read_text(encoding='utf-8')
     return PR_GATE_PIN_LINE.findall(source)
+
+
+def _manifest_entries(path):
+    """Decode a requirements file into one entry per logical requirement."""
+    entries = []
+    for line in path.read_text(encoding='utf-8').splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        if line[0] in ' \t' and entries:
+            entries[-1] = entries[-1] + ' ' + stripped
+        else:
+            entries.append(stripped)
+    return entries
+
+
+def _audit_steps():
+    return _workflow('audit.yml')['jobs']['pip-audit']['steps']
+
+
+def _named_run(steps, name):
+    runs = [step['run'] for step in steps if step.get('name') == name]
+    assert len(runs) == 1, f'expected exactly one step named {name!r}'
+    return runs[0]
 
 
 def test_ci_runs_supported_platforms_and_python_versions(tmp):
@@ -86,19 +123,71 @@ def test_zizmor_pin_is_hash_pinned_and_dependabot_visible(tmp):
     ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
     assert '!requirements-zizmor.txt' in ignore, (
         'requirements-zizmor.txt must be whitelisted in .gitignore')
-    entries = []
-    for line in manifest.read_text(encoding='utf-8').splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith('#'):
-            continue
-        if line[0] in ' \t' and entries:
-            entries[-1] = entries[-1] + ' ' + stripped
-        else:
-            entries.append(stripped)
+    entries = _manifest_entries(manifest)
     assert entries, 'requirements-zizmor.txt must carry at least one requirement'
     for entry in entries:
         assert '==' in entry, f'not version-pinned: {entry}'
         assert '--hash=sha256:' in entry, f'not hash-pinned: {entry}'
+
+
+def test_audit_gate_answers_on_every_trigger_an_advisory_can_arrive_under(tmp):
+    del tmp
+    workflow = _workflow('audit.yml')
+    events = workflow['on']
+    assert set(events) == {'push', 'pull_request', 'schedule', 'workflow_dispatch'}
+    assert events['push'] == {
+        'branches': ['main'],
+        'paths-ignore': ['README.md', 'CONTRIBUTING.md',
+                         'CODE_OF_CONDUCT.md', 'LICENSE']}
+    assert not (events['pull_request'] or {})
+    assert events['schedule'] == [{'cron': '12 4 * * *'}]
+    assert workflow['concurrency'] == {
+        'group': 'audit-${{ github.event.pull_request.number || github.ref }}',
+        'cancel-in-progress': 'true'}
+
+
+def test_audit_installs_pip_audit_from_a_visible_unhashed_manifest(tmp):
+    del tmp
+    steps = _audit_steps()
+    installs = [step for step in steps if step.get('name') == 'Install pip-audit']
+    audits = [step for step in steps if step.get('name') == 'Audit dependencies']
+    assert len(installs) == 1 and len(audits) == 1
+    assert installs[0]['run'] == 'python -m pip install -r requirements-pip-audit.txt', (
+        'pip-audit must install from the manifest Dependabot watches, not an inline pin')
+    assert [step.get('name') for step in steps].index('Install pip-audit') < (
+        [step.get('name') for step in steps].index('Audit dependencies')), (
+        'the audit step must resolve pip-audit from the PATH the install step populates')
+    assert not any('--upgrade pip' in step['run'] for step in steps if 'run' in step), (
+        'the unreviewed pip upgrade is an unaudited component')
+    manifest = ROOT / 'requirements-pip-audit.txt'
+    assert manifest.is_file(), 'missing requirements-pip-audit.txt'
+    ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
+    assert '!requirements-pip-audit.txt' in ignore, (
+        'requirements-pip-audit.txt must be whitelisted in .gitignore')
+    entries = _manifest_entries(manifest)
+    assert entries, 'requirements-pip-audit.txt must carry at least one requirement'
+    for entry in entries:
+        assert '==' in entry, f'not version-pinned: {entry}'
+        assert '--hash' not in entry, (
+            'pip-audit is deliberately NOT hash-pinned: unlike the zizmor install, '
+            'its transitive tree is the subject this gate audits, and a hash pin '
+            f'would freeze that tree: {entry}')
+
+
+def test_audit_glob_covers_every_tracked_requirements_manifest(tmp):
+    del tmp
+    match = re.search(r'^manifests=\(([^)]*)\)$',
+                      _named_run(_audit_steps(), 'Audit dependencies'), re.MULTILINE)
+    assert match, 'the audit step must build its manifest list from a glob assignment'
+    patterns = match[1].split()
+    assert patterns
+    universe = subprocess.run(
+        ['git', 'ls-files', '--', '*requirements*.txt'],
+        cwd=ROOT, check=True, capture_output=True, text=True).stdout.splitlines()
+    assert universe, 'the repository tracks no requirements*.txt manifest to audit'
+    for path in universe:
+        assert any(fnmatch.fnmatch(path, pattern) for pattern in patterns), (
+            f'{path} is a tracked manifest the audit glob would miss')
 
 
 def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
@@ -137,6 +226,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     contracts = {
         'tests.yml': ({'contents': 'read'}, 'suites', None, '20'),
         'actionlint.yml': ({'contents': 'read'}, 'actionlint', None, '15'),
+        'audit.yml': ({'contents': 'read'}, 'pip-audit', None, '15'),
         'claim.yml': (None, 'claim', {'issues': 'write'}, '5'),
         'pr-gate.yml': ({'contents': 'read', 'issues': 'read',
                          'pull-requests': 'write'}, 'gate', None, '5'),
@@ -420,6 +510,163 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
     security = (ROOT / 'SECURITY.md').read_text(encoding='utf-8')
     assert 'https://github.com/Nitjsefnie-Actions/pr-gate/security/advisories/new' in security
     assert '[SECURITY.md](SECURITY.md)' in (ROOT / 'README.md').read_text(encoding='utf-8')
+
+
+# Test doubles for the audit step's external boundary only. pip-audit stands
+# in for the PyPI/advisory-network side of the step (its whole observable
+# contract here is an argv line and an exit status plus output); sleep stands
+# in for time, so the attempt-scaled backoff is pinned without waiting.
+_PIP_AUDIT_STUB = r"""#!/usr/bin/env bash
+# Test double for the pip-audit executable: appends one line per call ("$*")
+# to $PIP_AUDIT_LOG and replays the call-th "exit|output" line of
+# $PIP_AUDIT_PLAN.
+set -e
+printf '%s\n' "$*" >> "$PIP_AUDIT_LOG"
+index=0
+if [ -f "$PIP_AUDIT_COUNT" ]; then
+  index=$(cat "$PIP_AUDIT_COUNT")
+fi
+index=$((index + 1))
+printf '%s\n' "$index" > "$PIP_AUDIT_COUNT"
+line=$(sed -n "${index}p" "$PIP_AUDIT_PLAN")
+if [ -z "$line" ]; then
+  echo "pip-audit stub: the plan has no call ${index}" >&2
+  exit 99
+fi
+printf '%s\n' "${line#*|}"
+exit "${line%%|*}"
+"""
+
+_SLEEP_STUB = r"""#!/usr/bin/env bash
+# Test double for sleep: records its argument so the backoff formula is
+# pinned without waiting in real time.
+printf '%s\n' "$*" >> "$SLEEP_LOG"
+"""
+
+
+def _run_audit_step(tmp, plan, manifests=()):
+    staging = Path(tmp) / 'repo'
+    staging.mkdir()
+    for name in manifests:
+        (staging / name).write_text(f'# stand-in for {name}\n',
+                                    encoding='utf-8', newline='\n')
+    stubs = Path(tmp) / 'stubs'
+    stubs.mkdir()
+    for name, source in (('pip-audit', _PIP_AUDIT_STUB), ('sleep', _SLEEP_STUB)):
+        stub = stubs / name
+        stub.write_text(source, encoding='utf-8', newline='\n')
+        stub.chmod(0o755)
+    plan_path = Path(tmp) / 'plan.txt'
+    plan_path.write_text(''.join(f'{line}\n' for line in plan),
+                         encoding='utf-8', newline='\n')
+    script = Path(tmp) / 'audit-step.sh'
+    script.write_text(_named_run(_audit_steps(), 'Audit dependencies'),
+                      encoding='utf-8', newline='\n')
+    environment = dict(os.environ)
+    environment['PATH'] = os.pathsep.join((str(stubs), environment['PATH']))
+    environment.update(
+        PIP_AUDIT_LOG=str(Path(tmp) / 'calls.log'),
+        PIP_AUDIT_COUNT=str(Path(tmp) / 'calls.count'),
+        PIP_AUDIT_PLAN=str(plan_path),
+        SLEEP_LOG=str(Path(tmp) / 'sleeps.log'))
+    result = subprocess.run(
+        [_action_bash(), '-e', str(script)], cwd=staging, env=environment,
+        capture_output=True, text=True, timeout=120)
+
+    def lines(path):
+        return path.read_text(encoding='utf-8').splitlines() if path.exists() else []
+
+    return result, lines(Path(tmp) / 'calls.log'), lines(Path(tmp) / 'sleeps.log')
+
+
+def test_audit_step_runs_one_invocation_over_every_staged_manifest(tmp):
+    manifests = ('requirements-pip-audit.txt', 'requirements-test.txt',
+                 'requirements-zizmor.txt')
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['0|No vulnerabilities found'], manifests)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert len(calls) == 1, calls
+    argv = calls[0].split()
+    assert argv[argv.index('--progress-spinner') + 1] == 'off'
+    requirements = [argv[index + 1] for index, token in enumerate(argv)
+                    if token == '--requirement']
+    assert sorted(requirements) == sorted(manifests), calls
+    assert 'No vulnerabilities found' in result.stdout
+    assert sleeps == []
+
+
+def test_audit_step_reports_findings_immediately_without_a_retry(tmp):
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['1|Found 2 vulnerabilities'], ('requirements-test.txt',))
+    assert result.returncode == 1
+    assert 'Found 2 vulnerabilities' in result.stderr
+    assert len(calls) == 1, calls
+    assert sleeps == []
+
+
+def test_audit_step_retries_a_reset_connection_then_succeeds(tmp):
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['1|Connection reset by peer', '0|No vulnerabilities found'],
+        ('requirements-test.txt',))
+    assert result.returncode == 0
+    assert len(calls) == 2, calls
+    assert sleeps == ['15'], sleeps
+
+
+def test_audit_step_retries_a_503_service_unavailable(tmp):
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['1|503 Service Unavailable', '0|No vulnerabilities found'],
+        ('requirements-test.txt',))
+    assert result.returncode == 0
+    assert len(calls) == 2, calls
+    assert sleeps == ['15'], sleeps
+
+
+def test_audit_step_retries_a_429_too_many_requests(tmp):
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['1|429 Too Many Requests', '0|No vulnerabilities found'],
+        ('requirements-test.txt',))
+    assert result.returncode == 0
+    assert len(calls) == 2, calls
+    assert sleeps == ['15'], sleeps
+
+
+def test_audit_step_retries_a_pip_audit_service_error(tmp):
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['1|pip_audit._service.interface.ServiceError: '
+              'the vulnerability service is unavailable',
+              '0|No vulnerabilities found'],
+        ('requirements-test.txt',))
+    assert result.returncode == 0
+    assert len(calls) == 2, calls
+    assert sleeps == ['15'], sleeps
+
+
+def test_audit_step_exits_immediately_on_a_non_retryable_4xx(tmp):
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['1|404 Client Error: Not Found for url: '
+              'https://pypi.org/simple/pip-audit/'],
+        ('requirements-test.txt',))
+    assert result.returncode == 1
+    assert 'non-retryable 4xx' in result.stderr
+    assert len(calls) == 1, calls
+    assert sleeps == []
+
+
+def test_audit_step_exhausts_three_attempts_on_a_transport_failure(tmp):
+    result, calls, sleeps = _run_audit_step(
+        tmp, ['1|Connection reset by peer'] * 3, ('requirements-test.txt',))
+    assert result.returncode == 1
+    assert 'exhausted 3 attempts' in result.stderr
+    assert len(calls) == 3, calls
+    assert sleeps == ['15', '30', '45'], sleeps
+
+
+def test_audit_step_fails_loud_when_the_glob_matches_no_manifest(tmp):
+    result, calls, sleeps = _run_audit_step(tmp, [])
+    assert result.returncode != 0
+    assert 'requirements' in result.stderr and 'nothing to audit' in result.stderr
+    assert calls == [] and sleeps == []
 
 
 if __name__ == '__main__':
