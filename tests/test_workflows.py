@@ -263,6 +263,9 @@ def test_dependabot_updates_actions_and_pip_and_groups_codeql(tmp):
     security = actions['groups']['codeql-action-security']
     assert security['applies-to'] == 'security-updates'
     assert security['patterns'] == ['github/codeql-action*']
+    # The version group must keep relying on Dependabot's `applies-to` default;
+    # naming a kind here would stop the other kind from being grouped.
+    assert list(actions['groups']['codeql-action']) == ['patterns']
 
 
 def test_security_policy_and_workflow_inventory_are_shipped(tmp):
