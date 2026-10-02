@@ -10,8 +10,22 @@ updates:
     commit-message:
       prefix: ci
     groups:
-      # Init, analyze and SARIF upload must move together to one CodeQL revision.
+      # github/codeql-action's `init` and `analyze` both sit in
+      # .github/workflows/codeql.yml and must stay on one revision: `analyze`
+      # fails when its revision differs from `init`'s, so a bump that arrives
+      # as one pull request per `uses:` line can never go green. SARIF upload
+      # sits in .github/workflows/scorecard.yml, a separate workflow, and
+      # rides along in the group without sharing that requirement.
       codeql-action:
+        patterns:
+          - "github/codeql-action*"
+      # A group without `applies-to` covers version updates only. Security
+      # updates are enabled on this repository, so without this group a
+      # codeql-action security bump arrives as one pull request per `uses:`
+      # line, leaving `init` and `analyze` on different revisions inside
+      # .github/workflows/codeql.yml.
+      codeql-action-security:
+        applies-to: security-updates
         patterns:
           - "github/codeql-action*"
 

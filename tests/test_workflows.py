@@ -260,6 +260,9 @@ def test_dependabot_updates_actions_and_pip_and_groups_codeql(tmp):
         assert entry['schedule']['interval'] == 'weekly'
     actions = next(entry for entry in updates if entry['package-ecosystem'] == 'github-actions')
     assert actions['groups']['codeql-action']['patterns'] == ['github/codeql-action*']
+    security = actions['groups']['codeql-action-security']
+    assert security['applies-to'] == 'security-updates'
+    assert security['patterns'] == ['github/codeql-action*']
 
 
 def test_security_policy_and_workflow_inventory_are_shipped(tmp):
