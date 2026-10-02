@@ -12,6 +12,7 @@ from _prgate import (  # noqa: E402
     _markdown_code_spans, _text_html, _valid_body, _valid_html,
     _write_sequence,
 )
+from _prgate_message import ATTEMPT_FIRST  # noqa: E402
 import _util  # noqa: E402
 
 
@@ -438,7 +439,7 @@ def test_assigning_the_issue_reopens_the_gate_closed_pull(tmp):
         ('PATCH', 'repos/owner/repo/issues/comments/100'),
         ('PATCH', 'repos/owner/repo/pulls/99'),
         ('PATCH', 'repos/owner/repo/issues/comments/100')]
-    _assert_gate_message(writes[0], REOPEN_FIRST, closed=True)
+    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
     _assert_gate_message(writes[2], REOPEN_FIRST)
     assert api.pull['state'] == 'open'
     assert CLOSED_MARKER not in _comment_body(writes[2]).splitlines()
