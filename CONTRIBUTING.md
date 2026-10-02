@@ -13,12 +13,13 @@ so they need no token and make no live PR/comment/state changes.
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install -r requirements-test.txt
+python -m pip install -r requirements-test.txt -r requirements-lint.txt
 ```
 
 On Windows, create the environment with `python -m venv .venv` and activate
-`.venv\Scripts\Activate.ps1`. The action test uses Git Bash. PyYAML and Ruff
-are pinned development tools only; runtime modules must stay standard-library-only.
+`.venv\Scripts\Activate.ps1`. The action test uses Git Bash. The pinned
+development tools (PyYAML, Ruff, and the `requirements-lint.txt` toolchain)
+are development tools only; runtime modules must stay standard-library-only.
 
 ## Required checks
 
@@ -27,6 +28,10 @@ Run these from the repository root with the virtual environment active:
 ```bash
 python run_tests.py
 python -m ruff check --select E9,F63,F7,F82 .
+git ls-files "*.py" | xargs python -m pycodestyle
+git ls-files "*.py" | xargs pylint --rcfile=.pylintrc
+pyright --outputjson > /tmp/pyright-report.json
+python scripts/ci/type_ratchet.py /tmp/pyright-report.json
 actionlint -color .github/workflows/*.yml
 zizmor --no-progress action.yml .github/workflows/
 git diff --check
@@ -41,7 +46,18 @@ four supported Python versions. The separate workflow audit pins actionlint
 hash-verified at install time and updated by Dependabot; its installation
 steps checksum-verify actionlint.
 Zizmor can run offline locally; disclose that limitation when reporting results.
-No separate static type checker is currently configured.
+
+The Python lint and type gates run the tools pinned in
+`requirements-lint.txt` (installed with `--require-hashes`, as the workflows
+do; Dependabot proposes the version bumps). pycodestyle's line ceiling is the
+tree's measured convention — `setup.cfg` sets 100 columns — and admits E402
+for the deliberate `sys.path`-before-import harness pattern. pylint's checked
+in policy (`.pylintrc`) turns the style categories off; every per-message
+disable in it names the real finding that forced it. The type gate is the
+ratchet: pyright's error count is compared against `pyright-baseline.json`
+and fails only when it rises. Fix the error instead of editing the baseline;
+lower the baseline in the same commit as the fix it records. Never raise the
+recorded number to admit a new error.
 
 Use strict test-driven development: add a behavioral regression, run it RED for
 the intended reason, implement the smallest fix, and run it GREEN. For gate
