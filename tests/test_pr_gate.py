@@ -91,7 +91,11 @@ def test_inline_marker_mention_does_not_replace_a_new_comment(tmp):
     code, writes, _output, _error = _execute(api, _valid_body())
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+    _assert_gate_message(
+        writes[0], CLOSED_FIRST, ['Issue `#101` is not assigned to you.'],
+        closed=True)
 
 
 def test_contributor_marker_comment_is_not_selected(tmp):

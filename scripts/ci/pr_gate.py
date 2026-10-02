@@ -396,8 +396,13 @@ def _run(api, repo, pr, actor, template, template_path):
         reasons.append(_unassigned_reason(unassigned))
     elif claimed is None:
         reasons.append(UNCLAIMED_REASON)
-    closable = bool(layout) or not related_may_reference(
-        body, sections, template)
+    # A claim failure closes only what was actually checked: past the
+    # 20-reference bound just the first 20 were checked, and a body with
+    # no checked reference has nothing to recover by closing.
+    closable = bool(layout) or (
+        len(all_references) <= 20 and bool(all_references)
+        and (bool(unassigned) or claimed is None)
+    ) or not related_may_reference(body, sections, template)
 
     if not reasons:
         if state == 'closed':
