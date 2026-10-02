@@ -576,6 +576,119 @@ def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_vers
         'REVIEWED_ACTION_PINS')
 
 
+# The pin-sync step ports Nitjsefnie-Actions/claim's "Check the README pin
+# matches claim.yml" step: Dependabot's github-actions ecosystem reads
+# workflow files and action metadata, never markdown, so it bumps
+# .github/workflows/pr-gate.yml alone and nothing moves README.md's pin.
+# The step is the enforcement the prose only promises. Its observable
+# contract is an exit status plus output naming the pins it compared, and
+# the script text is the workflow's own, parsed out of actionlint.yml,
+# never retyped.
+_PIN_SYNC_STEP_NAME = 'Check the README pin matches pr-gate.yml'
+
+
+def _pin_sync_step_run():
+    return _named_run(_workflow('actionlint.yml')['jobs']['actionlint']['steps'],
+                      _PIN_SYNC_STEP_NAME)
+
+
+def _documented_pin_line(comment):
+    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    return f'- uses: Nitjsefnie-Actions/pr-gate@{reviewed} {comment}'
+
+
+def _run_pin_sync_step(tmp, *, readme, workflow):
+    staging = Path(tmp) / 'repo'
+    staging.mkdir()
+    (staging / 'README.md').write_text(readme, encoding='utf-8', newline='\n')
+    (staging / '.github/workflows').mkdir(parents=True)
+    (staging / '.github/workflows/pr-gate.yml').write_text(
+        workflow, encoding='utf-8', newline='\n')
+    script = Path(tmp) / 'pin-sync-step.sh'
+    script.write_text(_pin_sync_step_run(), encoding='utf-8', newline='\n')
+    return subprocess.run(
+        [_action_bash(), '-e', str(script)], cwd=staging,
+        capture_output=True, text=True, timeout=120)
+
+
+def test_actionlint_carries_one_pin_sync_step_before_install_actionlint(tmp):
+    del tmp
+    steps = _workflow('actionlint.yml')['jobs']['actionlint']['steps']
+    names = [step.get('name') for step in steps]
+    assert names.count(_PIN_SYNC_STEP_NAME) == 1, names
+    index = names.index(_PIN_SYNC_STEP_NAME)
+    assert set(steps[index]) == {'name', 'run'}, (
+        'the pin-sync step must be a plain run step: no id, if, env, '
+        'continue-on-error or failure suppression')
+    assert '${{' not in steps[index]['run'], (
+        'the pin-sync step must not interpolate expressions: zizmor flags '
+        'script injection through ${{ }} in run blocks')
+    assert names[index + 1] == 'Install actionlint', (
+        'the pin-sync step must precede Install actionlint')
+    assert steps[index - 1].get('uses', '').startswith('actions/setup-python@'), (
+        'the pin-sync step must follow the setup-python step')
+
+
+def test_pin_sync_step_passes_when_both_files_pin_the_same_release(tmp):
+    line = _documented_pin_line('# v1.0.1')
+    result = _run_pin_sync_step(
+        tmp,
+        readme=f'# example\n\n{line}\n',
+        workflow=f'jobs:\n  gate:\n    steps:\n      {line}\n')
+    assert result.returncode == 0, (result.stdout, result.stderr)
+
+
+def test_pin_sync_step_fails_when_the_workflow_bump_leaves_the_readme_sha_behind(tmp):
+    divergent = 'a' * 40
+    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    result = _run_pin_sync_step(
+        tmp,
+        readme=f'# example\n\n{_documented_pin_line("# v1.0.1")}\n',
+        workflow=f'jobs:\n  gate:\n    steps:\n'
+                 f'      - uses: Nitjsefnie-Actions/pr-gate@{divergent} # v1.0.1\n')
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    assert f'{reviewed} # v1.0.1' in result.stdout, result.stdout
+    assert f'{divergent} # v1.0.1' in result.stdout, result.stdout
+
+
+def test_pin_sync_step_fails_when_only_the_version_comment_diverges(tmp):
+    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    result = _run_pin_sync_step(
+        tmp,
+        readme=f'# example\n\n{_documented_pin_line("# v1.0.1")}\n',
+        workflow=f'jobs:\n  gate:\n    steps:\n'
+                 f'      {_documented_pin_line("# v1.1.0")}\n')
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    assert f'{reviewed} # v1.0.1' in result.stdout, result.stdout
+    assert f'{reviewed} # v1.1.0' in result.stdout, result.stdout
+
+
+def test_pin_sync_step_fails_when_a_file_carries_no_pin_line(tmp):
+    line = _documented_pin_line('# v1.0.1')
+    result = _run_pin_sync_step(
+        tmp,
+        readme='# example\n\nNo pin here.\n',
+        workflow=f'jobs:\n  gate:\n    steps:\n      {line}\n')
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    assert ("Expected exactly one 'uses: Nitjsefnie-Actions/pr-gate@' line "
+            'in README.md') in result.stdout, result.stdout
+    assert 'found 0' in result.stdout, result.stdout
+    assert 'trailing prose' in result.stdout, result.stdout
+
+
+def test_pin_sync_step_fails_when_a_file_carries_two_pin_lines(tmp):
+    line = _documented_pin_line('# v1.0.1')
+    result = _run_pin_sync_step(
+        tmp,
+        readme=f'# example\n\n{line}\n',
+        workflow=f'jobs:\n  gate:\n    steps:\n'
+                 f'      {line}\n      {line}\n')
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    assert ("Expected exactly one 'uses: Nitjsefnie-Actions/pr-gate@' line "
+            'in .github/workflows/pr-gate.yml') in result.stdout, result.stdout
+    assert 'found 2' in result.stdout, result.stdout
+
+
 # The job prefilters only bots and command words; the action itself declines
 # a /claim on a pull request or a closed issue with a reply, so an issue-kind
 # or issue-state limb here would leave the commander with no answer.
