@@ -19,9 +19,9 @@ from _prgate import (  # noqa: E402
     _capture, _closed_event, _comment_body, _comment_page_fields, _execute,
     _execute_without_runtime_escape, _gate_comment, _gate_module,
     _html_body, _inline_marker_comment, _issue, _markdown_code_spans,
-    _PaginationApi,
-    _recorded_writes, _run_script, _runtime_error, _script_fixtures,
-    _text_html, _valid_body, _valid_html, _write_gh_stub, _write_sequence,
+    _PaginationApi, _pull, _recorded_writes, _Response, _run_script,
+    _runtime_error, _script_fixtures, _text_html, _valid_body, _valid_html,
+    _write_gh_stub, _write_sequence, FakeApi,
 )
 from _prfootnotes import (  # noqa: E402
     NESTED_HEADING_HTML, NESTED_HEADING_NOTE)
@@ -402,6 +402,79 @@ def test_the_recovery_guard_rejects_contract_violating_bodies(tmp):
             continue
         accepted.append(term)
     assert accepted == [], accepted
+
+
+class _RefusedReopenApi(FakeApi):
+    """The reopen PATCH answers with GitHub's validation refusal."""
+
+    _DEFAULT_DATA = object()
+
+    def __init__(self, status=422, data=_DEFAULT_DATA):
+        super().__init__(
+            pull=_pull('closed'), issues={'101': _issue('alice')},
+            comments=[_gate_comment(closed=True)],
+            timeline=[_closed_event()])
+        self.refusal_status = status
+        self.refusal_data = ({
+            'message': 'Validation Failed',
+            'errors': [{'resource': 'PullRequest', 'field': 'head',
+                        'code': 'invalid'}]}
+            if data is _RefusedReopenApi._DEFAULT_DATA else data)
+
+    def request(self, method, endpoint, payload=None):
+        if method == 'PATCH' and endpoint == 'repos/owner/repo/pulls/99':
+            return _Response(self.refusal_status, self.refusal_data)
+        return super().request(method, endpoint, payload)
+
+
+def test_write_failure_message_carries_the_response_body(tmp):
+    """A refusal reason discarded from the error is a refusal unread.
+
+    GitHub refuses a reopen with 422 and its reason travels only in the
+    response body; the old message dropped it, so the stderr line and
+    the refusal comment quoted the status alone. The body's `message`
+    and `errors` are rendered into the error string (compact JSON,
+    sorted keys, cut at a bound), and the status rides the error as
+    data so the reopen path can split a 4xx refusal from a 5xx failure
+    without parsing the message. A body with no content leaves the
+    status-only message byte-identical.
+    """
+    del tmp
+    gate = _gate_module()
+
+    def raised(call):
+        try:
+            call()
+        except gate._GateError as error:
+            return error
+        raise AssertionError('_GateError was not raised')
+
+    error = raised(lambda: gate._write(
+        _RefusedReopenApi(data={'message': 'y' * 500}),
+        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'}))
+    prefix = 'GitHub returned 422 for repos/owner/repo/pulls/99: '
+    assert str(error).startswith(prefix), error
+    detail = str(error)[len(prefix):]
+    assert detail.startswith('yyy'), detail
+    assert len(detail) == gate._BODY_DETAIL_LIMIT, detail
+    assert detail.endswith('...'), detail
+    assert error.status == 422
+
+    refused = raised(lambda: gate._write(
+        _RefusedReopenApi(), 'PATCH', 'repos/owner/repo/pulls/99',
+        {'state': 'open'}))
+    assert str(refused) == (
+        'GitHub returned 422 for repos/owner/repo/pulls/99: '
+        'Validation Failed; '
+        '{"code":"invalid","field":"head","resource":"PullRequest"}')
+    assert refused.status == 422
+
+    bare = raised(lambda: gate._write(
+        _RefusedReopenApi(status=500, data=None),
+        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'}))
+    assert str(bare) == (
+        'GitHub returned 500 for repos/owner/repo/pulls/99')
+    assert bare.status == 500
 
 
 def test_human_closed_pull_is_not_written(tmp):

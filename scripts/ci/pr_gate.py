@@ -133,7 +133,51 @@ class GhApi:
 
 
 class _GateError(RuntimeError):
-    pass
+    """A gate-level API failure. `status` is the HTTP status GitHub
+    returned when there is one, and None on a transport failure.
+    """
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
+
+
+_BODY_DETAIL_LIMIT = 300
+
+
+def _body_detail(data):
+    """Renders a failed write's response body as one bounded line.
+
+    GitHub's refusal reason travels in the body a 422 returns, so the
+    error string must carry the body's `message` and `errors` beside
+    the status: without them the refusal comment quotes a status code
+    and nothing else. Rendering is compact JSON with sorted keys, so
+    the same body always renders identically, collapsed to one line and
+    cut at `_BODY_DETAIL_LIMIT` characters. An absent or empty body
+    renders as the empty string, which keeps the status-only message
+    the `_read`/`_page` surfaces (and every pinned fixture with no
+    body) already carry.
+    """
+    if not data:
+        return ''
+    if isinstance(data, dict):
+        parts = []
+        message = data.get('message')
+        if isinstance(message, str) and message:
+            parts.append(message)
+        errors = data.get('errors')
+        if isinstance(errors, list) and errors:
+            parts.append('; '.join(
+                error if isinstance(error, str) else json.dumps(
+                    error, sort_keys=True, separators=(',', ':'))
+                for error in errors))
+        detail = '; '.join(parts)
+    else:
+        detail = json.dumps(data, sort_keys=True, separators=(',', ':'))
+    detail = ' '.join(detail.split())
+    if len(detail) > _BODY_DETAIL_LIMIT:
+        detail = detail[:_BODY_DETAIL_LIMIT - 3] + '...'
+    return detail
 
 
 def _response(api, method, endpoint, payload=None):
@@ -164,7 +208,11 @@ def _read(api, method, endpoint, payload=None):
 def _write(api, method, endpoint, payload):
     response = _response(api, method, endpoint, payload)
     if not 200 <= response.status < 300:
-        raise _GateError(f'GitHub returned {response.status} for {endpoint}')
+        detail = _body_detail(response.data)
+        suffix = f': {detail}' if detail else ''
+        raise _GateError(
+            f'GitHub returned {response.status} for {endpoint}{suffix}',
+            status=response.status)
 
 
 def _gate_comment(comments):
