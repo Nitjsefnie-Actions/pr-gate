@@ -11,9 +11,12 @@ repository. Do not substitute a mutable branch or tag.
 
 ```yaml
 name: pr gate
+# pull_request_target: a fork's pull_request token is read-only, so its
+# comment and close would silently do nothing. The pinned action reads the
+# template at the PR's base SHA and runs no pull-request code.
 on:
   pull_request_target:
-    types: [opened, edited, reopened]
+    types: [opened, edited, reopened, ready_for_review]
 permissions:
   contents: read
   issues: read
@@ -23,7 +26,12 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gate:
-    if: github.event.pull_request.user.type != 'Bot'
+    # A reopen is authored by github-actions[bot] with this workflow's own
+    # github.token, and GitHub's no-recursion exception holds such an event's
+    # pull_request runs for approval: a draft closed and reopened loses its CI.
+    if: >-
+      github.event.pull_request.user.type != 'Bot'
+      && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

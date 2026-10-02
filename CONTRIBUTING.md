@@ -51,10 +51,11 @@ before changing structured parser outputs.
 
 ## Security boundaries
 
-Consumer workflows use `pull_request_target` only for opened, edited, and
-reopened events, skip Bot authors, grant only the permissions documented in
-README, and never cancel an in-progress run for the same PR. Their action
-reference must be a reviewed full SHA.
+Consumer workflows use `pull_request_target` only for opened, edited,
+reopened, and ready_for_review events, skip Bot authors and draft pull
+requests, grant only the permissions documented in README, and never cancel an
+in-progress run for the same PR. Their action reference must be a reviewed full
+SHA.
 
 The action executes only code under its immutable `github.action_path`.
 Never add a PR-head checkout, execute consumer scripts, interpolate PR text

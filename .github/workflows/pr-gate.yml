@@ -3,9 +3,11 @@ name: pr gate
 # Privileged base-branch admission runs only the reviewed, immutable
 # SHA-pinned pr-gate action.
 # Metadata is passed as inputs; no PR-head code is checked out or executed.
+# A fork's pull_request token is read-only, so its comment and close would
+# silently do nothing; pull_request_target is what lets the gate act.
 on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
-    types: [opened, edited, reopened]
+    types: [opened, edited, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -18,7 +20,12 @@ concurrency:
 
 jobs:
   gate:
-    if: github.event.pull_request.user.type != 'Bot'
+    # A reopen is authored by github-actions[bot] with this workflow's own
+    # github.token, and GitHub's no-recursion exception holds such an event's
+    # pull_request runs for approval: a draft closed and reopened loses its CI.
+    if: >-
+      github.event.pull_request.user.type != 'Bot'
+      && github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

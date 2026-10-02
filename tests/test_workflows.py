@@ -63,9 +63,17 @@ def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
     source = (ROOT / 'README.md').read_text(encoding='utf-8')
     example = re.search(r'```yaml\n(.*?)\n```', source, re.DOTALL)
     assert example is not None
-    workflow = yaml.load(example[1], Loader=yaml.BaseLoader)
-    assert workflow['jobs']['gate']['steps'][0]['uses'] == (
+    documented = yaml.load(example[1], Loader=yaml.BaseLoader)
+    assert documented['jobs']['gate']['steps'][0]['uses'] == (
         'Nitjsefnie-Actions/pr-gate@0000000000000000000000000000000000000000')
+    shipped = _workflow('pr-gate.yml')
+    assert documented['on'] == shipped['on'], (
+        'README trigger block must equal the shipped workflow trigger block')
+    documented_job = documented['jobs']['gate']
+    shipped_job = shipped['jobs']['gate']
+    assert ' '.join(documented_job['if'].split()) == (
+        ' '.join(shipped_job['if'].split())), (
+        'README gate condition must equal the shipped workflow gate condition')
 
 
 def test_required_pr_checks_are_unfiltered_and_keep_main_push_filters(tmp):
@@ -117,8 +125,10 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
     assert set(workflow) == {'name', 'on', 'permissions', 'concurrency', 'jobs'}, (
         'pr gate must not add workflow execution overrides')
     assert workflow['on'] == {
-        'pull_request_target': {'types': ['opened', 'edited', 'reopened']}}, (
-        'pr gate must handle only opened, edited and reopened PR targets')
+        'pull_request_target': {'types': [
+            'opened', 'edited', 'reopened', 'ready_for_review']}}, (
+        'pr gate must handle opened, edited, reopened and ready-for-review '
+        'PR targets so a draft gates when marked ready for review')
     assert workflow.get('concurrency') == {
         'group': 'pr-gate-${{ github.event.pull_request.number }}',
         'cancel-in-progress': 'false'}, 'pr gate must serialize each PR without cancellation'
@@ -126,7 +136,9 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
     assert set(job) == {'if', 'runs-on', 'timeout-minutes', 'steps'}, (
         'pr gate must not add job overrides or suppress failures')
     assert ' '.join(job['if'].split()) == (
-        "github.event.pull_request.user.type != 'Bot'"), 'pr gate must skip exactly Bot authors'
+        "github.event.pull_request.user.type != 'Bot' "
+        '&& github.event.pull_request.draft == false'), (
+        'pr gate must skip exactly Bot authors and draft pull requests')
     assert len(job['steps']) == 1, 'pr gate must execute only its pinned action'
     step = job['steps'][0]
     assert set(step) == {'uses', 'with'}, (
