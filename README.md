@@ -9,9 +9,11 @@ close, and automatically reopen a corrected PR that it closed itself.
 Pin the action to a reviewed full commit SHA from this repository. The
 `# vX.Y.Z` comment after the pin names the reviewed release carrying that
 SHA; the version comment is documentation, never the pin itself — do not
-substitute a mutable branch or tag. Dependabot moves the SHA and its version
-comment in this repository's own workflow when a release is cut, and the
-pin-sync test forces this example to follow.
+substitute a mutable branch or tag. Dependabot is expected to propose moving
+this repository's own workflow pin — SHA and version comment together —
+when a release is cut; the first such proposal (for v1.0.1) is the probe
+that demonstrates it. The pin-sync test holds this example and the workflow
+to the same reviewed SHA under the same version comment.
 
 ```yaml
 name: pr gate

@@ -93,8 +93,10 @@ release tags as a substitute for reviewable pins.
 Releases follow semantic versioning: a breaking commit bumps the major
 version, a `feat` commit the minor, and anything else the patch. `v*` tags
 are permanent reviewability metadata naming reviewed states; consumer pins
-stay full SHAs with `# vX.Y.Z` version comments that Dependabot moves when a
-release is cut.
+stay full SHAs with `# vX.Y.Z` version comments. Dependabot is expected to
+propose moving the workflow's pin — SHA and version comment together — when
+a release is cut; the first such proposal (for v1.0.1) is the probe that
+demonstrates it.
 
 Follow the [Code of Conduct](CODE_OF_CONDUCT.md). Enforcement reports go privately
 to Nitjsefnie at [zmatek.peter@gmail.com](mailto:zmatek.peter@gmail.com).
