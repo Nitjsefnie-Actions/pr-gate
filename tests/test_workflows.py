@@ -9,6 +9,7 @@ backoff. Fakes live only at that external boundary, per CONTRIBUTING;
 everything between them is the script text parsed out of the workflow,
 never retyped.
 """
+import configparser
 import fnmatch
 import json
 import os
@@ -289,6 +290,153 @@ def test_audit_glob_covers_every_tracked_requirements_manifest(tmp):
             f'{path} is a tracked manifest the audit glob would miss')
 
 
+def test_lint_manifest_is_hash_pinned_and_dependabot_visible(tmp):
+    del tmp
+    workflow = _workflow('lint.yml')
+    job = workflow['jobs']['lint']
+    runs = [step['run'] for step in job['steps'] if 'run' in step]
+    assert 'python -m pip install --require-hashes -r requirements-lint.txt' in runs, (
+        'the lint gates must install from the hash-pinned root manifest')
+    manifest = ROOT / 'requirements-lint.txt'
+    assert manifest.is_file(), 'missing requirements-lint.txt'
+    ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
+    assert '!requirements-lint.txt' in ignore, (
+        'requirements-lint.txt must be whitelisted in .gitignore')
+    entries = []
+    for line in manifest.read_text(encoding='utf-8').splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        if line[0] in ' \t' and entries:
+            entries[-1] = entries[-1] + ' ' + stripped
+        else:
+            entries.append(stripped)
+    assert entries, 'requirements-lint.txt must carry at least one requirement'
+    for entry in entries:
+        assert '==' in entry, f'not version-pinned: {entry}'
+        assert '--hash=sha256:' in entry, f'not hash-pinned: {entry}'
+    named = {entry.split('==')[0] for entry in entries}
+    assert {'pylint', 'pycodestyle', 'pyright'} <= named, (
+        'the manifest must pin the three tools the lint and types gates run')
+
+
+def test_lint_workflow_runs_both_defect_linters_from_the_pinned_manifest(tmp):
+    del tmp
+    workflow = _workflow('lint.yml')
+    job = workflow['jobs']['lint']
+    steps = job['steps']
+    runs = [step['run'] for step in steps if 'run' in step]
+    assert 'git ls-files "*.py" | xargs python -m pycodestyle' in runs, (
+        'pycodestyle must gate every tracked Python file on its exit code')
+    assert 'git ls-files "*.py" | xargs pylint --rcfile=.pylintrc' in runs, (
+        'pylint must gate every tracked Python file against the checked-in '
+        'defect-only configuration')
+    install = next((step for step in steps
+                    if 'requirements-lint.txt' in step.get('run', '')), None)
+    assert install is not None, 'the lint toolchain must be installed first'
+    install_index = steps.index(install)
+    linters = [step for step in steps
+               if step.get('run', '').startswith('git ls-files')]
+    assert len(linters) == 2, (
+        'exactly the two linters gate; nothing else runs the file list')
+    assert steps.index(linters[0]) > install_index, (
+        'both linters must run after the toolchain install')
+    assert steps.index(linters[1]) > install_index, (
+        'both linters must run after the toolchain install')
+    # One push reports both gates: pylint still runs when pycodestyle is
+    # red, never when the install itself failed (actionlint.yml's pattern).
+    assert '!cancelled()' in linters[1].get('if', ''), (
+        'pylint must not be skipped because pycodestyle found a defect')
+
+
+def test_types_workflow_gates_on_the_ratchet_after_the_toolchain(tmp):
+    del tmp
+    workflow = _workflow('types.yml')
+    job = workflow['jobs']['types']
+    steps = job['steps']
+    runs = [step['run'] for step in steps if 'run' in step]
+    assert 'python -m pip install --require-hashes -r requirements-lint.txt' in runs
+    assert any('requirements-test.txt' in run for run in runs), (
+        'pyright resolves imports from tests/, so PyYAML must be installed')
+    assert any('--outputjson' in run for run in runs), (
+        'the gate consumes the machine-readable report, so pyright must '
+        'produce one')
+    pyright_step = next((step for step in steps
+                         if '--outputjson' in step.get('run', '')), None)
+    assert pyright_step is not None
+    ratchet = next((step for step in steps
+                    if step.get('run', '').startswith(
+                        'python scripts/ci/type_ratchet.py')), None)
+    assert ratchet is not None, (
+        'a new CI step implementing a checked-in module needs a pin that '
+        'the step exists')
+    assert 'if' not in ratchet, 'no step condition may weaken the gate'
+    assert 'continue-on-error' not in ratchet, (
+        'no failure suppression may weaken the gate')
+    assert '||' not in ratchet['run'], (
+        'no error-swallowing fallback may weaken the gate')
+    assert pyright_step.get('continue-on-error') == 'true', (
+        'pyright exits 1 while the seeded backlog stands, so its own exit '
+        'must not pre-empt the ratchet verdict; only the ratchet gates')
+    install = next((step for step in steps
+                    if 'requirements-lint.txt' in step.get('run', '')), None)
+    assert install is not None
+    assert steps.index(pyright_step) > steps.index(install)
+    assert steps.index(ratchet) > steps.index(pyright_step), (
+        'the gate consumes the report the measurement step wrote')
+
+
+def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
+    del tmp
+    config = json.loads(
+        (ROOT / 'pyrightconfig.json').read_text(encoding='utf-8'))
+    assert config['typeCheckingMode'] == 'basic'
+    assert config['pythonVersion'] == '3.13'
+    assert config['pythonPlatform'] == 'All'
+    assert config['reportMissingModuleSource'] == 'none'
+    for directory in ('scripts/ci', 'tests'):
+        assert directory in config['include'], (
+            f'pyright must analyse {directory} — the issue names both')
+    assert config['include'] == ['run_tests.py', 'scripts/ci', 'tests'], (
+        'the analysis scope is exactly the tracked Python')
+    for excluded in ('**/__pycache__', '.venv'):
+        assert excluded in config['exclude']
+    pylintrc = configparser.ConfigParser()
+    pylintrc.read_string((ROOT / '.pylintrc').read_text(encoding='utf-8'))
+    messages = pylintrc['MESSAGES CONTROL']
+    disabled = {entry.strip() for entry in messages['disable'].split(',')}
+    assert {'C', 'R', 'I'} <= disabled, (
+        'style/convention/refactor checks must stay off')
+    assert 'enable' not in messages, (
+        'a category enable re-enables every specific disable listed '
+        'before it, so the E/W checks stay on by not being disabled')
+    assert {'subprocess-run-check', 'broad-exception-caught',
+            'protected-access'} <= disabled, (
+        'each per-message disable must be one a real finding forced')
+    assert len(disabled) == 6, (
+        'no disable may join without a real finding and a reason comment')
+    pycodestyle_cfg = configparser.ConfigParser()
+    pycodestyle_cfg.read_string(
+        (ROOT / 'setup.cfg').read_text(encoding='utf-8'))
+    section = pycodestyle_cfg['pycodestyle']
+    assert section['max-line-length'] == '100', (
+        'the line ceiling must stay at the measured convention')
+    ignore = section['ignore'].split(',')
+    assert 'E402' in ignore, (
+        'the sys.path-before-import harness pattern must stay admitted')
+    for default_ignored in ('E121', 'E123', 'E126', 'E226', 'E24', 'E704',
+                            'W503', 'W504'):
+        assert default_ignored in ignore, (
+            'ignore= replaces the pycodestyle defaults, so each default '
+            'must stay spelled out beside E402')
+    baseline = json.loads(
+        (ROOT / 'pyright-baseline.json').read_text(encoding='utf-8'))
+    assert isinstance(baseline.get('error_count'), int), (
+        'the recorded count must be an integer')
+    assert not isinstance(baseline.get('error_count'), bool)
+    assert baseline['error_count'] >= 0
+
+
 def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
     del tmp
     source = (ROOT / 'README.md').read_text(encoding='utf-8')
@@ -310,7 +458,7 @@ def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
 
 def test_required_pr_checks_are_unfiltered_and_keep_main_push_filters(tmp):
     del tmp
-    for name in ('tests.yml', 'actionlint.yml'):
+    for name in ('tests.yml', 'actionlint.yml', 'lint.yml', 'types.yml'):
         events = _workflow(name)['on']
         assert set(events) == {'push', 'pull_request', 'workflow_dispatch'}, name
         assert not (events['pull_request'] or {}), f'{name}: filtered PR trigger'
@@ -326,6 +474,9 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'tests.yml': ({'contents': 'read'}, 'suites', None, '20'),
         'actionlint.yml': ({'contents': 'read'}, 'actionlint', None, '15'),
         'audit.yml': ({'contents': 'read'}, 'pip-audit', None, '15'),
+        'lint.yml': ({'contents': 'read'}, 'lint', None, '15'),
+        'types.yml': ({'contents': 'read'}, 'types', None, '15'),
+
         'claim.yml': (None, 'claim', {'issues': 'write'}, '5'),
         'pr-gate.yml': ({'contents': 'read', 'issues': 'read',
                          'pull-requests': 'write'}, 'gate', None, '5'),
@@ -388,7 +539,9 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
         'pr gate must pass exactly the four documented PR inputs')
 
 
-# Boundary: shape and cross-file agreement only; whether a version comment names the release carrying that SHA is a reviewer-side oracle (tag API).
+# Boundary: shape and cross-file agreement only; whether a version
+# comment names the release carrying that SHA is a reviewer-side oracle
+# (tag API).
 def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_version_comments(tmp):
     del tmp
     reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
@@ -600,7 +753,10 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
         'SECURITY.md', '.github/dependabot.yml', '.github/workflows/claim.yml',
         '.github/workflows/codeql.yml', '.github/workflows/scorecard.yml',
         '.github/workflows/pr-gate.yml', '.github/workflows/secrets.yml',
-        '.gitleaks.toml']
+        '.github/workflows/lint.yml', '.github/workflows/types.yml',
+        '.gitleaks.toml', 'pyrightconfig.json', 'pyright-baseline.json',
+        '.pylintrc', 'requirements-lint.txt', 'setup.cfg',
+        'scripts/ci/type_ratchet.py', 'tests/test_type_ratchet.py']
     ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
     assert ignore[0] == '*'
     for name in required:

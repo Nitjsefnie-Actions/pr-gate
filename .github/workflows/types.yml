@@ -1,0 +1,70 @@
+name: types
+
+# The static type checker over the tree's Python. The tree's only static
+# check until now was `ruff check --select E9,F63,F7,F82`; nothing
+# answered "what types does this code actually have". This code parses
+# untrusted pull-request bodies and writes to pull requests with a write
+# token, so a typing defect is an admission-gate defect.
+#
+# pyright runs in basic mode over exactly the tracked Python
+# (pyrightconfig.json: run_tests.py, scripts/ci, tests), version-pinned
+# in requirements-lint.txt. It resolves `import yaml` in tests/ through
+# the test dependencies installed below.
+#
+# The gate is the RATCHET, not pyright's exit code: the tree starts from
+# a measured backlog (pyright-baseline.json, seeded from a real run),
+# and the ratchet fails only when the count RISES, so the backlog does
+# not block adoption and a new type error cannot land unreviewed. Lower
+# the baseline freely; raise it only in the same commit as the fix that
+# justifies the new number.
+
+on:
+  push:
+    # Default branch only: a pull-request head already gets one run from
+    # the `pull_request` event below, and an unfiltered `push` schedules
+    # the same commit a second time under a different ref, which the
+    # `concurrency` group cannot collapse.
+    branches: [main]
+    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: types-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  types:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install lint toolchain
+        run: python -m pip install --require-hashes -r requirements-lint.txt
+
+      - name: Install test dependencies
+        # PyYAML, so pyright resolves `import yaml` in tests/.
+        run: python -m pip install -r requirements-test.txt
+
+      - name: pyright
+        # The ratchet, not this step's exit, is the gate: with the seeded
+        # backlog standing, pyright exits 1 on every run, and its exit
+        # code may not pre-empt the recorded-count comparison. A crash
+        # that destroys the report still fails the job — the gate step
+        # cannot read a report that was never written.
+        continue-on-error: true
+        run: pyright --outputjson > "$RUNNER_TEMP/pyright-report.json"
+
+      - name: Type-error ratchet
+        run: python scripts/ci/type_ratchet.py "$RUNNER_TEMP/pyright-report.json"

@@ -1,0 +1,70 @@
+name: lint
+
+# The defect linters over every tracked Python file. The tree's only
+# Python check until now was `ruff check --select E9,F63,F7,F82` (syntax
+# errors, invalid comparisons, misplaced statements, undefined names), so
+# these two answer what it cannot:
+#
+#   pycodestyle — is this Python CONVENTIONAL? PEP 8's compile-time rules:
+#   indentation, whitespace, blank lines, trailing whitespace, imports on
+#   their own line. Its exit code is the verdict; a score line is
+#   decoration.
+#
+#   pylint — where are the DEFECTS? Unused imports/variables, undefined
+#   names, dangerous defaults, redefined names, bare excepts. The checked
+#   in .pylintrc turns every style/convention/refactor opinion off
+#   (disable=all + enable=E,W) so a red build is always a finding about
+#   correctness, never about taste.
+#
+# Both tools are hash-pinned in requirements-lint.txt, which Dependabot
+# watches for version bumps; a version inside a run: block is invisible
+# to it. Both gates read the tool's exit code — a lint score of 10.00/10
+# has coexisted with a red exit before, so the score is never consulted.
+
+on:
+  push:
+    # Default branch only: a pull-request head already gets one run from
+    # the `pull_request` event below, and an unfiltered `push` schedules
+    # the same commit a second time under a different ref, which the
+    # `concurrency` group cannot collapse.
+    branches: [main]
+    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Install lint toolchain
+        id: install_lint
+        run: python -m pip install --require-hashes -r requirements-lint.txt
+
+      - name: pycodestyle
+        # `git ls-files` so the gates measure exactly the tracked Python.
+        run: git ls-files "*.py" | xargs python -m pycodestyle
+
+      - name: pylint
+        # Runs even when pycodestyle is red, so one push reports both
+        # gates — the pattern actionlint.yml uses for actionlint/zizmor.
+        # Not when the install itself failed, which would report a tool
+        # bug as a clean audit.
+        if: ${{ !cancelled() && steps.install_lint.outcome == 'success' }}
+        run: git ls-files "*.py" | xargs pylint --rcfile=.pylintrc
