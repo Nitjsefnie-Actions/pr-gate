@@ -87,7 +87,9 @@ lookup cache between assignment and bug-title validation. Larger sets receive
 a corrective comment.
 
 The gate maintains one bot-owned marker comment. Layout/content failures can
-close the PR; uncertain references can leave it open with a corrective comment.
+close the PR, as can a claim failure with at least one checked issue reference;
+more than twenty references, or no checked reference at all, leave the PR open
+with a corrective comment.
 A corrective edit retries the same PR, and a gate-owned close reopens once all
 conditions pass. That reopen is authored by the bot with the workflow's own
 `GITHUB_TOKEN`, so GitHub creates the CI runs it triggers without jobs and

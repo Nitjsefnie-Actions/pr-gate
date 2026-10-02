@@ -6,10 +6,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _prgate import (  # noqa: E402
-    CLOSED_FIRST, GITHUB_HTML, OPEN_FIRST, _api, _assert_gate_message,
-    _assert_no_writes, _execute, _issue, _issue_gets,
-    _issue_html, _html_body, _layout_body, _markdown_code_spans, _text_html,
-    _comment_body, _valid_body, _valid_html, _write_sequence,
+    CLOSED_FIRST, CLOSED_MARKER, GITHUB_HTML, OPEN_FIRST, REOPEN_FIRST,
+    _api, _assert_gate_message, _assert_no_writes, _comment_body, _execute,
+    _issue, _issue_gets, _issue_html, _html_body, _layout_body,
+    _markdown_code_spans, _text_html, _valid_body, _valid_html,
+    _write_sequence,
 )
 import _util  # noqa: E402
 
@@ -33,10 +34,13 @@ def test_first_claimed_second_unassigned_names_the_second(tmp):
     code, writes, _output, _error = _execute(
         api, _valid_body('Fixes #101\nFixes #104'))
     assert code == 0
+    assert _output == 'closed\n'
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['Issue `#104` is not assigned to you.'])
+        writes[0], CLOSED_FIRST, ['Issue `#104` is not assigned to you.'],
+        closed=True)
     _assert_numbers_code_spanned(_comment_body(writes[0]))
 
 
@@ -55,10 +59,11 @@ def test_two_unassigned_closing_issues_are_named_together(tmp):
         api, _valid_body('Fixes #101\nFixes #104\nFixes #105'))
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST,
-        ['Issues `#104` and `#105` are not assigned to you.'])
+        writes[0], CLOSED_FIRST,
+        ['Issues `#104` and `#105` are not assigned to you.'], closed=True)
     _assert_numbers_code_spanned(_comment_body(writes[0]))
 
 
@@ -83,11 +88,12 @@ def test_a_punctuated_closing_keyword_still_needs_the_claim(tmp):
         try:
             assert code == 0, 'the gate exited nonzero'
             assert _write_sequence(writes) == [
-                ('POST', 'repos/owner/repo/issues/99/comments')], (
-                    'the gate did not comment exactly once')
+                ('POST', 'repos/owner/repo/issues/99/comments'),
+                ('PATCH', 'repos/owner/repo/pulls/99')], (
+                    'the gate did not comment and close exactly once')
             _assert_gate_message(
-                writes[0], OPEN_FIRST,
-                ['Issue `#104` is not assigned to you.'])
+                writes[0], CLOSED_FIRST,
+                ['Issue `#104` is not assigned to you.'], closed=True)
             _assert_numbers_code_spanned(_comment_body(writes[0]))
         except AssertionError as error:
             failures.append((spelling, error))
@@ -118,9 +124,11 @@ def test_closing_keyword_outside_related_is_checked(tmp):
     code, writes, _output, _error = _execute(api, _valid_body())
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['Issue `#104` is not assigned to you.'])
+        writes[0], CLOSED_FIRST, ['Issue `#104` is not assigned to you.'],
+        closed=True)
     _assert_numbers_code_spanned(_comment_body(writes[0]))
 
 
@@ -140,8 +148,12 @@ def test_duplicate_closing_reference_is_looked_up_once(tmp):
     code, writes, _output, _error = _execute(api, body)
     assert code == 0
     assert len(_issue_gets(api)) == 2
+    assert _write_sequence(writes) == [
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['Issue `#104` is not assigned to you.'])
+        writes[0], CLOSED_FIRST, ['Issue `#104` is not assigned to you.'],
+        closed=True)
 
 
 def test_keyword_overflow_reports_overflow_only(tmp):
@@ -172,14 +184,20 @@ def test_keyword_overflow_reports_overflow_only(tmp):
 
 
 def test_unclaimed_issue_comments_naming_the_issue(tmp):
+    """The issue's scenario: a template-conformant body whose only
+    failure is the referenced closing issue's missing assignment.
+    """
     del tmp
     api = _api(issues={'101': _issue('bob')})
     code, writes, _output, _error = _execute(api, _valid_body())
     assert code == 0
+    assert _output == 'closed\n'
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['Issue `#101` is not assigned to you.'])
+        writes[0], CLOSED_FIRST, ['Issue `#101` is not assigned to you.'],
+        closed=True)
     _assert_numbers_code_spanned(_comment_body(writes[0]))
 
 
@@ -198,33 +216,39 @@ def test_three_unassigned_closing_issues_are_named_together(tmp):
     code, writes, _output, _error = _execute(api, body)
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST,
-        ['Issues `#104`, `#105` and `#106` are not assigned to you.'])
+        writes[0], CLOSED_FIRST,
+        ['Issues `#104`, `#105` and `#106` are not assigned to you.'],
+        closed=True)
     _assert_numbers_code_spanned(_comment_body(writes[0]))
 
 
-def test_missing_issue_comments_without_closing(tmp):
+def test_missing_issue_closes_unclaimed(tmp):
     del tmp
     code, writes, _output, _error = _execute(
         _api(issues={}), _valid_body())
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['No checked issue is assigned to you.'])
+        writes[0], CLOSED_FIRST, ['No checked issue is assigned to you.'],
+        closed=True)
 
 
-def test_pull_request_reference_comments_without_closing(tmp):
+def test_pull_request_reference_closes_unclaimed(tmp):
     del tmp
     api = _api(issues={'101': _issue(pull_request=True)})
     code, writes, _output, _error = _execute(api, _valid_body())
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['No checked issue is assigned to you.'])
+        writes[0], CLOSED_FIRST, ['No checked issue is assigned to you.'],
+        closed=True)
 
 
 def test_layout_failure_with_reference_comments_then_closes(tmp):
@@ -319,9 +343,11 @@ def test_preamble_closing_reference_is_checked(tmp):
         api, 'Fixes #104\n\n' + _valid_body())
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['Issue `#104` is not assigned to you.'])
+        writes[0], CLOSED_FIRST, ['Issue `#104` is not assigned to you.'],
+        closed=True)
     _assert_numbers_code_spanned(_comment_body(writes[0]))
 
 
@@ -358,10 +384,51 @@ def test_comma_separated_closing_list_is_checked(tmp):
         api, _valid_body('Fixes #101, #104'))
     assert code == 0
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
     _assert_gate_message(
-        writes[0], OPEN_FIRST, ['Issue `#104` is not assigned to you.'])
+        writes[0], CLOSED_FIRST, ['Issue `#104` is not assigned to you.'],
+        closed=True)
     _assert_numbers_code_spanned(_comment_body(writes[0]))
+
+
+def test_assigning_the_issue_reopens_the_gate_closed_pull(tmp):
+    """The close the unassigned limb performs is the recoverable one.
+
+    Closing over an unassigned issue must leave the same gate-owned
+    close the reopen machinery already serves: once the issue is
+    assigned, the next check reopens the pull request without a second
+    comment thread.
+    """
+    del tmp
+    rendered = _valid_html(references=f'Fixes {_issue_html(104)}')
+    api = _api(issues={'104': _issue('bob')}, rendered=rendered)
+    code, writes, _output, _error = _execute(
+        api, _valid_body('Fixes #104'))
+    assert code == 0
+    assert _output == 'closed\n'
+    assert _write_sequence(writes) == [
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+    _assert_gate_message(
+        writes[0], CLOSED_FIRST, ['Issue `#104` is not assigned to you.'],
+        closed=True)
+
+    api.issues['104'] = _issue('alice')
+    before = len(api.writes)
+    code, writes, _output, _error = _execute(
+        api, _valid_body('Fixes #104'))
+    assert code == 0
+    assert _output == 'reopened\n'
+    writes = writes[before:]
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/100'),
+        ('PATCH', 'repos/owner/repo/pulls/99'),
+        ('PATCH', 'repos/owner/repo/issues/comments/100')]
+    _assert_gate_message(writes[0], REOPEN_FIRST, closed=True)
+    _assert_gate_message(writes[2], REOPEN_FIRST)
+    assert api.pull['state'] == 'open'
+    assert CLOSED_MARKER not in _comment_body(writes[2]).splitlines()
 
 
 def main():
