@@ -4,14 +4,17 @@ on:
   issue_comment:
     types: [created]
 
-# Assignment needs no checkout or access to repository contents.
-permissions:
-  issues: write
-
 concurrency:
-  # Both contributors racing to claim an issue must receive an answer.
+  # Both contributors racing to claim an issue must receive an answer — and
+  # so must the third. A group keeps one PENDING run by default and cancels
+  # it when a newer run arrives (Nitjsefnie-Actions/claim#30), so a third
+  # /claim landing while one runs would leave the second claimer with no
+  # answer. queue: max keeps up to 100 pending runs instead; GitHub notes
+  # the FIFO order is not guaranteed, and the key may not be combined with
+  # cancel-in-progress: true, so the false below is required, not chosen.
   group: claim-${{ github.event.issue.number }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   claim:
@@ -25,5 +28,10 @@ jobs:
           || contains(github.event.comment.body, '/release'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # The narrowest token that can assign. Nothing here reads the tree, so
+    # there is no contents: read and no checkout: the job talks to the API
+    # only. Scoped to this one job per the pinned release's README block.
+    permissions:
+      issues: write
     steps:
-      - uses: Nitjsefnie-Actions/claim@d9976f1f803f7a662eed3be17772800b7925e650 # v1.0.0
+      - uses: Nitjsefnie-Actions/claim@6ae0d102c79d2feec867520795b318b7ca33904a # v2.0.0

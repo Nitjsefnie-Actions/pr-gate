@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REVIEWED_ACTION_PINS = {
     'actions/checkout': '3d3c42e5aac5ba805825da76410c181273ba90b1',
     'actions/setup-python': '5fda3b95a4ea91299a34e894583c3862153e4b97',
-    'Nitjsefnie-Actions/claim': 'd9976f1f803f7a662eed3be17772800b7925e650',
+    'Nitjsefnie-Actions/claim': '6ae0d102c79d2feec867520795b318b7ca33904a',
     'Nitjsefnie-Actions/pr-gate': '44437212f1b931f53433b16455bb05aff67ad21e',
     'github/codeql-action/init': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
     'github/codeql-action/analyze': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
@@ -122,7 +122,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     contracts = {
         'tests.yml': ({'contents': 'read'}, 'suites', None, '20'),
         'actionlint.yml': ({'contents': 'read'}, 'actionlint', None, '15'),
-        'claim.yml': ({'issues': 'write'}, 'claim', None, '5'),
+        'claim.yml': (None, 'claim', {'issues': 'write'}, '5'),
         'pr-gate.yml': ({'contents': 'read', 'issues': 'read',
                          'pull-requests': 'write'}, 'gate', None, '5'),
         'codeql.yml': ({}, 'analyze', {
@@ -189,7 +189,8 @@ def test_claim_only_processes_serialized_open_issue_commands(tmp):
     assert workflow['on'] == {'issue_comment': {'types': ['created']}}
     assert workflow.get('concurrency') == {
         'group': 'claim-${{ github.event.issue.number }}',
-        'cancel-in-progress': 'false'}
+        'cancel-in-progress': 'false',
+        'queue': 'max'}
     job = workflow['jobs']['claim']
     condition = job.get('if', '')
     assert ' '.join(condition.split()) == (
