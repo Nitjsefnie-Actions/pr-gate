@@ -551,6 +551,89 @@ def test_reopen_500_failure_stays_commentless(tmp):
     assert CLOSED_MARKER in api.comments[0]['body'].splitlines()
 
 
+class _TransportFailureApi(FakeApi):
+    """The reopen PATCH never reaches GitHub: the transport dies.
+
+    FakeApi never raises, so the transport arm of the reopen split is
+    modelled here: a RuntimeError out of request() is what `_response`
+    wraps into a `_GateError` whose `status` is None.
+    """
+
+    def __init__(self):
+        super().__init__(
+            pull=_pull('closed'), issues={'101': _issue('alice')},
+            comments=[_gate_comment(closed=True)],
+            timeline=[_closed_event()])
+
+    def request(self, method, endpoint, payload=None):
+        if method == 'PATCH' and endpoint == 'repos/owner/repo/pulls/99':
+            raise RuntimeError('transport unavailable')
+        return super().request(method, endpoint, payload)
+
+
+def test_transport_failure_at_the_reopen_patch_stays_commentless(tmp):
+    """A transport failure is not a refusal, and the error says so.
+
+    `_response` turns a RuntimeError out of the API into a `_GateError`
+    with `status` None, and the reopen's except arm must send that arm
+    straight to the re-raise: exit 1, the attempt comment still gate-
+    owned with the closed marker, no refusal rewrite, pull still closed.
+    This is also the witness for `_GateError.status` being None on a
+    transport failure, pinned directly below.
+    """
+    del tmp
+    gate = _gate_module()
+    try:
+        gate._write(
+            _TransportFailureApi(), 'PATCH', 'repos/owner/repo/pulls/99',
+            {'state': 'open'})
+    except gate._GateError as error:
+        assert error.status is None, error.status
+        assert str(error) == 'transport unavailable', error
+    else:
+        raise AssertionError('_GateError was not raised')
+
+    api = _TransportFailureApi()
+    code, writes, _output, error = _execute(api, _valid_body())
+    assert code == 1
+    assert error == 'pr gate failed: transport unavailable\n'
+    # The failing PATCH never reaches the double, so the sequence is
+    # the single attempt rewrite and nothing else.
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7')]
+    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
+    assert api.pull['state'] == 'closed'
+
+
+def test_a_403_refusal_gets_the_same_refusal_comment(tmp):
+    """The below-500 arm is not a 422 special case.
+
+    GitHub refuses writes a closed pull request's integration may hit
+    with other 4xx statuses too, and the author needs the same refusal
+    comment whatever the number: attempt comment, failing reopen PATCH,
+    refusal rewrite with the marker pair and GitHub's quoted reason,
+    exit 1.
+    """
+    del tmp
+    api = _RefusedReopenApi(
+        status=403, data={'message': 'Resource not accessible by '
+                                     'integration'})
+    code, writes, _output, error = _execute(api, _valid_body())
+    assert code == 1
+    assert error == (
+        'pr gate failed: GitHub returned 403 for '
+        'repos/owner/repo/pulls/99: Resource not accessible by '
+        'integration\n')
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7'),
+        ('PATCH', 'repos/owner/repo/pulls/99'),
+        ('PATCH', 'repos/owner/repo/issues/comments/7')]
+    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
+    refusal = _assert_gate_message(writes[2], REFUSED_FIRST, closed=True)
+    assert ('Resource not accessible by integration' in refusal), refusal
+    assert api.pull['state'] == 'closed'
+
+
 def test_attempt_and_success_reopen_texts_split_the_claim(tmp):
     """Only the post-PATCH text may say the reopen has landed.
 
