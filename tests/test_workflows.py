@@ -58,6 +58,35 @@ def test_workflow_audit_includes_composite_metadata(tmp):
     assert 'zizmor --no-progress action.yml .github/workflows/' in runs
 
 
+def test_zizmor_pin_is_hash_pinned_and_dependabot_visible(tmp):
+    del tmp
+    workflow = _workflow('actionlint.yml')
+    job = workflow['jobs']['actionlint']
+    runs = [step['run'] for step in job['steps'] if 'run' in step]
+    assert 'python -m pip install --require-hashes -r requirements-zizmor.txt' in runs, (
+        'zizmor must install from the hash-pinned root manifest')
+    assert not any('--upgrade pip' in run for run in runs), (
+        'the audit job must not carry the unreviewed pip upgrade')
+    manifest = ROOT / 'requirements-zizmor.txt'
+    assert manifest.is_file(), 'missing requirements-zizmor.txt'
+    ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
+    assert '!requirements-zizmor.txt' in ignore, (
+        'requirements-zizmor.txt must be whitelisted in .gitignore')
+    entries = []
+    for line in manifest.read_text(encoding='utf-8').splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith('#'):
+            continue
+        if line[0] in ' \t' and entries:
+            entries[-1] = entries[-1] + ' ' + stripped
+        else:
+            entries.append(stripped)
+    assert entries, 'requirements-zizmor.txt must carry at least one requirement'
+    for entry in entries:
+        assert '==' in entry, f'not version-pinned: {entry}'
+        assert '--hash=sha256:' in entry, f'not hash-pinned: {entry}'
+
+
 def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
     del tmp
     source = (ROOT / 'README.md').read_text(encoding='utf-8')
