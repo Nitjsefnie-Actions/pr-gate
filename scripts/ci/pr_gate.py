@@ -270,7 +270,13 @@ def _inadmissible_text(actor, reasons, closed):
             'so the CI runs it triggers\nare created with no jobs and held '
             'for approval. Push to the\nbranch once the reopen lands — an '
             'empty commit is enough — and the\nruns your own push triggers '
-            'run normally.')
+            'run normally. The merge itself can still be blocked\n'
+            'after that: GitHub can count the bot reopen as an unattributed\n'
+            'change, and a ruleset that requires extra approval for\n'
+            'unattributed changes can hold the merge even with every check\n'
+            'green. If the merge stays blocked that way once the gate has\n'
+            'reopened it, close and reopen the pull request yourself once\n'
+            'before merging.')
     else:
         opening = (
             f'@{actor} — this pull request needs changes before it can be '
@@ -312,13 +318,26 @@ def _reopen_text(actor):
         'empty\ncommit is enough: `git commit --allow-empty -m "rerun the '
         'checks"` then `git\npush`. That push is yours, so the runs it '
         'triggers run as your own event.\n'
+        '\n'
+        'Merging can stay blocked even so: GitHub can count this bot '
+        'reopen\nas an unattributed change, and a ruleset that requires '
+        'extra\napproval for unattributed changes can hold the merge even '
+        'with every\ncheck green. If that happens, close and reopen this '
+        'pull request\nyourself once before merging.\n'
         f'{MARKER}\n')
 
 
 def _resolved_text(actor):
     return (
         f'@{actor} — every condition now passes; nothing further is needed '
-        f'from you.\n{MARKER}\n')
+        'from you.\n'
+        '\n'
+        'If the gate closed and reopened this pull request earlier, close\n'
+        'and reopen it once yourself before merging: GitHub can count a\n'
+        f'reopen by `{BOT}` as an unattributed change, and a merge ruleset\n'
+        'that requires extra approval for unattributed changes can hold\n'
+        'the merge even with every check green.\n'
+        f'{MARKER}\n')
 
 
 def _write_comment(api, repo, pr, comment, body):
