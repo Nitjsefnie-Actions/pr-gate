@@ -492,7 +492,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'pr-gate.yml': ({'contents': 'read', 'issues': 'read',
                          'pull-requests': 'write'}, 'gate', None, '5'),
         'codeql.yml': ({}, 'analyze', {
-            'contents': 'read', 'actions': 'read', 'security-events': 'write'}, '30'),
+            'contents': 'read', 'security-events': 'write'}, '15'),
         'scorecard.yml': ({'contents': 'read'}, 'analysis', {
             'contents': 'read', 'security-events': 'write', 'id-token': 'write'}, '15'),
         'secrets.yml': ({'contents': 'read'}, 'gitleaks', None, '10'),
@@ -610,9 +610,11 @@ def test_codeql_analyzes_python_and_actions_at_the_event_revision(tmp):
     del tmp
     workflow = _workflow('codeql.yml')
     events = workflow['on']
-    assert set(events) == {'push', 'pull_request', 'schedule', 'workflow_dispatch'}
-    assert events['push'] == {'branches': ['main']}
-    assert not (events['pull_request'] or {})
+    assert set(events) == {'push', 'schedule', 'workflow_dispatch'}, (
+        'codeql analyses via push runs on every branch, never a pull_request event')
+    assert events['push'] == {
+        'paths-ignore': ['**/*.md', 'LICENSE', '.gitignore']}, (
+        'every branch push is analysed; only doc-only pushes skip it')
     assert events['schedule'] == [{'cron': '47 3 * * 3'}]
     assert workflow['concurrency'] == {
         'group': 'codeql-${{ github.ref }}', 'cancel-in-progress': 'true'}
