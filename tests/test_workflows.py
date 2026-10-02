@@ -300,6 +300,17 @@ def test_secrets_scans_full_history_with_a_frozen_binary(tmp):
     assert 'if' not in scan, 'no step condition may weaken the gate'
     assert 'continue-on-error' not in scan, 'no failure suppression may weaken the gate'
     assert '||' not in scan['run'], 'no error-swallowing fallback may weaken the gate'
+    assert (ROOT / '.gitleaks.toml').read_text(encoding='utf-8').splitlines() == [
+        "# The [extend] line is load-bearing: it keeps gitleaks's default rules as",
+        '# the gate. An allowlist file that replaces the default rules would',
+        '# silently narrow the gate to nothing, so nothing here replaces them.',
+        '#',
+        "# pr-gate's full history scans clean under the default rules today",
+        '# (gitleaks 8.30.1, 2026-10-02), so no allowlist entry exists.',
+        '[extend]',
+        'useDefault = true'], (
+        'the extend line IS the gate; a narrowing allowlist replacement must '
+        'fail this suite')
 
 
 def test_all_action_references_are_immutable_and_share_family_pins(tmp):
