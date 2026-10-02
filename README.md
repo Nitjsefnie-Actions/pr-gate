@@ -11,8 +11,7 @@ Pin the action to a reviewed full commit SHA from this repository. The
 SHA; the version comment is documentation, never the pin itself — do not
 substitute a mutable branch or tag. Dependabot is expected to propose moving
 this repository's own workflow pin — SHA and version comment together —
-when a release is cut; the first such proposal (for v1.0.1) is the probe
-that demonstrates it. The pin-sync test holds this example and the workflow
+when a release is cut. The pin-sync test holds this example and the workflow
 to the same reviewed SHA under the same version comment.
 
 ```yaml
@@ -41,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: Nitjsefnie-Actions/pr-gate@b641821e74822ca7983d487f8c75865dcdebfaa8 # v1.0.0
+      - uses: Nitjsefnie-Actions/pr-gate@bd6aa28fa8a82ef12c1afb61a46f41f23742f26a # v1.0.1
         with:
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
