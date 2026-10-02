@@ -9,6 +9,7 @@
 !requirements-test.txt
 !requirements-zizmor.txt
 !run_tests.py
+!.gitleaks.toml
 !.github/
 .github/*
 !.github/PULL_REQUEST_TEMPLATE.md
@@ -24,6 +25,7 @@
 !.github/workflows/pr-gate.yml
 !.github/workflows/codeql.yml
 !.github/workflows/scorecard.yml
+!.github/workflows/secrets.yml
 !scripts/
 scripts/*
 !scripts/ci/

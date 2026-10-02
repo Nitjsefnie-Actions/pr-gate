@@ -129,6 +129,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
             'contents': 'read', 'actions': 'read', 'security-events': 'write'}, '30'),
         'scorecard.yml': ({'contents': 'read'}, 'analysis', {
             'contents': 'read', 'security-events': 'write', 'id-token': 'write'}, '15'),
+        'secrets.yml': ({'contents': 'read'}, 'gitleaks', None, '10'),
     }
     assert {path.name for path in (ROOT / '.github/workflows').glob('*.yml')} == set(contracts)
     for name, (permissions, job_name, job_permissions, timeout) in contracts.items():
@@ -257,6 +258,50 @@ def test_scorecard_only_publishes_scheduled_or_manual_default_branch_analysis(tm
     assert all('if' not in step for step in steps)
 
 
+def test_secrets_scans_full_history_with_a_frozen_binary(tmp):
+    del tmp
+    workflow = _workflow('secrets.yml')
+    events = workflow['on']
+    assert set(events) == {'push', 'pull_request', 'schedule', 'workflow_dispatch'}
+    assert events['push'] == {'branches': ['main']}, (
+        'a scanner must see docs commits, so no paths filter may narrow the push')
+    assert not (events['pull_request'] or {}), 'the pull_request trigger stays unfiltered'
+    assert events['schedule'] == [{'cron': '26 5 * * *'}], (
+        "exactly one daily cron, off the hour, clear of codeql Wed '47 3 * * 3' "
+        "and scorecard Sat '23 2 * * 6'")
+    assert not (events['workflow_dispatch'] or {}), 'the manual trigger stays unfiltered'
+    assert workflow.get('permissions') == {'contents': 'read'}
+    assert workflow['concurrency'] == {
+        'group': 'secrets-${{ github.ref }}', 'cancel-in-progress': 'true'}
+    assert set(workflow['jobs']) == {'gitleaks'}
+    job = workflow['jobs']['gitleaks']
+    assert job['runs-on'] == 'ubuntu-latest'
+    assert job['timeout-minutes'] == '10'
+    assert 'permissions' not in job, 'the workflow-level read must be the only grant'
+    steps = job['steps']
+    assert len(steps) == 3
+    assert steps[0]['uses'] == (
+        'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1')
+    assert steps[0]['with'] == {'fetch-depth': '0', 'persist-credentials': 'false'}
+    download = steps[1]
+    assert download['run'].splitlines() == [
+        'curl --connect-timeout 5 --max-time 120 -fsSLO '
+        'https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/'
+        'gitleaks_8.30.1_linux_x64.tar.gz',
+        'echo \'551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
+        '  gitleaks_8.30.1_linux_x64.tar.gz\' | sha256sum -c -',
+        'tar xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks',
+        './gitleaks version']
+    assert '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb' in (
+        download['run'])
+    scan = steps[2]
+    assert scan['run'] == './gitleaks detect --verbose --redact --config .gitleaks.toml', (
+        'the scan command is the gate itself and ships verbatim')
+    assert 'if' not in scan, 'no step condition may weaken the gate'
+    assert 'continue-on-error' not in scan, 'no failure suppression may weaken the gate'
+    assert '||' not in scan['run'], 'no error-swallowing fallback may weaken the gate'
+
+
 def test_all_action_references_are_immutable_and_share_family_pins(tmp):
     del tmp
     families = {}
@@ -315,7 +360,8 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
     required = [
         'SECURITY.md', '.github/dependabot.yml', '.github/workflows/claim.yml',
         '.github/workflows/codeql.yml', '.github/workflows/scorecard.yml',
-        '.github/workflows/pr-gate.yml']
+        '.github/workflows/pr-gate.yml', '.github/workflows/secrets.yml',
+        '.gitleaks.toml']
     ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
     assert ignore[0] == '*'
     for name in required:
