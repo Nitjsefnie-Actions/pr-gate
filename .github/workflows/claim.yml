@@ -19,11 +19,11 @@ concurrency:
 
 jobs:
   claim:
-    # This saves runners; the action enforces the exact command and issue rules.
+    # The action declines a /claim on a pull request or a closed issue with a
+    # reply (Nitjsefnie-Actions/claim#82), so only bots and command words are
+    # filtered here; a pre-filter would leave the commander with no answer.
     if: >-
-      github.event.issue.pull_request == null
-      && github.event.issue.state == 'open'
-      && github.event.comment.user.type != 'Bot'
+      github.event.comment.user.type != 'Bot'
       && (contains(github.event.comment.body, '/claim')
           || contains(github.event.comment.body, '/unclaim')
           || contains(github.event.comment.body, '/release'))
@@ -35,4 +35,7 @@ jobs:
     permissions:
       issues: write
     steps:
-      - uses: Nitjsefnie-Actions/claim@6ae0d102c79d2feec867520795b318b7ca33904a # v2.0.0
+      - uses: Nitjsefnie-Actions/claim@8abff4f2f27d59b984528cb736f64b9391952a25 # v2.0.1
+        with:
+          max-claims: 'read=2, triage=4, write=6, maintain=10, admin=-1'
+          expire: '7'
