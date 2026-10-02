@@ -11,7 +11,7 @@ REVIEWED_ACTION_PINS = {
     'actions/checkout': '3d3c42e5aac5ba805825da76410c181273ba90b1',
     'actions/setup-python': '5fda3b95a4ea91299a34e894583c3862153e4b97',
     'Nitjsefnie-Actions/claim': '6ae0d102c79d2feec867520795b318b7ca33904a',
-    'Nitjsefnie-Actions/pr-gate': '44437212f1b931f53433b16455bb05aff67ad21e',
+    'Nitjsefnie-Actions/pr-gate': 'b641821e74822ca7983d487f8c75865dcdebfaa8',
     'github/codeql-action/init': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
     'github/codeql-action/analyze': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
     'github/codeql-action/upload-sarif': 'cdf488f595d80d6e07e03d4674febd5ab45fa938',
@@ -25,6 +25,20 @@ def _workflow(name):
     assert path.is_file(), f'missing workflow: {name}'
     return yaml.load(path.read_text(encoding='utf-8'),
                      Loader=yaml.BaseLoader)
+
+
+# YAML parsing strips comments, so pin lines are extracted by regex over the
+# raw text of each file instead of through the parsed document.
+PR_GATE_PIN_LINE = re.compile(
+    r'^[ \t]*(?:-[ \t]+)?uses:[ \t]*Nitjsefnie-Actions/pr-gate@'
+    r'([0-9a-f]{40})[ \t]*(#[ \t]+v\d+\.\d+\.\d+)?[ \t]*$',
+    re.MULTILINE)
+
+
+def _documented_pr_gate_pins(relative_path):
+    """Return (pin, version comment) per pr-gate uses: line, comments kept."""
+    source = (ROOT / relative_path).read_text(encoding='utf-8')
+    return PR_GATE_PIN_LINE.findall(source)
 
 
 def test_ci_runs_supported_platforms_and_python_versions(tmp):
@@ -93,8 +107,9 @@ def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
     example = re.search(r'```yaml\n(.*?)\n```', source, re.DOTALL)
     assert example is not None
     documented = yaml.load(example[1], Loader=yaml.BaseLoader)
+    action = 'Nitjsefnie-Actions/pr-gate'
     assert documented['jobs']['gate']['steps'][0]['uses'] == (
-        'Nitjsefnie-Actions/pr-gate@0000000000000000000000000000000000000000')
+        f'{action}@{REVIEWED_ACTION_PINS[action]}')
     shipped = _workflow('pr-gate.yml')
     assert documented['on'] == shipped['on'], (
         'README trigger block must equal the shipped workflow trigger block')
@@ -173,8 +188,8 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
     step = job['steps'][0]
     assert set(step) == {'uses', 'with'}, (
         'pr gate needs no checkout, shell, step condition or failure suppression')
-    assert step['uses'] == (
-        'Nitjsefnie-Actions/pr-gate@44437212f1b931f53433b16455bb05aff67ad21e'), (
+    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    assert step['uses'] == f'Nitjsefnie-Actions/pr-gate@{reviewed}', (
         'pr gate must execute its reviewed action revision')
     assert step['with'] == {
         'github-token': '${{ github.token }}',
@@ -182,6 +197,26 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
         'pull-request-number': '${{ github.event.pull_request.number }}',
         'pull-request-author': '${{ github.event.pull_request.user.login }}'}, (
         'pr gate must pass exactly the four documented PR inputs')
+
+
+def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_version_comments(tmp):
+    del tmp
+    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    documented = {}
+    for name in ('README.md', '.github/workflows/pr-gate.yml'):
+        found = _documented_pr_gate_pins(name)
+        assert len(found) == 1, (
+            f'{name} must carry exactly one pr-gate uses: pin line, not {len(found)}')
+        pin, comment = found[0]
+        assert re.fullmatch(r'#[ \t]+v\d+\.\d+\.\d+', comment), (
+            f'{name}: the pinned action reference must carry a "# vX.Y.Z" '
+            'version comment naming the reviewed release carrying that SHA')
+        documented[name] = (pin, comment)
+    assert documented['README.md'] == documented['.github/workflows/pr-gate.yml'], (
+        'README and pr-gate.yml must pin the same SHA under the same version comment')
+    assert documented['README.md'][0] == reviewed, (
+        'both files must pin the reviewed pr-gate revision from '
+        'REVIEWED_ACTION_PINS')
 
 
 def test_claim_only_processes_serialized_open_issue_commands(tmp):
