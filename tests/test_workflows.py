@@ -10,6 +10,7 @@ everything between them is the script text parsed out of the workflow,
 never retyped.
 """
 import fnmatch
+import json
 import os
 import re
 import subprocess
@@ -99,6 +100,86 @@ def test_ci_runs_supported_platforms_and_python_versions(tmp):
             assert re.search(r'@[0-9a-f]{40}$', step['uses'])
         if step.get('uses', '').startswith('actions/checkout@'):
             assert step['with']['persist-credentials'] == 'false'
+
+
+# Boundary: exactly one matrix cell measures coverage, so a summary line and a
+# gate failure name a single reproducible environment instead of three rows
+# that disagree; unmeasured steps stay unconditional.
+def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
+    del tmp
+    steps = _workflow('tests.yml')['jobs']['suites']['steps']
+    coverage_steps = [step for step in steps
+                      if 'coverage' in step.get('run', '')]
+    assert len(coverage_steps) == 3, (
+        'exactly the measure, summary and gate steps may mention coverage')
+    measured_if = ("matrix.os == 'ubuntu-latest' "
+                   "&& matrix.python == '3.13'")
+    for step in coverage_steps:
+        assert step['if'] == measured_if, (
+            'every coverage step must pin the one measured cell exactly')
+    unmeasured_runs = ['python run_tests.py',
+                       'python -m ruff check --select E9,F63,F7,F82 .',
+                       'python -m pip install -r requirements-test.txt']
+    unconditional_runs = {step.get('run', '') for step in steps
+                          if 'if' not in step}
+    for run in unmeasured_runs:
+        assert run in unconditional_runs, (
+            f'the plain run {run!r} must stay unmeasured and unconditional')
+    for step in steps:
+        if step in coverage_steps:
+            continue
+        assert 'if' not in step, (
+            'checkout, setup-python, install, the plain suite and the lint '
+            'must run unconditionally on every cell')
+
+
+def test_coverage_gate_reads_floor_from_committed_thresholds(tmp):
+    del tmp
+    steps = [step for step in _workflow('tests.yml')['jobs']['suites']['steps']
+             if 'coverage' in step.get('run', '')]
+    assert len(steps) == 3
+    measure = next(step for step in steps if 'coverage run' in step['run'])
+    summary = next(step for step in steps
+                   if 'GITHUB_STEP_SUMMARY' in step['run'])
+    gate = next(step for step in steps if '--fail-under=' in step['run'])
+    assert '--source=scripts/ci' in measure['run'], (
+        'the measurement must scope coverage to the scripts/ci runtime surface')
+    assert 'run_tests.py' in measure['run'], (
+        'coverage must be measured by running the shipped suite itself')
+    assert 'coverage report' in summary['run'], (
+        'the summary must render the measured coverage table')
+    assert '.github/ci-thresholds.json' in gate['run'], (
+        'the gate must read its floor from the committed thresholds file')
+    for step in steps:
+        assert not re.search(r'fail-under=\d', step['run']), (
+            'no coverage step may restate the floor as a literal number')
+
+
+# Boundary: shape and cross-file agreement only; the measured value itself is
+# refreshed by re-running the coverage cell, not by this suite.
+def test_coverage_thresholds_floor_is_seeded_below_measurement(tmp):
+    del tmp
+    path = ROOT / '.github/ci-thresholds.json'
+    assert path.is_file(), 'missing .github/ci-thresholds.json'
+    text = path.read_text(encoding='utf-8')
+    thresholds = json.loads(text)
+    assert thresholds['schema_version'] == 1
+    python = thresholds['coverage']['python']
+    assert python['cell'] == 'ubuntu-latest / Python 3.13', (
+        'the recorded cell must name the one matrix cell that measures')
+    assert re.search(r'"floor":\s*\d+\.\d\b', text), (
+        'floor must be a number with exactly one decimal place')
+    assert re.search(r'"measured":\s*\d+\.\d\b', text), (
+        'measured must be a number with exactly one decimal place')
+    assert isinstance(python['floor'], float) and isinstance(python['measured'], float)
+    assert 0 <= python['floor'] <= python['measured'] <= 100, (
+        'the floor seeds below the measured value and never above it')
+    ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
+    assert '!.github/ci-thresholds.json' in ignore, (
+        'the thresholds file must be whitelisted in .gitignore')
+    requirements = (ROOT / 'requirements-test.txt').read_text(encoding='utf-8')
+    assert re.search(r'^coverage==', requirements, re.MULTILINE), (
+        'coverage must be a pinned test dependency')
 
 
 def test_workflow_audit_includes_composite_metadata(tmp):
