@@ -205,6 +205,7 @@ jobs:
           marker='<!-- pr-gate-diff-coverage -->'
           {
             printf '%s\n\n' "$marker"
+            printf 'Measured at %s.\n\n' "$HEAD_SHA"
             cat body.md
           } > comment.md
           if ! gh api -H 'Cache-Control: no-cache' --paginate \
