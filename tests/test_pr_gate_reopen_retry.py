@@ -7,11 +7,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _util  # noqa: E402
 from _prgate import (  # noqa: E402
-    FakeApi, _Response, _assert_gate_message, _closed_event, _execute,
-    _gate_comment, _gate_module, _issue, _pull, _valid_body, _write_sequence,
+    CLOSED_MARKER, FakeApi, _Response, _assert_gate_message, _closed_event,
+    _execute, _gate_comment, _gate_module, _issue, _pull, _valid_body,
+    _write_sequence,
 )
 from _prgate_message import (  # noqa: E402
-    REFUSED_FIRST, REOPEN_FIRST,
+    ATTEMPT_FIRST, REFUSED_FIRST, REOPEN_FIRST,
 )
 
 
@@ -47,13 +48,13 @@ def _contrast_body():
 class _RefusingApi(FakeApi):
     """The reopen PATCH is refused by GitHub with a captured body.
 
-    `first` is the (status, body) pair the first PATCH to the pull
-    endpoint answers with, or None to let every PATCH succeed; `_LOST`
-    raises the transport RuntimeError a dead pipe produces, before
-    GitHub sees anything. `retry` is what the NEXT PATCH answers with —
-    None lets it succeed, a pair refuses it, `_LOST` loses it — and is
-    never consumed by a first PATCH. `race` mutates the repository in
-    the window the first refusal opens, so the retry's ownership
+    `first` is the (status, body) pair the FIRST PATCH to the pull
+    endpoint answers with, or None to let it succeed; `_LOST` raises
+    the transport RuntimeError a dead pipe produces, before GitHub sees
+    anything. `retry` is what any LATER PATCH answers with — None lets
+    it succeed, a pair refuses it, `_LOST` loses it — and is never
+    consumed by a first PATCH. `race` mutates the repository in the
+    window the first refusal opens, so the retry's ownership
     revalidation observes a merged or re-closed pull request. Every
     request is recorded in `sequence`, so a test can pin the retry
     PATCH landing after a fresh GET of the pull endpoint.
@@ -68,6 +69,7 @@ class _RefusingApi(FakeApi):
         self.retry = retry
         self.race = race
         self.sequence = []
+        self.patches = 0
 
     def _race_now(self):
         if self.race == 'merged':
@@ -77,28 +79,24 @@ class _RefusingApi(FakeApi):
 
     def request(self, method, endpoint, payload=None):
         self.sequence.append((method, endpoint))
-        pull_patch = (
-            method == 'PATCH' and endpoint == 'repos/owner/repo/pulls/99')
-        if pull_patch and self.first is _LOST:
-            raise RuntimeError('transport unavailable')
-        if pull_patch:
-            if self.first is not None:
+        if (method == 'PATCH'
+                and endpoint == 'repos/owner/repo/pulls/99'):
+            self.patches += 1
+            answer, self.first = self.first, None
+            if self.patches > 1:
+                answer, self.retry = self.retry, None
+            if answer is _LOST:
+                raise RuntimeError('transport unavailable')
+            if answer is not None:
                 # Recorded like FakeApi records any write, but a
                 # refusal applies none of the state change a 2xx
                 # PATCH would; a landed PATCH falls through to
                 # FakeApi, which records it once itself.
                 self.calls.append((method, endpoint, payload))
                 self.writes.append((method, endpoint, payload))
-                refusal, self.first = self.first, None
-                self._race_now()
-                return _Response(*refusal)
-            if self.retry is _LOST:
-                raise RuntimeError('transport unavailable')
-            if self.retry is not None:
-                self.calls.append((method, endpoint, payload))
-                self.writes.append((method, endpoint, payload))
-                refusal, self.retry = self.retry, None
-                return _Response(*refusal)
+                if self.patches == 1:
+                    self._race_now()
+                return _Response(*answer)
         return super().request(method, endpoint, payload)
 
 
@@ -111,6 +109,27 @@ def _narrowed_gate():
     gate = _gate_module()
     assert gate is not None, 'scripts/ci/pr_gate.py is not implemented'
     return gate
+
+
+def test_the_double_serves_retry_only_to_a_second_patch(tmp):
+    """`retry` is never consumed by a first PATCH, as documented.
+
+    The slot contract of the double itself: with `first=None` the first
+    PATCH takes the `first` slot and succeeds, leaving `retry`
+    untouched for the patch that follows it; only a later PATCH draws
+    from the `retry` slot.
+    """
+    del tmp
+    api = _RefusingApi(first=None, retry=(422, _stale_body()))
+    first = api.request(
+        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'})
+    assert first.status == 200
+    assert api.retry is not None, 'retry was consumed by the first PATCH'
+    second = api.request(
+        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'})
+    assert second.status == 422
+    assert api.retry is None
+    assert second.data == _stale_body()
 
 
 def test_stale_refusal_is_retried_once_and_succeeds(tmp):
@@ -347,15 +366,16 @@ def test_a_reclose_in_the_retry_window_aborts_before_the_retry_patch(tmp):
     assert api.pull['state'] == 'closed'
 
 
-def test_a_transport_failure_on_the_retry_takes_the_refusal_path(tmp):
-    """Any `_GateError` on the retry lands in the refusal comment.
+def test_a_transport_failure_on_the_retry_stays_commentless(tmp):
+    """A transient retry failure is not a refusal: raise, no comment.
 
-    The contract bounds the retry, not its failure shapes: a retry
-    whose transport dies is one `_GateError`, so the run revalidates
-    ownership and writes the refusal comment quoting it. Exactly two
-    PATCHes, exit 1, and the pull request is still closed — a lost
-    response that had landed would have aborted at the revalidation
-    in front of the comment instead.
+    The retry handler mirrors the first attempt's split at the top: a
+    `_GateError` with `status` None or >= 500 re-raises without the
+    refusal comment, so transient failures are never answered with
+    wedge-recovery prose. A landed-but-lost retry is caught before any
+    comment anyway: the revalidate in front of the comment reads the
+    now-open pull request and aborts. Exactly two PATCHes, the attempt
+    comment rewritten by nothing, exit 1, pull request still closed.
     """
     del tmp
     api = _RefusingApi(first=(422, _stale_body()), retry=_LOST)
@@ -363,10 +383,44 @@ def test_a_transport_failure_on_the_retry_takes_the_refusal_path(tmp):
     assert code == 1
     assert len(_pull_patch_positions(api)) == 2
     assert error == 'pr gate failed: transport unavailable\n'
-    # The lost retry never reaches the double's write list, so the
-    # refusal rewrite is the third write, not the fourth.
-    refusal = _assert_gate_message(writes[2], REFUSED_FIRST, closed=True)
-    assert 'GitHub\'s reason:' in refusal, refusal
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+    body = api.comments[0]['body']
+    assert ATTEMPT_FIRST in body.splitlines(), body
+    assert CLOSED_MARKER in body.splitlines(), body
+    assert 'refused' not in body, body
+    assert 'has been reopened' not in body, body
+    assert api.pull['state'] == 'closed'
+
+
+def test_a_500_on_the_retry_stays_commentless(tmp):
+    """A 5xx on the retry is an interrupted retry, not a refusal.
+
+    Same split, other arm: the retry answers 500, the handler
+    re-raises commentless with the attempt comment still gate-owned —
+    exactly two PATCHes, no rewrite of the gate comment, exit 1.
+    """
+    del tmp
+    api = _RefusingApi(first=(422, _stale_body()), retry=(500, None))
+    code, writes, _output, error = _execute(api, _valid_body())
+    assert code == 1
+    assert len(_pull_patch_positions(api)) == 2
+    assert error == (
+        'pr gate failed: GitHub returned 500 for '
+        'repos/owner/repo/pulls/99\n')
+    # The double records both refused PATCHes themselves; the refusal
+    # control is the comment writes: one attempt rewrite, and no
+    # rewrite after either refusal.
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7'),
+        ('PATCH', 'repos/owner/repo/pulls/99'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+    body = api.comments[0]['body']
+    assert ATTEMPT_FIRST in body.splitlines(), body
+    assert CLOSED_MARKER in body.splitlines(), body
+    assert 'refused' not in body, body
+    assert 'has been reopened' not in body, body
     assert api.pull['state'] == 'closed'
 
 
