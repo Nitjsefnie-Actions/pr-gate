@@ -554,7 +554,16 @@ def check(root):
 
 
 def main(argv):
-    root = Path(__file__).resolve().parent.parent
+    # Three parents, not two: this script sits at scripts/ci/, so two parents
+    # land on scripts/, and stale_commits() compares with pathspecs —
+    # `git log <head>..<base> ... -- <paths>` — which git resolves against the
+    # directory `git -C` chdirs into. A root at scripts/ matches none of the
+    # full-tree paths in the derived set, empties the commit listing, and
+    # prints the green line over a stale head. commit_scopes.py keeps its own
+    # two-parent default because nothing it runs resolves against the working
+    # directory: its listing carries no pathspecs and its tree read is
+    # `ls-tree --full-tree`.
+    root = Path(__file__).resolve().parent.parent.parent
     print_paths = False
     rest = list(argv[1:])
     while rest:
