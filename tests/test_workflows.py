@@ -363,6 +363,12 @@ def test_the_coverage_comment_workflow_posts_one_marker_comment_in_place(tmp):
         'exactly the bot comment carrying the marker is updated')
     assert '-X POST' in run and '-X PATCH' in run, (
         'one comment: posted when absent, updated in place when present')
+    assert ("printf '%s\\n\\n' \"$marker\"\n"
+            "  printf 'Measured at %s.\\n\\n' \"$HEAD_SHA\"\n"
+            '  cat body.md\n') in run, (
+        'the comment names the commit it measured: the Measured-at line '
+        'sits between the marker and the body, and HEAD_SHA reaches it '
+        'through env, never interpolation')
     calls = [match.start() for match
              in re.finditer(r'if ! revalidate_head; then', run)]
     assert len(calls) == 2, (
