@@ -18,7 +18,8 @@ from _prgate import (  # noqa: E402
     _assert_script_runs_through_gh_on_path,
     _capture, _closed_event, _comment_body, _comment_page_fields, _execute,
     _execute_without_runtime_escape, _gate_comment, _gate_module,
-    _html_body, _inline_marker_comment, _issue, _markdown_code_spans,
+    _html_body, _inline_marker_comment, _issue, _issue_html, _layout_body,
+    _markdown_code_spans,
     _PaginationApi, _pull, _recorded_writes, _Response, _run_script,
     _runtime_error, _script_fixtures, _text_html, _valid_body, _valid_html,
     _write_gh_stub, _write_sequence, FakeApi,
@@ -90,7 +91,7 @@ def test_inline_marker_mention_does_not_replace_a_new_comment(tmp):
         comments=[_inline_marker_comment()],
         issues={'101': _issue('bob')})
     code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -131,7 +132,7 @@ def test_bodies_github_renders_away_are_reported_and_closed(tmp):
     for body, rendered in RENDERS_TO_NOTHING:
         code, writes, _output, _error = _execute(
             _api(issues={}, rendered=rendered), body)
-        assert code == 0, body
+        assert code == 2, body
         assert _write_sequence(writes) == [
             ('POST', 'repos/owner/repo/issues/99/comments'),
             ('PATCH', 'repos/owner/repo/pulls/99')], body
@@ -147,7 +148,7 @@ def test_a_body_of_only_template_comments_is_reported_and_closed(tmp):
     body = '\n\n'.join(re.findall(r'<!--.*?-->', TEMPLATE, re.DOTALL))
     code, writes, _output, _error = _execute(
         _api(issues={}, rendered='\n' * 9), body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -163,7 +164,7 @@ def test_retained_instruction_comment_closes(tmp):
     body = _valid_body().replace(
         '- One change', f'- One change\n{instruction}')
     code, writes, _output, _error = _execute(_api(), body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -281,7 +282,7 @@ def test_gate_closed_inadmissible_pull_updates_comment_and_stays_closed(tmp):
         state='closed', issues={}, comments=[_gate_comment(closed=True)],
         timeline=[_closed_event()], rendered=rendered)
     code, writes, _output, _error = _execute(api, body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('PATCH', 'repos/owner/repo/issues/comments/7')]
     _assert_gate_message(
@@ -306,11 +307,108 @@ def test_closing_notice_names_the_push_needed_after_the_reopen(tmp):
         timeline=[_closed_event()],
         rendered=_valid_html(references=_text_html('none')))
     code, writes, _output, _error = _execute(api, body)
-    assert code == 0
+    assert code == 2
     _assert_gate_message(
         writes[0], CLOSED_FIRST,
         ['No checked issue is assigned to you.'], closed=True)
     _assert_ci_recovery_note(_comment_body(writes[0]))
+
+
+def test_gate_close_exits_two_and_names_the_reasons_on_stderr(tmp):
+    """A run that closes the pull request must not read green (issue 57).
+
+    Required-check readers, `gh run watch --exit-status` and merge gating
+    bind the workflow run's conclusion to the pull request the gate just
+    closed, so exit 0 there read as a pass. Exit 2 distinguishes an
+    enforced closure from the 1 an analysis or API failure returns, and
+    the stderr line states the observation — the closure — and the same
+    defect reasons the gate comment carries, verbatim.
+    """
+    del tmp
+    code, writes, output, error = _execute(_api(issues={}), _valid_body())
+    assert code == 2
+    assert output == 'closed\n'
+    assert error == (
+        'pr gate closed the pull request (exit 2): '
+        'No checked issue is assigned to you.\n')
+    assert _write_sequence(writes) == [
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+    assert writes[1][2] == {'state': 'closed'}
+
+
+def test_gate_close_joins_every_reason_on_one_stderr_line(tmp):
+    del tmp
+    rendered = NESTED_HEADING_HTML['footnote_section_in_heading']
+    code, writes, output, error = _execute(
+        _api(rendered=rendered), _valid_body())
+    assert code == 2
+    assert output == 'closed\n'
+    expected = '; '.join([
+        'Section "Testing" is empty.', NESTED_HEADING_NOTE,
+        'No checked issue is assigned to you.'])
+    assert error == (
+        'pr gate closed the pull request (exit 2): ' + expected + '\n')
+    assert error.count('\n') == 1
+    assert _write_sequence(writes) == [
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+
+
+def test_gate_close_carries_the_overflow_reason_verbatim(tmp):
+    """A reason is long by design; the stderr line must not rewrap it.
+
+    The joined line is the run-log copy of the gate comment's reasons
+    block, so each reason travels whole: no truncation, no rewrap, and
+    the overflow sentence rides beside a layout reason on one line.
+    """
+    del tmp
+    numbers = list(range(101, 127))
+    body = _layout_body(
+        ('Related Issues and Pull Requests',
+         ' '.join(f'Fixes #{number}' for number in numbers)),
+        ('Changes', '- One change'),
+        ('Testing', 'Ran the suite.'))
+    rendered = _html_body(
+        ('Related Issues and Pull Requests', ' '.join(
+            f'Fixes {_issue_html(number)}' for number in numbers)),
+        ('Changes', _text_html('One change')),
+        ('Testing', _text_html('Ran the suite.')))
+    issues = {str(number): _issue('bob') for number in numbers}
+    code, writes, _output, error = _execute(
+        _api(issues=issues, rendered=rendered), body)
+    assert code == 2
+    assert error == (
+        'pr gate closed the pull request (exit 2): '
+        'Required section "Summary" is missing.; '
+        'This body names more than 20 issue references, so only the '
+        'first 20 were checked.\n')
+    assert _write_sequence(writes) == [
+        ('POST', 'repos/owner/repo/issues/99/comments'),
+        ('PATCH', 'repos/owner/repo/pulls/99')]
+
+
+def test_gate_closed_recheck_exits_two_and_names_the_reasons_on_stderr(tmp):
+    """The re-check of a gate-owned closed pull request ends closed too.
+
+    The gate's comment says the pull request stays closed, so a green
+    run beside it is the same lie issue 57 names. The stderr line names
+    that the closure stands after the re-check, with the same verbatim
+    reasons.
+    """
+    del tmp
+    api = _api(
+        state='closed', issues={}, comments=[_gate_comment(closed=True)],
+        timeline=[_closed_event()],
+        rendered=_valid_html(references=_text_html('none')))
+    code, writes, output, error = _execute(api, _valid_body('none'))
+    assert code == 2
+    assert output == 'commented\n'
+    assert error == (
+        'pr gate: the pull request remains closed after re-check '
+        '(exit 2): No checked issue is assigned to you.\n')
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7')]
 
 
 def test_resolved_notice_keeps_the_reopen_followup_conditionally(tmp):
@@ -683,7 +781,7 @@ def test_closing_notice_names_the_refusal_possibility(tmp):
         timeline=[_closed_event()],
         rendered=_valid_html(references=_text_html('none')))
     code, writes, _output, _error = _execute(api, body)
-    assert code == 0
+    assert code == 2
     text = ' '.join(_comment_body(writes[0]).split()).lower()
     for term in ('refuses the reopen', 'how to recover'):
         assert term in text, (term, text)
@@ -811,7 +909,7 @@ def test_unknown_section_name_cannot_inject_a_live_reference(tmp):
     rendered = _valid_html() + _html_body((name, _text_html('Unknown.')))
     code, writes, _output, _error = _execute(
         _api(rendered=rendered), body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -829,7 +927,7 @@ def test_a_nested_heading_comments_and_closes(tmp):
     rendered = NESTED_HEADING_HTML['footnote_section_in_heading']
     code, writes, _output, _error = _execute(
         _api(rendered=rendered), _valid_body())
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -844,7 +942,7 @@ def test_a_nested_heading_alone_closes(tmp):
     rendered = NESTED_HEADING_HTML['empty_heading_in_div']
     code, writes, _output, _error = _execute(
         _api(rendered=rendered), _valid_body())
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]

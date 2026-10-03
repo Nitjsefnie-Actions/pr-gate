@@ -118,10 +118,19 @@ Ownership survives interrupted reopen operations; maintainer closures and
 changes in state/closer prevent unsafe writes. Assignment changes alone do
 not trigger the workflow: edit or reopen the PR to request another check.
 
-A successfully enforced decision exits zero, including a comment or close.
-Analysis/API failures exit nonzero. This is an admission mechanic, not a red
-status-check policy or a standalone issue-event workflow. Consumer repositories
-remain responsible for assigning issues and their own merge policy.
+The run's exit code states the outcome. Zero covers every termination that
+leaves the pull request open, merged, or closed by someone else: a merged
+PR needs nothing; a corrective comment leaves the PR open (including the
+more-than-twenty-references report); a body whose conditions already pass
+is covered by its claimed issue; a gate-owned close is reopened; and a PR
+closed by someone else is left alone. Exit 2 covers the two terminations
+that leave the PR closed and gate-owned: the gate closes an inadmissible
+PR, or its re-check of one it closed still finds defects — each prints one
+stderr line naming the closure and the same reasons the gate comment
+carries. Analysis and API failures exit 1 with `pr gate failed: ...` on
+stderr. This is an admission mechanic, not a red status-check policy or a
+standalone issue-event workflow. Consumer repositories remain responsible
+for assigning issues and their own merge policy.
 
 ## Development and community
 

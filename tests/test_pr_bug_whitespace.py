@@ -25,7 +25,10 @@ def _decision(case, api_title, state, reason=None):
     api.pull['body'] = case['source']
     api.rendered = case['rendered']
     api.issues = {'55': {'assignees': [{'login': 'alice'}], 'title': api_title}}
-    assert _gate_module().run(api, repository, '99', 'alice', TEMPLATE) == 0
+    # A closure ends the run nonzero (issue 57); an open outcome stays 0.
+    assert _gate_module().run(
+        api, repository, '99', 'alice', TEMPLATE) == (
+        0 if state == 'open' else 2)
     assert api.pull['state'] == state, (case['name'], api_title, api.writes)
     if state == 'open':
         assert api.writes == []
@@ -104,7 +107,8 @@ def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
                                 env=environment, capture_output=True, text=True,
                                 encoding='utf-8', errors='strict', timeout=30)
         calls = [json.loads(line) for line in calls_path.read_text(encoding='utf-8').splitlines()]
-        assert result.returncode == 0, (result.stdout, result.stderr, calls)
+        assert result.returncode == (2 if closed else 0), (
+            result.stdout, result.stderr, calls)
         assert any(call['argv'][4] == 'repos/Nitjsefnie/Overflow/issues/55' for call in calls)
         writes = _recorded_writes(calls)
         states = [payload['state'] for method, endpoint, payload in writes
