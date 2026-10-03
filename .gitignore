@@ -28,6 +28,7 @@
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/tests.yml
+!.github/workflows/coverage-comment.yml
 !.github/workflows/actionlint.yml
 !.github/workflows/lint.yml
 !.github/workflows/types.yml
@@ -49,6 +50,7 @@ scripts/ci/*
 !scripts/ci/type_ratchet.py
 !scripts/ci/gate_base_freshness.py
 !scripts/ci/commit_scopes.py
+!scripts/ci/diff_coverage.py
 !tests/
 tests/*
 !tests/_util.py
@@ -77,3 +79,4 @@ tests/*
 !tests/test_type_ratchet.py
 !tests/test_gate_base_freshness.py
 !tests/test_commit_scopes.py
+!tests/test_diff_coverage.py

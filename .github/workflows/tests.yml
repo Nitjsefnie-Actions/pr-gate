@@ -57,5 +57,84 @@ jobs:
         run: |
           floor="$(python -c 'import json; print(json.load(open(".github/ci-thresholds.json"))["coverage"]["python"]["floor"])')"
           python -m coverage report --fail-under="$floor" --precision=1
+      # The two steps below feed the informational diff-coverage job, which
+      # needs the report in machine-readable form and only for pull requests:
+      # a push run has no patch to measure, so push runs upload nothing.
+      - name: Write the coverage XML report
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && github.event_name == 'pull_request'
+        run: python -m coverage xml -o coverage.xml
+      - name: Upload the coverage XML report
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && github.event_name == 'pull_request'
+        # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: error
       - name: Lint Python
         run: python -m ruff check --select E9,F63,F7,F82 .
+
+  # INFORMATIONAL, never a gate. A comment that failed to post must not be
+  # able to block a merge, and the number it reports is one a reviewer
+  # judges: a refactor that only moves code, and a change that only deletes,
+  # both read low for reasons a threshold cannot tell apart. The coverage
+  # gate in `suites` is the gate; this reports the other number — how much
+  # of what THIS pull request added was reached — in the job summary and,
+  # through the trusted `coverage comment` workflow, on the pull request.
+  diff-coverage:
+    needs: suites
+    if: ${{ !cancelled() && needs.suites.result == 'success'
+            && github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # This job reads the proposed tree, so it must not carry a token that
+    # can write conversation. The trusted workflow_run commenter owns that.
+    permissions:
+      contents: read
+
+    steps:
+      # actions/checkout v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The merge commit the event named, and the exact SHA `suites`
+          # measured. Resolving refs/pull/N/merge here instead would let
+          # GitHub hand this job a different tree than the one the report
+          # describes.
+          ref: ${{ github.sha }}
+          # Both parents of that merge commit, which the diff below needs.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # actions/download-artifact v8.0.1
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: coverage-xml
+
+      - name: Measure the coverage of this change
+        # HEAD is the merge tree checked out above and HEAD^1 is, by
+        # construction, the base tip that was merged into it. The event
+        # payload's `base.sha` is NOT that: the base branch can advance
+        # between the event and the checkout, and every base commit merged
+        # in since would then be reported as a line this pull request
+        # added.
+        run: |
+          git diff --text --no-ext-diff --no-textconv --unified=0 HEAD^1 HEAD > patch.diff
+          python3 scripts/ci/diff_coverage.py --coverage coverage.xml --diff patch.diff > body.md
+          cat body.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Package the comment for the trusted commenter
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          printf '%s\n' "$PR_NUMBER" > pr-number.txt
+
+      - name: Upload the comment for the trusted commenter
+        # actions/upload-artifact v7.0.1
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: diff-coverage-comment
+          path: |
+            body.md
+            pr-number.txt
+          if-no-files-found: error
