@@ -178,6 +178,40 @@ def test_red_when_main_advances_a_gate_file(tmp):
     assert 'Rebase onto main' in done.stdout
 
 
+# The workflow step runs the script from the checkout root with no --root,
+# so the default root has to be the repository root. git resolves pathspecs
+# against the `git -C` chdir, so a default root at scripts/ would empty the
+# stale listing and print the green line over a stale head. The script is
+# COPIED to a scripts/ci/ depth inside the fixture rather than run from this
+# repository: only a copy at that depth exercises the default-root
+# derivation, and the fixture's own git is never this repository's.
+def test_runs_without_root_at_scripts_ci_depth_reds_a_stale_head(tmp):
+    repo, origin = _fixture(tmp)
+    _advance_main(tmp, origin, 'ci: main moves a gate file the head has not read', {
+        '.github/workflows/actionlint.yml':
+            'name: actionlint\n'
+            'on: push\n'
+            'jobs:\n'
+            '  actionlint:\n'
+            '    runs-on: changed\n'
+            '    steps:\n'
+            '      - run: ./actionlint -color .github/workflows/*.yml\n',
+    })
+    script = repo / 'scripts/ci/gate_base_freshness.py'
+    script.parent.mkdir(parents=True)
+    script.write_text(
+        (ROOT / 'scripts/ci/gate_base_freshness.py').read_text(encoding='utf-8'),
+        encoding='utf-8', newline='\n')
+    done = subprocess.run(
+        [sys.executable, str(script)], cwd=str(repo), check=False,
+        capture_output=True, text=True)
+    assert done.returncode == 1, (done.stdout, done.stderr)
+    assert 'main holds 1 commit this head does not' in done.stdout
+    assert 'ci: main moves a gate file the head has not read' in done.stdout
+    assert '.github/workflows/actionlint.yml' in done.stdout
+    assert 'Rebase onto main' in done.stdout
+
+
 def test_green_when_main_advances_a_non_gate_file(tmp):
     repo, origin = _fixture(tmp)
     _advance_main(tmp, origin, 'fix: a file no required check reads by name', {
