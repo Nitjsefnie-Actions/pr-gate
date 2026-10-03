@@ -67,6 +67,7 @@ tests/*
 !tests/test_pr_body_elements.py
 !tests/test_pr_body_overflow.py
 !tests/test_pr_gate_recovery.py
+!tests/test_pr_gate_reopen_retry.py
 !tests/test_pr_gate_context.py
 !tests/test_pr_content.py
 !tests/test_pr_rendered_content.py
