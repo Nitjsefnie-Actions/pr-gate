@@ -144,12 +144,15 @@ class GhApi:
 
 class _GateError(RuntimeError):
     """A gate-level API failure. `status` is the HTTP status GitHub
-    returned when there is one, and None on a transport failure.
+    returned when there is one, and None on a transport failure. `data`
+    is the parsed response body when a body was read, so a caller can
+    classify the refusal without parsing a rendered message string.
     """
 
-    def __init__(self, message, status=None):
+    def __init__(self, message, status=None, data=None):
         super().__init__(message)
         self.status = status
+        self.data = data
 
 
 _BODY_DETAIL_LIMIT = 300
@@ -220,7 +223,37 @@ def _write(api, method, endpoint, payload):
         suffix = f': {detail}' if detail else ''
         raise _GateError(
             f'GitHub returned {response.status} for {endpoint}{suffix}',
-            status=response.status)
+            status=response.status, data=response.data)
+
+
+def _stale_state_refusal(data):
+    """Tells GitHub's stale-object reopen refusal from its other 422s.
+
+    GitHub answers the reopen PATCH of a pull request whose branch was
+    force-pushed or recreated while closed with a validation failure
+    whose `errors` entry names the PullRequest resource, the `state`
+    field and the force-push in its message (captured live; the
+    verbatim bodies live in tests/test_pr_gate_reopen_retry.py). The
+    shape is read off the parsed body only — never the rendered
+    `_body_detail` line, which is display text — and everything else a
+    refusal below 500 can carry (an invalid base, a 403, an absent or
+    unparsable body) is not stale and takes no retry.
+    """
+    if not isinstance(data, dict):
+        return False
+    if data.get('message') != 'Validation Failed':
+        return False
+    errors = data.get('errors')
+    if not isinstance(errors, list):
+        return False
+    return any(
+        isinstance(error, dict)
+        and error.get('resource') == 'PullRequest'
+        and error.get('code') == 'custom'
+        and error.get('field') == 'state'
+        and isinstance(error.get('message'), str)
+        and 'was force-pushed or recreated' in error['message']
+        for error in errors)
 
 
 def _gate_comment(comments):
@@ -581,12 +614,37 @@ def _run(api, repo, pr, actor, template, template_path):
                 # gate-owned, and the author needs the reason and the way
                 # out. A concurrent modification still aborts without a
                 # refusal comment.
+                if not _stale_state_refusal(error.data):
+                    _revalidate(
+                        api, pull_endpoint, state, timeline_endpoint, closer)
+                    _write_comment(
+                        api, repo, pr, comment,
+                        _refusal_text(actor, str(error))
+                        + f'{CLOSED_MARKER}\n')
+                    raise
+                # The stale-object refusal names a branch that was
+                # force-pushed or recreated while the pull request was
+                # closed: editing the body cannot restore the recorded
+                # head, but the pull request's fresh object version may
+                # accept the reopen. Re-read it — the ownership check
+                # aborts on a maintainer close or merge in the window —
+                # and retry the reopen exactly once. The retry is best
+                # effort: GitHub has kept answering this 422 for every
+                # reopen PATCH after a force-push while closed, so a
+                # retry that is refused again, in any shape, is final
+                # and lands in the refusal comment below.
                 _revalidate(
                     api, pull_endpoint, state, timeline_endpoint, closer)
-                _write_comment(
-                    api, repo, pr, comment,
-                    _refusal_text(actor, str(error)) + f'{CLOSED_MARKER}\n')
-                raise
+                try:
+                    _write(api, 'PATCH', pull_endpoint, {'state': 'open'})
+                except _GateError as retry_error:
+                    _revalidate(
+                        api, pull_endpoint, state, timeline_endpoint, closer)
+                    _write_comment(
+                        api, repo, pr, comment,
+                        _refusal_text(actor, str(retry_error))
+                        + f'{CLOSED_MARKER}\n')
+                    raise
             _revalidate(
                 api, pull_endpoint, 'open', timeline_endpoint, closer)
             _write_comment(api, repo, pr, comment, _reopen_text(actor))
