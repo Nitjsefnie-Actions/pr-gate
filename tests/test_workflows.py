@@ -818,6 +818,18 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     # spelling one out where the workflow is already least-privilege would
     # be a second place to drift; the jobs that hold LESS than the
     # workflow — or anything when the workflow holds none — say so here.
+    #
+    # claim.yml and coverage-comment.yml are the repository's two
+    # no-checkout conversation writers — their tokens answer /claim
+    # commands and post the coverage comment — so the pull-requests:
+    # write each holds is the class, not a one-off exception. The
+    # universal invariant stands: a job that checks out the tree never
+    # holds a conversation write; checkout and pull-requests: write are
+    # never held together. The grants sit where this table records them:
+    # claim.yml carries issues: write and pull-requests: write at JOB
+    # level under a workflow that declares none, and coverage-comment.yml
+    # carries pull-requests: write at WORKFLOW level, its comment job
+    # inheriting.
     contracts = {
         'tests.yml': ({'contents': 'read'}, {
             'suites': (None, '20'),
