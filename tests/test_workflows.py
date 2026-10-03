@@ -359,6 +359,10 @@ def test_the_coverage_comment_workflow_posts_one_marker_comment_in_place(tmp):
         'the comment API caps a body at 65536 bytes; a silently truncated '
         'coverage report is a wrong coverage report')
     assert '<!-- pr-gate-diff-coverage -->' in run
+    assert run.count('<!-- pr-gate-diff-coverage -->') == 2, (
+        'both sites carry the marker: the wrapper prefixing the body and '
+        'the selector finding the existing comment — renaming one would '
+        'orphan the other and post a second comment beside the first')
     assert 'github-actions[bot]' in run and 'startswith(' in run, (
         'exactly the bot comment carrying the marker is updated')
     assert '-X POST' in run and '-X PATCH' in run, (
@@ -376,6 +380,50 @@ def test_the_coverage_comment_workflow_posts_one_marker_comment_in_place(tmp):
     assert calls[0] < run.index('-X POST')
     assert calls[1] < run.index('-X PATCH')
     assert '>/dev/null' in run
+
+
+# The three refusal arms of the trusted half are loud on purpose: each exit
+# status is pinned separately, because a softened `exit 0` would turn an
+# aimed comment, a truncated report, or an ambiguous destination into a
+# green step — exactly the failure each refusal exists to prevent.
+def _arm(run, header):
+    """Return the text of the `if <header>; then ... fi` arm."""
+    return run.split(header + '; then', 1)[1].split('\nfi', 1)[0]
+
+
+def test_the_coverage_comment_workflow_fails_loud_at_every_refusal(tmp):
+    del tmp
+    steps = _workflow('coverage-comment.yml')['jobs']['comment']['steps']
+    post = next(step for step in steps if step.get('name') == (
+        'Post or update the pull request comment'))
+    run = post['run']
+    mismatch = _arm(run, 'if [ "$claimed" != "$PR_NUMBER" ]')
+    assert 'exit 1' in mismatch and 'exit 0' not in mismatch, (
+        'a claimed-number mismatch must fail the step loudly: the message '
+        'alone is not the refusal, and exit 0 here would post an aimed '
+        'comment and report success')
+    cap = _arm(run, 'if [ "$size" -gt 60000 ]')
+    assert 'exit 1' in cap and 'exit 0' not in cap, (
+        'an oversized body must fail the step loudly: a silently '
+        'truncated coverage report is a wrong coverage report')
+    resolve = next(step for step in steps if step.get('name') == (
+        'Resolve the target pull request from the event'))
+    multi = _arm(resolve['run'], 'if [ "$count" -ne 1 ]')
+    assert 'exit 1' in multi and 'exit 0' not in multi, (
+        'more than one resolved pull request must fail the step loudly, '
+        'never silently pick one as the destination')
+
+
+def test_tests_yml_uploads_disjoint_artifact_names(tmp):
+    del tmp
+    jobs = _workflow('tests.yml')['jobs']
+    names = [step['with']['name']
+             for job in jobs.values() for step in job['steps']
+             if step.get('uses', '').startswith('actions/upload-artifact@')]
+    assert sorted(names) == ['coverage-xml', 'diff-coverage-comment']
+    assert len(names) == len(set(names)), (
+        'two uploads under one name would overwrite: the second upload '
+        'silently drops the first artifact')
 
 
 # Boundary: shape and cross-file agreement only; the measured value itself is
