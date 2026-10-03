@@ -161,13 +161,17 @@ def added_lines(diff_text):
             continue
         if path is None or not in_hunk:
             continue
-        if line.startswith('+'):
+        # Classify on the \r-stripped form: a blank CONTEXT line arrives as
+        # a bare carriage return, and testing the raw line would leave it
+        # unmatched — nothing advances and every later line number in the
+        # hunk shifts. The structural matches above already read `header`.
+        if header.startswith('+'):
             added.setdefault(path, set()).add(line_number)
             line_number += 1
             new_remaining -= 1
-        elif line.startswith('-'):
+        elif header.startswith('-'):
             old_remaining -= 1
-        elif line.startswith(' ') or line == '':
+        elif header.startswith(' ') or header == '':
             line_number += 1
             old_remaining -= 1
             new_remaining -= 1

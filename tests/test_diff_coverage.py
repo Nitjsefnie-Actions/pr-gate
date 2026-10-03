@@ -244,6 +244,21 @@ def test_crlf_line_endings_parse_like_lf(tmp):
     assert _module().added_lines(diff) == {'scripts/ci/x.py': {2}}
 
 
+def test_a_blank_context_line_in_a_crlf_diff_advances_the_counter(tmp):
+    del tmp
+    # A blank CONTEXT line arrives as a bare carriage return once the diff
+    # is split into lines; classifying on the raw form leaves it unmatched,
+    # so nothing advances and every later line number in the hunk shifts.
+    diff = ('--- a/scripts/ci/x.py\r\n'
+            '+++ b/scripts/ci/x.py\r\n'
+            '@@ -1,4 +1,4 @@\r\n'
+            ' keep\r\n'
+            '\r\n'
+            '+added after the blank\r\n'
+            ' tail\r\n')
+    assert _module().added_lines(diff) == {'scripts/ci/x.py': {3}}
+
+
 def test_a_git_quoted_octal_path_is_decoded(tmp):
     del tmp
     diff = (
