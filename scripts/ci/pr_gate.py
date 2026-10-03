@@ -39,6 +39,11 @@ OVERFLOW_REASON = (
     'were checked.')
 UNCLAIMED_REASON = 'No checked issue is assigned to you.'
 INSTRUCTION_REASON = 'Remove the template instruction comments.'
+# Every termination that leaves the pull request closed and gate-owned at
+# run end returns this code, so a workflow run never concludes success
+# while the gate itself just closed the pull request. It is distinct from
+# the 1 an analysis or API failure returns.
+GATE_CLOSED_EXIT = 2
 _STATUS_LINE = re.compile(r'^HTTP/\S+ ([0-9]{3})(?: |$)')
 _NO_CLOSER = object()
 
@@ -302,6 +307,20 @@ def _unassigned_reason(numbers):
 
 def _reasons_block(reasons):
     return '\n'.join(f'- {reason}' for reason in reasons)
+
+
+def _closed_exit(description, reasons):
+    """Reports a run that ends with the pull request closed by the gate.
+
+    The message states the observation — the closure named, the defects
+    the gate comment carries beside it, each reason whole — never a
+    diagnosis of cause, and the returned code fails the workflow run so
+    required-check readers do not bind success to a closed pull request.
+    """
+    print(
+        f'{description} (exit {GATE_CLOSED_EXIT}): {"; ".join(reasons)}',
+        file=sys.stderr)
+    return GATE_CLOSED_EXIT
 
 
 def _inadmissible_text(actor, reasons, closed):
@@ -584,7 +603,9 @@ def _run(api, repo, pr, actor, template, template_path):
             api, repo, pr, comment,
             _inadmissible_text(actor, reasons, True))
         print('commented')
-        return 0
+        return _closed_exit(
+            'pr gate: the pull request remains closed after re-check',
+            reasons)
 
     if closable:
         closer = _revalidate(
@@ -599,13 +620,23 @@ def _run(api, repo, pr, actor, template, template_path):
             api, pull_endpoint, state, timeline_endpoint, closer)
         _write(api, 'PATCH', pull_endpoint, {'state': 'closed'})
         print('closed')
-    else:
-        print('commented')
+        return _closed_exit('pr gate closed the pull request', reasons)
+    print('commented')
     return 0
 
 
 def run(api, repo: str, pr: str, actor: str, template: str | None = None,
         template_path: str = '.github/PULL_REQUEST_TEMPLATE.md') -> int:
+    """Runs one gate pass and returns the process exit code.
+
+    Zero when the run ends with the pull request not gate-owned-closed:
+    merged, closed by someone else, reopened, covered by a claimed issue,
+    or commented on while open. `GATE_CLOSED_EXIT` when the gate itself
+    leaves the pull request closed — it closed the pull request, or its
+    re-check of a gate-owned closed pull request still found defects —
+    with one stderr line naming the closure and the observed defects. One
+    when the analysis or an API call failed.
+    """
     try:
         return _run(api, repo, pr, actor, template, template_path)
     except _GateError as error:

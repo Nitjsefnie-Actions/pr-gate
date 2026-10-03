@@ -37,7 +37,9 @@ def test_captured_code_whitespace_preserves_visible_line_breaks(tmp):
         api = RepositoryApi('owner/repo')
         api.pull['body'] = case['source']
         api.rendered = case['rendered']
-        assert _gate_module().run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 0
+        assert _gate_module().run(
+            api, 'owner/repo', '99', 'alice', TEMPLATE) == (
+            0 if expected[case['name']] == 'open' else 2)
         assert api.pull['state'] == expected[case['name']], case['name']
         if expected[case['name']] == 'open':
             assert api.writes == [], case['name']

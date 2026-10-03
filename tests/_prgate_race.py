@@ -20,7 +20,12 @@ def _assert_two_run_replay():
         issues={},
         rendered=_valid_html(references=_text_html('none')))
     code, writes, output, error = _execute(api, _valid_body('none'))
-    assert (code, output, error) == (0, 'closed\n', '')
+    # The close ends the run nonzero (issue 57): stdout keeps 'closed',
+    # stderr carries the closure observation.
+    assert (code, output, error) == (
+        2, 'closed\n',
+        'pr gate closed the pull request (exit 2): '
+        'No checked issue is assigned to you.\n')
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]

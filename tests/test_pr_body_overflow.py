@@ -73,7 +73,7 @@ def test_missing_footer_closes_and_corrective_edit_reopens(tmp):
     api = _api(rendered=rendered.split('<h2 dir="auto">Footer</h2>')[0])
     api.pull['body'] = _required_body().split('## Footer')[0]
     gate = _gate_module()
-    assert gate.run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 0
+    assert gate.run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 2
     assert api.pull['state'] == 'closed'
     assert 'Required section "Footer" is missing.' in api.comments[0]['body']
     api.rendered = rendered
@@ -88,7 +88,7 @@ def test_a_layout_valid_body_still_needs_an_assigned_issue(tmp):
     del tmp
     api = _api(rendered=_required_html(), issues={})
     api.pull['body'] = _required_body().replace('Fixes #101', 'No related work.')
-    assert _gate_module().run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 0
+    assert _gate_module().run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 2
     assert api.pull['state'] == 'closed'
     assert 'No checked issue is assigned to you.' in api.comments[0]['body']
 

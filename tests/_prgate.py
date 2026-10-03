@@ -684,7 +684,12 @@ def _assert_script_runs_through_gh_on_path(tmp):
     other = Path(tmp) / 'closable'
     other.mkdir()
     result, calls = _run_script(other, fixtures)
-    assert result.returncode == 0, (result.stdout, result.stderr, calls)
+    # The close ends the script nonzero (issue 57), with the closure
+    # observation on stderr beside the usual stdout marker.
+    assert result.returncode == 2, (result.stdout, result.stderr, calls)
+    assert result.stderr == (
+        'pr gate closed the pull request (exit 2): '
+        'No checked issue is assigned to you.\n'), result.stderr
     assert all(
         forbidden.isdisjoint(argument) for call in calls
         for argument in call['argv']), calls

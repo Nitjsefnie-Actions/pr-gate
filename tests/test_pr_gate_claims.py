@@ -34,7 +34,7 @@ def test_first_claimed_second_unassigned_names_the_second(tmp):
         rendered=rendered)
     code, writes, _output, _error = _execute(
         api, _valid_body('Fixes #101\nFixes #104'))
-    assert code == 0
+    assert code == 2
     assert _output == 'closed\n'
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
@@ -58,7 +58,7 @@ def test_two_unassigned_closing_issues_are_named_together(tmp):
         rendered=rendered)
     code, writes, _output, _error = _execute(
         api, _valid_body('Fixes #101\nFixes #104\nFixes #105'))
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -87,7 +87,7 @@ def test_a_punctuated_closing_keyword_still_needs_the_claim(tmp):
         code, writes, _output, _error = _execute(
             api, _valid_body(f'Fixes #101\n{spelling} #104'))
         try:
-            assert code == 0, 'the gate exited nonzero'
+            assert code == 2, 'the gate exited nonzero'
             assert _write_sequence(writes) == [
                 ('POST', 'repos/owner/repo/issues/99/comments'),
                 ('PATCH', 'repos/owner/repo/pulls/99')], (
@@ -123,7 +123,7 @@ def test_closing_keyword_outside_related_is_checked(tmp):
         issues={'101': _issue('alice'), '104': _issue('bob')},
         rendered=rendered)
     code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -147,7 +147,7 @@ def test_duplicate_closing_reference_is_looked_up_once(tmp):
     body = _valid_body('Fixes #101').replace(
         'One sentence.', 'Fixes #104. Again fixes #104.')
     code, writes, _output, _error = _execute(api, body)
-    assert code == 0
+    assert code == 2
     assert len(_issue_gets(api)) == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
@@ -183,7 +183,7 @@ def test_keyword_overflow_reports_overflow_only(tmp):
         f'Fixes {_issue_html(number)}' for number in numbers))
     api = _api(issues=issues, rendered=rendered)
     code, writes, _output, _error = _execute(api, body)
-    assert code == 0
+    assert code == 2
     assert len(_issue_gets(api)) == 20
     assert reason not in _comment_body(writes[0])
     unassigned = (
@@ -204,7 +204,7 @@ def test_unclaimed_issue_comments_naming_the_issue(tmp):
     del tmp
     api = _api(issues={'101': _issue('bob')})
     code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
+    assert code == 2
     assert _output == 'closed\n'
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
@@ -228,7 +228,7 @@ def test_three_unassigned_closing_issues_are_named_together(tmp):
     body = _valid_body(
         'Fixes #101\nFixes #104\nFixes #105\nFixes #106')
     code, writes, _output, _error = _execute(api, body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -243,7 +243,7 @@ def test_missing_issue_closes_unclaimed(tmp):
     del tmp
     code, writes, _output, _error = _execute(
         _api(issues={}), _valid_body())
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -256,7 +256,7 @@ def test_pull_request_reference_closes_unclaimed(tmp):
     del tmp
     api = _api(issues={'101': _issue(pull_request=True)})
     code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -277,7 +277,7 @@ def test_layout_failure_with_reference_comments_then_closes(tmp):
         ('Testing', _text_html('Ran the suite.')))
     code, writes, _output, _error = _execute(
         _api(rendered=rendered), body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -293,7 +293,7 @@ def test_related_without_reference_comments_then_closes(tmp):
     rendered = _valid_html(references=_text_html('see the tracker'))
     code, writes, _output, _error = _execute(
         _api(issues={}, rendered=rendered), body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -311,7 +311,7 @@ def test_reference_outside_related_does_not_protect_from_close(tmp):
         _text_html('One sentence.'), summary)
     code, writes, _output, _error = _execute(
         _api(issues={}, rendered=rendered), body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -355,7 +355,7 @@ def test_preamble_closing_reference_is_checked(tmp):
         rendered=rendered)
     code, writes, _output, _error = _execute(
         api, 'Fixes #104\n\n' + _valid_body())
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -376,7 +376,7 @@ def test_heading_closing_reference_is_checked(tmp):
         rendered=rendered)
     body = _valid_body() + '\n## Fixes #105\n\nRan the suite.\n'
     code, writes, _output, _error = _execute(api, body)
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -396,7 +396,7 @@ def test_comma_separated_closing_list_is_checked(tmp):
         rendered=rendered)
     code, writes, _output, _error = _execute(
         api, _valid_body('Fixes #101, #104'))
-    assert code == 0
+    assert code == 2
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
         ('PATCH', 'repos/owner/repo/pulls/99')]
@@ -419,7 +419,7 @@ def test_assigning_the_issue_reopens_the_gate_closed_pull(tmp):
     api = _api(issues={'104': _issue('bob')}, rendered=rendered)
     code, writes, _output, _error = _execute(
         api, _valid_body('Fixes #104'))
-    assert code == 0
+    assert code == 2
     assert _output == 'closed\n'
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments'),
