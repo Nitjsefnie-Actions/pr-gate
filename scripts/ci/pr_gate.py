@@ -631,13 +631,17 @@ def _run(api, repo, pr, actor, template, template_path):
                 # and retry the reopen exactly once. The retry is best
                 # effort: GitHub has kept answering this 422 for every
                 # reopen PATCH after a force-push while closed, so a
-                # retry that is refused again, in any shape, is final
-                # and lands in the refusal comment below.
+                # retry refused again is final and lands in the refusal
+                # comment below. A transport failure or a 5xx on the
+                # retry is not a refusal: like the first attempt's
+                # split above, it re-raises commentless.
                 _revalidate(
                     api, pull_endpoint, state, timeline_endpoint, closer)
                 try:
                     _write(api, 'PATCH', pull_endpoint, {'state': 'open'})
                 except _GateError as retry_error:
+                    if retry_error.status is None or retry_error.status >= 500:
+                        raise
                     _revalidate(
                         api, pull_endpoint, state, timeline_endpoint, closer)
                     _write_comment(
