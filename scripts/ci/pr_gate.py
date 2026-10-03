@@ -39,10 +39,13 @@ OVERFLOW_REASON = (
     'were checked.')
 UNCLAIMED_REASON = 'No checked issue is assigned to you.'
 INSTRUCTION_REASON = 'Remove the template instruction comments.'
-# Every termination that leaves the pull request closed and gate-owned at
-# run end returns this code, so a workflow run never concludes success
-# while the gate itself just closed the pull request. It is distinct from
-# the 1 an analysis or API failure returns.
+# Every completed decision that leaves the pull request closed and
+# gate-owned at run end — the close of an inadmissible pull request, and
+# a re-check of one the gate closed that still fails — returns this code,
+# so a workflow run never concludes success while the gate itself just
+# closed the pull request. An aborted run can also end with the pull
+# request closed and gate-owned and returns 1 through `_GateError`
+# instead; both are nonzero.
 GATE_CLOSED_EXIT = 2
 _STATUS_LINE = re.compile(r'^HTTP/\S+ ([0-9]{3})(?: |$)')
 _NO_CLOSER = object()
