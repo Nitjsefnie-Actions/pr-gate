@@ -308,8 +308,9 @@ def test_unresolvable_no_space_coauthor_trailer_is_refused(tmp):
         'Change implementation\n\n'
         f'Co-Authored-By:Ghost <{email}>\n')
     git_output = subprocess.run(
-        ['git', 'interpret-trailers', '--parse'], input=message,
-        capture_output=True, text=True, check=True).stdout
+        ['git', 'interpret-trailers', '--parse'],
+        input=message.encode('utf-8'), capture_output=True, check=True
+    ).stdout.decode('utf-8').replace('\r\n', '\n')
     assert git_output == f'Co-Authored-By: Ghost <{email}>\n'
 
     commit = _commit(
@@ -337,8 +338,9 @@ def test_unresolvable_folded_coauthor_trailer_is_refused(tmp):
         'Co-Authored-By: Ghost\n'
         f' <{email}>\n')
     git_output = subprocess.run(
-        ['git', 'interpret-trailers', '--parse'], input=message,
-        capture_output=True, text=True, check=True).stdout
+        ['git', 'interpret-trailers', '--parse'],
+        input=message.encode('utf-8'), capture_output=True, check=True
+    ).stdout.decode('utf-8').replace('\r\n', '\n')
     assert git_output == (
         'Reviewed-by: Reviewer additional review context\n'
         f'Co-Authored-By: Ghost <{email}>\n')
@@ -368,7 +370,7 @@ def test_model_noreply_trailers_are_ignored_and_case_insensitive(tmp=None):
             message=f'Change\n\nCo-Authored-By: Model <{email}>')
         if email == 'Noreply@anthropic.com':
             endpoint = ('search/commits?q=author-email%3A%22'
-                        'Noreply%40anthropic.com%22&per_page=1')
+                        'Noreply%40anthropic.com%22')
             api = _ScriptedApi({
                 ('GET', endpoint, None): _Response(
                     200, {'total_count': 0, 'items': []}),
@@ -384,8 +386,7 @@ def test_model_noreply_trailers_are_ignored_and_case_insensitive(tmp=None):
 def test_non_noreply_model_trailer_shape_is_still_checked(tmp=None):
     del tmp
     email = 'me@example.com'
-    endpoint = ('search/commits?q=author-email%3A%22me%40example.com%22'
-                '&per_page=1')
+    endpoint = 'search/commits?q=author-email%3A%22me%40example.com%22'
     commit = _commit(
         author_login='alice', committer_login='alice',
         message=f'Change\n\nCo-Authored-By: Person <{email}>')
@@ -406,7 +407,7 @@ def test_new_style_id_mismatch_falls_back_to_commit_search(tmp=None):
     del tmp
     email = '112233+alice@users.noreply.github.com'
     endpoint = ('search/commits?q=author-email%3A%22'
-                '112233%2Balice%40users.noreply.github.com%22&per_page=1')
+                '112233%2Balice%40users.noreply.github.com%22')
     commit = _commit(
         author_login='alice', committer_login='alice',
         message=f'Change\n\nCo-Authored-By: Alice <{email}>')
@@ -430,7 +431,7 @@ def test_new_style_noreply_user_404_falls_back_to_commit_search(tmp=None):
     del tmp
     email = '112233+alice@users.noreply.github.com'
     endpoint = ('search/commits?q=author-email%3A%22'
-                '112233%2Balice%40users.noreply.github.com%22&per_page=1')
+                '112233%2Balice%40users.noreply.github.com%22')
     commit = _commit(
         author_login='alice', committer_login='alice',
         message=f'Change\n\nCo-Authored-By: Alice <{email}>')
@@ -453,7 +454,7 @@ def test_new_style_id_mismatch_without_search_match_is_unresolvable(tmp=None):
     del tmp
     email = '112233+alice@users.noreply.github.com'
     endpoint = ('search/commits?q=author-email%3A%22'
-                '112233%2Balice%40users.noreply.github.com%22&per_page=1')
+                '112233%2Balice%40users.noreply.github.com%22')
     commit = _commit(
         author_login='alice', committer_login='alice',
         message=f'Change\n\nCo-Authored-By: Alice <{email}>')
@@ -477,7 +478,7 @@ def test_search_commits_does_not_use_committer_with_a_different_email(tmp=None):
     del tmp
     email = 'peter+tag@example.com'
     endpoint = ('search/commits?q=author-email%3A%22'
-                'peter%2Btag%40example.com%22&per_page=1')
+                'peter%2Btag%40example.com%22')
     commit = _commit(
         author_login='Pleng', committer_login='Pleng',
         author_email='pleng@example.com',
@@ -519,7 +520,7 @@ def test_search_commits_uses_committer_login_when_its_email_matches(tmp=None):
     del tmp
     email = 'peter+tag@example.com'
     endpoint = ('search/commits?q=author-email%3A%22'
-                'peter%2Btag%40example.com%22&per_page=1')
+                'peter%2Btag%40example.com%22')
     commit = _commit(
         author_login='Pleng', committer_login='Pleng',
         author_email='pleng@example.com',
@@ -633,7 +634,7 @@ def test_commit_search_api_failure_aborts_attribution_resolution(tmp=None):
     del tmp
     email = 'peter@example.com'
     endpoint = ('search/commits?q=author-email%3A%22'
-                'peter%40example.com%22&per_page=1')
+                'peter%40example.com%22')
     commit = _commit(
         author_login='alice', committer_login='alice',
         message=f'Change\n\nCo-Authored-By: Peter <{email}>')
@@ -696,8 +697,9 @@ def test_commit_trailer_parser_matches_git_for_a_glued_body_paragraph(tmp=None):
         'Body prose without a colon\n'
         'Co-Authored-By: Alice <alice@users.noreply.github.com>\n')
     git_output = subprocess.run(
-        ['git', 'interpret-trailers', '--parse'], input=message,
-        capture_output=True, text=True, check=True).stdout
+        ['git', 'interpret-trailers', '--parse'],
+        input=message.encode('utf-8'), capture_output=True, check=True
+    ).stdout.decode('utf-8').replace('\r\n', '\n')
     assert git_output == ''
 
     commit = _commit(message=message)
@@ -719,8 +721,9 @@ def test_commit_trailer_parser_recognizes_separated_raw_trailer_paragraph(tmp=No
         'Body prose without a colon\n\n'
         'Co-Authored-By: Alice <alice@users.noreply.github.com>\n')
     git_output = subprocess.run(
-        ['git', 'interpret-trailers', '--parse'], input=message,
-        capture_output=True, text=True, check=True).stdout
+        ['git', 'interpret-trailers', '--parse'],
+        input=message.encode('utf-8'), capture_output=True, check=True
+    ).stdout.decode('utf-8').replace('\r\n', '\n')
     assert git_output == (
         'Co-Authored-By: Alice <alice@users.noreply.github.com>\n')
 
@@ -751,9 +754,15 @@ def test_script_search_resolution_transmits_accept_header_and_parses_query(tmp):
     assert result.returncode == 0, (result.stdout, result.stderr, calls)
     search = [call for call in calls if call['argv'][4].startswith('search/commits?')]
     assert len(search) == 1
-    assert 'Accept: application/vnd.github+json' in search[0]['argv']
-    assert 'q=author-email%3A%22peter%2Btag%40example.com%22' in (
-        search[0]['argv'][4])
+    argv = search[0]['argv']
+    assert argv[4] == (
+        'search/commits?q=author-email%3A%22'
+        'peter%2Btag%40example.com%22')
+    assert 'Accept: application/vnd.github+json' in argv
+    assert [argv[index + 1] for index, argument in enumerate(argv[:-1])
+            if argument == '-f'] == ['per_page=1']
+    assert '&' not in argv[4]
+    assert 'peter+tag@example.com' not in argv
 
 
 def test_exactly_250_commits_are_fetched_in_no_more_than_three_pages(tmp):

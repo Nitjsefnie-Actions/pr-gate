@@ -302,9 +302,24 @@ if fixtures.get('unparsable'):
     raise SystemExit(2)
 if any(item in f'{method} {endpoint}' for item in fixtures.get('fail', [])):
     finish(500, {'message': 'fixture failure'})
-if (endpoint.startswith('search/commits?')
-        and headers.get('accept') != 'application/vnd.github+json'):
-    unsupported()
+if endpoint.startswith('search/commits'):
+    try:
+        search_parameters = parse_qs(
+            urlsplit(endpoint).query, strict_parsing=True)
+    except ValueError:
+        unsupported()
+    if (method != 'GET' or endpoint.split('?', 1)[0] != 'search/commits'
+            or set(search_parameters) != {'q'}
+            or len(search_parameters['q']) != 1
+            or fields != {'per_page': '1'}
+            or headers != {'accept': 'application/vnd.github+json'}):
+        unsupported()
+    match = re.fullmatch(
+        r'author-email:"(.*)"', search_parameters['q'][0])
+    if match is None:
+        unsupported()
+    items = fixtures.get('commit_search', {}).get(match.group(1), [])
+    finish(200, {'total_count': len(items), 'items': items})
 if (endpoint != 'markdown'
         and not endpoint.startswith(('search/', 'users/'))):
     prefix = 'repos/' + fixtures.get('repository', 'owner/repo') + '/'
@@ -326,13 +341,6 @@ if endpoint == 'repos/owner/repo/pulls/99':
         finish(200, {**fixtures['pull'], **payload})
 if endpoint == 'markdown' and method == 'POST':
     finish(200, fixtures['rendered'])
-if endpoint.startswith('search/commits?') and method == 'GET':
-    query = parse_qs(urlsplit(endpoint).query).get('q', [''])[0]
-    match = re.fullmatch(r'author-email:"(.*)"', query)
-    if match is None:
-        unsupported()
-    items = fixtures.get('commit_search', {}).get(match.group(1), [])
-    finish(200, {'total_count': len(items), 'items': items})
 if endpoint.startswith('users/') and method == 'GET':
     login = unquote(endpoint.removeprefix('users/'))
     user = next((value for key, value in fixtures.get('users', {}).items()

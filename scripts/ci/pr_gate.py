@@ -71,7 +71,7 @@ class GhApi:
                 payload: dict | None = None) -> Response:
         if endpoint.startswith('search/commits?'):
             return self._request(
-                method, endpoint, payload,
+                method, endpoint, payload, fields=('per_page=1',),
                 headers=('Accept: application/vnd.github+json',))
         return self._request(method, endpoint, payload)
 
