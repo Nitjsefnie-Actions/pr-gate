@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 from typing import NamedTuple
+from urllib.parse import parse_qs, unquote, urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _util  # noqa: E402
@@ -216,12 +217,13 @@ import json
 import os
 import re
 import sys
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 
 def finish(status, data):
     reasons = {
-        200: 'OK', 201: 'Created', 404: 'Not Found', 500: 'Error'}
+        200: 'OK', 201: 'Created', 403: 'Forbidden',
+        404: 'Not Found', 500: 'Error'}
     if status == 200 and fixtures.get('no_reason'):
         print(f'HTTP/2 {status}')
     else:
@@ -250,11 +252,16 @@ if (len(arguments) < 5 or arguments[0] != 'api'
 method = arguments[3]
 endpoint = arguments[4]
 fields = {}
+headers = {}
 tail = arguments[5:]
 while tail:
     if len(tail) >= 2 and tail[0] == '-f' and '=' in tail[1]:
         key, value = tail[1].split('=', 1)
         fields[key] = value
+        tail = tail[2:]
+    elif len(tail) >= 2 and tail[0] == '-H' and ':' in tail[1]:
+        key, value = tail[1].split(':', 1)
+        headers[key.lower()] = value.strip()
         tail = tail[2:]
     elif len(tail) == 2 and tail[0] == '--input':
         with open(tail[1], encoding='utf-8') as handle:
@@ -295,7 +302,11 @@ if fixtures.get('unparsable'):
     raise SystemExit(2)
 if any(item in f'{method} {endpoint}' for item in fixtures.get('fail', [])):
     finish(500, {'message': 'fixture failure'})
-if endpoint != 'markdown':
+if (endpoint.startswith('search/commits?')
+        and headers.get('accept') != 'application/vnd.github+json'):
+    unsupported()
+if (endpoint != 'markdown'
+        and not endpoint.startswith(('search/', 'users/'))):
     prefix = 'repos/' + fixtures.get('repository', 'owner/repo') + '/'
     if not endpoint.startswith(prefix):
         unsupported()
@@ -315,6 +326,27 @@ if endpoint == 'repos/owner/repo/pulls/99':
         finish(200, {**fixtures['pull'], **payload})
 if endpoint == 'markdown' and method == 'POST':
     finish(200, fixtures['rendered'])
+if endpoint.startswith('search/commits?') and method == 'GET':
+    query = parse_qs(urlsplit(endpoint).query).get('q', [''])[0]
+    match = re.fullmatch(r'author-email:"(.*)"', query)
+    if match is None:
+        unsupported()
+    items = fixtures.get('commit_search', {}).get(match.group(1), [])
+    finish(200, {'total_count': len(items), 'items': items})
+if endpoint.startswith('users/') and method == 'GET':
+    login = unquote(endpoint.removeprefix('users/'))
+    user = next((value for key, value in fixtures.get('users', {}).items()
+                 if key.casefold() == login.casefold()), None)
+    finish(200, user) if user is not None else finish(404, None)
+permission = re.fullmatch(
+    r'repos/owner/repo/collaborators/([^/]+)/permission', endpoint)
+if permission and method == 'GET':
+    login = unquote(permission.group(1))
+    payload = next((value for key, value in fixtures.get('permissions', {}).items()
+                    if key.casefold() == login.casefold()), None)
+    if payload is None:
+        finish(403, {'message': 'Must have push access to view collaborator permission.'})
+    finish(200, payload)
 page = re.fullmatch(
     r'repos/owner/repo/issues/99/(comments|timeline)', endpoint)
 if (page and method == 'GET' and fields.get('per_page') == '100'
@@ -322,6 +354,12 @@ if (page and method == 'GET' and fields.get('per_page') == '100'
     if int(fields['page']) == fixtures.get('fail_page'):
         finish(500, {'message': 'fixture page failure'})
     values = fixtures[page.group(1)]
+    offset = (int(fields['page']) - 1) * 100
+    finish(200, values[offset:offset + 100])
+commits_page = re.fullmatch(r'repos/owner/repo/pulls/99/commits', endpoint)
+if (commits_page and method == 'GET' and fields.get('per_page') == '100'
+        and fields.get('page', '').isdigit() and len(fields) == 2):
+    values = fixtures.get('commits', [])
     offset = (int(fields['page']) - 1) * 100
     finish(200, values[offset:offset + 100])
 issue = re.fullmatch(r'repos/owner/repo/issues/([0-9]+)', endpoint)
@@ -352,13 +390,18 @@ def _issue(*assignees, pull_request=False):
 
 class FakeApi:
     def __init__(self, *, pull, issues=None, comments=(), timeline=(),
-                 rendered=None, fail=(), paginate_error=None):
+                 rendered=None, fail=(), paginate_error=None, commits=(),
+                 permissions=None, users=None, commit_search=None):
         self.pull = pull
         self.issues = issues or {}
         self.comments = list(comments)
         self.next_comment_id = max(
             [99, *(item['id'] for item in self.comments)]) + 1
         self.timeline = list(timeline)
+        self.commits = list(commits)
+        self.permissions = {} if permissions is None else permissions
+        self.users = {} if users is None else users
+        self.commit_search = {} if commit_search is None else commit_search
         self.rendered = _valid_html() if rendered is None else rendered
         self.fail = set(fail)
         self.paginate_error = paginate_error
@@ -388,6 +431,27 @@ class FakeApi:
                 return _Response(200, self.pull)
         if endpoint == 'markdown' and method == 'POST':
             return _Response(200, self.rendered)
+        if endpoint.startswith('search/commits?') and method == 'GET':
+            query = parse_qs(urlsplit(endpoint).query).get('q', [''])[0]
+            match = re.fullmatch(r'author-email:"(.*)"', query)
+            if match is None:
+                raise AssertionError(f'unmodelled search query: {endpoint}')
+            items = self.commit_search.get(match.group(1), [])
+            return _Response(200, {'total_count': len(items), 'items': items})
+        if endpoint.startswith('users/') and method == 'GET':
+            login = unquote(endpoint.removeprefix('users/'))
+            user = next((value for key, value in self.users.items()
+                         if key.casefold() == login.casefold()), None)
+            return _Response(200, user) if user is not None else _Response(404, None)
+        permission = re.fullmatch(
+            r'repos/owner/repo/collaborators/([^/]+)/permission', endpoint)
+        if permission and method == 'GET':
+            login = unquote(permission.group(1))
+            result = next((value for key, value in self.permissions.items()
+                           if key.casefold() == login.casefold()), None)
+            return (_Response(200, result) if result is not None else
+                    _Response(403, {
+                        'message': 'Must have push access to view collaborator permission.'}))
         if (endpoint == 'repos/owner/repo/issues/99/comments'
                 and method == 'POST'):
             comment = {
@@ -425,6 +489,8 @@ class FakeApi:
             return _Response(200, self.comments)
         if endpoint == 'repos/owner/repo/issues/99/timeline':
             return _Response(200, self.timeline)
+        if endpoint == 'repos/owner/repo/pulls/99/commits':
+            return _Response(200, self.commits)
         raise AssertionError(f'unmodelled: GET {endpoint}')
 
 
@@ -480,11 +546,13 @@ def _gate_module():
     return _util.load(path, 'scripts.ci.pr_gate')
 
 
-def run_gate(api, body=None):
+def run_gate(api, body=None, *, require_commit_attribution=False):
     gate = _gate_module()
     assert gate is not None, 'scripts/ci/pr_gate.py is not implemented'
     api.pull['body'] = body
-    code = gate.run(api, 'owner/repo', '99', 'alice', TEMPLATE)
+    code = gate.run(
+        api, 'owner/repo', '99', 'alice', TEMPLATE,
+        require_commit_attribution=require_commit_attribution)
     return code, api.writes
 
 
@@ -560,7 +628,7 @@ def _write_gh_stub(tmp):
     return directory, command
 
 
-def _run_script(tmp, fixtures):
+def _run_script(tmp, fixtures, *, require_commit_attribution=False):
     directory, _command = _write_gh_stub(tmp)
     fixtures_path = Path(tmp) / 'fixtures.json'
     fixtures_path.write_text(json.dumps(fixtures), encoding='utf-8')
@@ -576,6 +644,8 @@ def _run_script(tmp, fixtures):
         'STUB_FIXTURES': str(fixtures_path),
         'STUB_CALLS': str(calls_path),
     }
+    if require_commit_attribution:
+        environment['REQUIRE_COMMIT_ATTRIBUTION'] = 'true'
     result = subprocess.run(
         [sys.executable, 'scripts/ci/pr_gate.py'], cwd=ROOT,
         env=environment, capture_output=True, text=True, timeout=30)

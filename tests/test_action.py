@@ -124,7 +124,8 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
         _run_packaged_action(directory, base, head)
 
 
-def _run_packaged_action(tmp, base, head):
+def _run_packaged_action(tmp, base, head, *,
+                         require_commit_attribution='false', commits=None):
     metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
     assert metadata['runs']['using'] == 'composite'
     for name in ('github-token', 'repository', 'pull-request-number', 'pull-request-author'):
@@ -134,13 +135,17 @@ def _run_packaged_action(tmp, base, head):
     assert len(steps) == 1 and steps[0]['shell'] == 'bash'
     inputs = {'github-token': 'stub-token', 'repository': 'another-owner/project',
               'pull-request-number': '42', 'pull-request-author': 'sasha',
-              'template-path': 'policy/PR template.md'}
+              'template-path': 'policy/PR template.md',
+              'require-commit-attribution': require_commit_attribution}
     directory, _command = _write_gh_stub(tmp)
     fixture = _script_fixtures()
     fixture.update(repository=inputs['repository'], pull_number='42', expected_token='stub-token',
                    template_path=inputs['template-path'], template=TEMPLATE,
                    rendered=_valid_html(repo=inputs['repository']),
                    issues={'101': _issue('sasha')})
+    if commits is not None:
+        fixture['commits'] = commits
+        fixture['pull']['commits'] = len(commits)
     fixture['pull']['body'] = _valid_body()
     fixture['pull']['base'] = {'sha': base}
     fixture['pull']['head'] = {'sha': head}
@@ -165,6 +170,44 @@ def _run_packaged_action(tmp, base, head):
                for call in calls), calls
     assert any(call['input'] == {'text': _valid_body(), 'mode': 'gfm',
                                  'context': 'another-owner/project'} for call in calls)
+    if require_commit_attribution.strip().casefold() == 'true':
+        assert any(call['argv'][4] ==
+                   'repos/another-owner/project/pulls/42/commits'
+                   for call in calls), calls
+    else:
+        assert not any(call['argv'][4] ==
+                       'repos/another-owner/project/pulls/42/commits'
+                       for call in calls), calls
+    return calls
+
+
+def test_commit_attribution_input_is_opt_in_and_reaches_main(tmp):
+    metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
+    input_definition = metadata['inputs'].get('require-commit-attribution')
+    assert input_definition is not None, 'the opt-in action input must exist'
+    assert input_definition['default'] == 'false'
+    assert 'true' in input_definition['description']
+    assert 'case-insensitive' in input_definition['description']
+    step = metadata['runs']['steps'][0]
+    assert step['env']['REQUIRE_COMMIT_ATTRIBUTION'] == (
+        '${{ inputs.require-commit-attribution }}')
+
+    commit = {
+        'sha': '0123456789abcdef0123456789abcdef01234567',
+        'author': {'login': 'sasha', 'id': 10},
+        'committer': {'login': 'sasha', 'id': 10},
+        'commit': {
+            'author': {'name': 'Sasha', 'email': 'sasha@example.com'},
+            'committer': {'name': 'Sasha', 'email': 'sasha@example.com'},
+            'message': 'Change implementation',
+        },
+    }
+    calls = _run_packaged_action(
+        tmp, *POLICY_REVISIONS[0], require_commit_attribution=' TrUe ',
+        commits=[commit])
+    assert any(call['argv'][4] ==
+               'repos/another-owner/project/pulls/42/commits'
+               for call in calls)
 
 
 def test_empty_discovery_is_nonzero(tmp):

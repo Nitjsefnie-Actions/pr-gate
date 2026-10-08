@@ -14,6 +14,11 @@ inputs:
   pull-request-author:
     description: Login of the pull request author.
     required: true
+  require-commit-attribution:
+    description: >-
+      Enable the commit-attribution check. Only 'true' (case-insensitive;
+      surrounding whitespace ignored) enables it.
+    default: 'false'
   template-path:
     description: Consumer template path, read at the pull request base SHA.
     default: .github/PULL_REQUEST_TEMPLATE.md
@@ -23,10 +28,11 @@ runs:
     - name: Check pull request admission
       shell: bash
       env:
-        GH_TOKEN: ${{ inputs.github-token }}
-        REPO: ${{ inputs.repository }}
-        PR: ${{ inputs.pull-request-number }}
         ACTOR: ${{ inputs.pull-request-author }}
-        TEMPLATE_PATH: ${{ inputs.template-path }}
+        GH_TOKEN: ${{ inputs.github-token }}
+        PR: ${{ inputs.pull-request-number }}
         PR_GATE_ACTION_PATH: ${{ github.action_path }}
+        REPO: ${{ inputs.repository }}
+        REQUIRE_COMMIT_ATTRIBUTION: ${{ inputs.require-commit-attribution }}
+        TEMPLATE_PATH: ${{ inputs.template-path }}
       run: python "$PR_GATE_ACTION_PATH/scripts/ci/pr_gate.py"

@@ -44,6 +44,7 @@ scripts/*
 scripts/ci/*
 !scripts/ci/pr_body.py
 !scripts/ci/pr_body_closing.py
+!scripts/ci/pr_attribution.py
 !scripts/ci/pr_content.py
 !scripts/ci/pr_policy.py
 !scripts/ci/pr_gate.py
@@ -70,6 +71,7 @@ tests/*
 !tests/test_pr_gate_reopen_retry.py
 !tests/test_pr_gate_context.py
 !tests/test_pr_content.py
+!tests/test_pr_attribution.py
 !tests/test_pr_rendered_content.py
 !tests/pr_content_renderings.json
 !tests/pr_code_whitespace.json
