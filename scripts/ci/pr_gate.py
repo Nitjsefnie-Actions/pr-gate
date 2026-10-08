@@ -16,6 +16,8 @@ if __package__:
     # pylint: disable-next=relative-beyond-top-level
     from .pr_content import bug_issue_errors, section_content
     # pylint: disable-next=relative-beyond-top-level
+    from .pr_attribution import AttributionError, commit_attribution_reasons
+    # pylint: disable-next=relative-beyond-top-level
     from .pr_body import (
         closing_issues, code_span, layout_errors, parse_rendered,
         referenced_issues, related_may_reference,
@@ -24,6 +26,7 @@ if __package__:
 else:
     from pr_policy import base_template
     from pr_content import bug_issue_errors, section_content
+    from pr_attribution import AttributionError, commit_attribution_reasons
     from pr_body import (
         closing_issues, code_span, layout_errors, parse_rendered,
         referenced_issues, related_may_reference,
@@ -66,13 +69,19 @@ class GhApi:
 
     def request(self, method: str, endpoint: str,
                 payload: dict | None = None) -> Response:
+        if endpoint.startswith('search/commits?'):
+            return self._request(
+                method, endpoint, payload,
+                headers=('Accept: application/vnd.github+json',))
         return self._request(method, endpoint, payload)
 
-    def _request(self, method, endpoint, payload=None, fields=()):
+    def _request(self, method, endpoint, payload=None, fields=(), headers=()):
         if self.gh is None:
             raise RuntimeError('gh was not found on PATH')
         arguments = [
             self.gh, 'api', '--include', '-X', method, endpoint]
+        for header in headers:
+            arguments.extend(('-H', header))
         for field in fields:
             arguments.extend(('-f', field))
         with tempfile.TemporaryDirectory(prefix='pr-gate-') as directory:
@@ -128,7 +137,9 @@ class GhApi:
 
     def paginate(self, endpoint: str) -> Response:
         items = []
-        for page in range(1, 51):
+        commit_list = re.search(r'/pulls/[0-9]+/commits$', endpoint) is not None
+        page_limit = 3 if commit_list else 50
+        for page in range(1, page_limit + 1):
             response = self._request(
                 'GET', endpoint,
                 fields=('per_page=100', f'page={page}'))
@@ -139,6 +150,8 @@ class GhApi:
             items.extend(response.data)
             if len(response.data) < 100:
                 return Response(200, items)
+        if commit_list:
+            raise RuntimeError('gh pagination exceeded 3 commit pages')
         raise RuntimeError('gh pagination exceeded 50 pages')
 
 
@@ -519,7 +532,8 @@ def _write_comment(api, repo, pr, comment, body):
         _write(api, 'PATCH', endpoint, {'body': body})
 
 
-def _run(api, repo, pr, actor, template, template_path):
+def _run(api, repo, pr, actor, template, template_path,
+         require_commit_attribution=False):
     pull_endpoint = f'repos/{repo}/pulls/{pr}'
     pull = _read(api, 'GET', pull_endpoint)
     if not isinstance(pull, dict):
@@ -578,6 +592,12 @@ def _run(api, repo, pr, actor, template, template_path):
     records = _issue_records(api, repo, all_references)
     claimed, unassigned = _claim(references, set(closing), actor, records)
     layout.extend(bug_issue_errors(bug_pointers, records))
+    if require_commit_attribution:
+        try:
+            layout.extend(commit_attribution_reasons(
+                api, repo, pr, actor, pull))
+        except AttributionError as error:
+            raise _GateError(str(error)) from error
     reasons = list(layout)
     if len(all_references) > 20:
         reasons.append(OVERFLOW_REASON)
@@ -691,7 +711,8 @@ def _run(api, repo, pr, actor, template, template_path):
 
 
 def run(api, repo: str, pr: str, actor: str, template: str | None = None,
-        template_path: str = '.github/PULL_REQUEST_TEMPLATE.md') -> int:
+        template_path: str = '.github/PULL_REQUEST_TEMPLATE.md',
+        require_commit_attribution: bool = False) -> int:
     """Runs one gate pass and returns the process exit code.
 
     Zero when the run ends with the pull request not gate-owned-closed:
@@ -703,7 +724,9 @@ def run(api, repo: str, pr: str, actor: str, template: str | None = None,
     when the analysis or an API call failed.
     """
     try:
-        return _run(api, repo, pr, actor, template, template_path)
+        return _run(
+            api, repo, pr, actor, template, template_path,
+            require_commit_attribution=require_commit_attribution)
     except _GateError as error:
         print(f'pr gate failed: {error}', file=sys.stderr)
         return 1
@@ -717,8 +740,14 @@ def main() -> int:
     except (KeyError, OSError) as error:
         print(f'pr gate failed: {error}', file=sys.stderr)
         return 1
-    return run(GhApi(), repo, pr, actor,
-               template_path=os.environ.get('TEMPLATE_PATH', '.github/PULL_REQUEST_TEMPLATE.md'))
+    require_commit_attribution = (
+        os.environ.get('REQUIRE_COMMIT_ATTRIBUTION', 'false')
+        .strip().casefold() == 'true')
+    return run(
+        GhApi(), repo, pr, actor,
+        template_path=os.environ.get(
+            'TEMPLATE_PATH', '.github/PULL_REQUEST_TEMPLATE.md'),
+        require_commit_attribution=require_commit_attribution)
 
 
 if __name__ == '__main__':

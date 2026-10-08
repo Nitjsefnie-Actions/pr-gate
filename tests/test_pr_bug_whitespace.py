@@ -81,6 +81,7 @@ def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
     assert step['shell'] == 'bash'
     inputs = {'github-token': 'stub-token', 'repository': CAPTURE['repository'],
               'pull-request-number': '233', 'pull-request-author': 'alice',
+              'require-commit-attribution': 'false',
               'template-path': metadata['inputs']['template-path']['default']}
     outcomes = (('code_one_space', 'The bug', False),
                 ('code_two_spaces', 'The bug', True),

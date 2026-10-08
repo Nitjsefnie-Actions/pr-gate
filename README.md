@@ -64,6 +64,7 @@ standard library. For a self-hosted runner, install the tools before this step.
 | `repository` | Required consumer repository, `owner/name`. |
 | `pull-request-number` | Required PR number. |
 | `pull-request-author` | Required author login. |
+| `require-commit-attribution` | Optional; defaults to `false`. Only `true` (case-insensitive, surrounding whitespace ignored) enables the commit check. |
 | `template-path` | Optional consumer path; defaults to `.github/PULL_REQUEST_TEMPLATE.md`. |
 
 ## Admission rules
@@ -117,6 +118,29 @@ and reopen the PR themselves once before merging when that happens.
 Ownership survives interrupted reopen operations; maintainer closures and
 changes in state/closer prevent unsafe writes. Assignment changes alone do
 not trigger the workflow: edit or reopen the PR to request another check.
+
+Commit attribution is an opt-in admission rule. When enabled, the gate checks
+every commit when the PR carries at most 250; a PR with more commits is refused
+because the action cannot verify it. Each commit's author and committer must
+resolve to a GitHub account and be the PR author, GitHub's `web-flow` account,
+an account with `write`, `maintain`, or `admin` push permission, or have a
+`Co-Authored-By:` trailer on that same commit whose email resolves to the PR
+author. An unlinked author or committer email is refused. A human coauthor
+trailer whose email cannot be resolved is also refused. A trailer email whose
+local part is exactly `noreply` (case-insensitive), such as
+`noreply@anthropic.com`, `noreply@z.ai`, or `noreply@openai.com`, is treated as
+a model/vendor trailer and is outside this rule.
+
+The email lookup searches GitHub's public commit index; an email used only in
+private repositories remains unresolvable, so a human coauthor trailer using
+it is refused. GitHub's collaborator-permission endpoint returns 403 when the
+action token cannot view that account's permission. The gate treats 403 and
+404 as no push access, so the push-access exemption is available only when the
+consumer's token can read collaborator permissions. The example token is
+read-only for repository contents and issues (with pull-request write access
+for the gate's comment/close actions), so this exemption may fail closed for
+maintainers unless the consumer grants the needed access. With the input off,
+the gate makes no commit-list, collaborator, user, or commit-search requests.
 
 The run's exit code states the outcome. Zero covers every termination that
 leaves the pull request open, merged, or closed by someone else: a merged
