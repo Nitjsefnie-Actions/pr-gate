@@ -137,6 +137,7 @@ def test_gate_paths_on_this_repository(tmp):
         'scripts/ci/commit_scopes.py',
         'scripts/ci/diff_coverage.py',
         'scripts/ci/gate_base_freshness.py',
+        'scripts/ci/pr_attribution.py',
         'scripts/ci/pr_body.py',
         'scripts/ci/pr_body_closing.py',
         'scripts/ci/pr_content.py',
