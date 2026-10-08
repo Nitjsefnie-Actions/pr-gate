@@ -301,6 +301,63 @@ def test_unresolvable_human_coauthor_trailer_is_refused(tmp):
                 api.comments[-1]['body'])
 
 
+def test_unresolvable_no_space_coauthor_trailer_is_refused(tmp):
+    del tmp
+    email = 'unlinked@example.test'
+    message = (
+        'Change implementation\n\n'
+        f'Co-Authored-By:Ghost <{email}>\n')
+    git_output = subprocess.run(
+        ['git', 'interpret-trailers', '--parse'], input=message,
+        capture_output=True, text=True, check=True).stdout
+    assert git_output == f'Co-Authored-By: Ghost <{email}>\n'
+
+    commit = _commit(
+        author_login='alice', committer_login='alice', message=message)
+    api = _attribution_api([commit])
+
+    code, writes = run_gate(
+        api, _valid_body(), require_commit_attribution=True)
+
+    assert code == 2
+    assert api.pull['state'] == 'closed'
+    assert len(writes) == 2
+    assert ('carries the Co-Authored-By trailer Ghost '
+            f'<{email}>, which does not resolve to a GitHub account.') in (
+                api.comments[-1]['body'])
+
+
+def test_unresolvable_folded_coauthor_trailer_is_refused(tmp):
+    del tmp
+    email = 'unlinked@example.test'
+    message = (
+        'Change implementation\n\n'
+        'Reviewed-by: Reviewer\n'
+        ' additional review context\n'
+        'Co-Authored-By: Ghost\n'
+        f' <{email}>\n')
+    git_output = subprocess.run(
+        ['git', 'interpret-trailers', '--parse'], input=message,
+        capture_output=True, text=True, check=True).stdout
+    assert git_output == (
+        'Reviewed-by: Reviewer additional review context\n'
+        f'Co-Authored-By: Ghost <{email}>\n')
+
+    commit = _commit(
+        author_login='alice', committer_login='alice', message=message)
+    api = _attribution_api([commit])
+
+    code, writes = run_gate(
+        api, _valid_body(), require_commit_attribution=True)
+
+    assert code == 2
+    assert api.pull['state'] == 'closed'
+    assert len(writes) == 2
+    assert ('carries the Co-Authored-By trailer Ghost '
+            f'<{email}>, which does not resolve to a GitHub account.') in (
+                api.comments[-1]['body'])
+
+
 def test_model_noreply_trailers_are_ignored_and_case_insensitive(tmp=None):
     del tmp
     for email in (
@@ -416,24 +473,76 @@ def test_new_style_id_mismatch_without_search_match_is_unresolvable(tmp=None):
         'GitHub account.']
 
 
-def test_search_commits_encodes_email_and_uses_committer_login_when_author_is_null(tmp=None):
+def test_search_commits_does_not_use_committer_with_a_different_email(tmp=None):
     del tmp
     email = 'peter+tag@example.com'
     endpoint = ('search/commits?q=author-email%3A%22'
                 'peter%2Btag%40example.com%22&per_page=1')
     commit = _commit(
         author_login='Pleng', committer_login='Pleng',
+        author_email='pleng@example.com',
+        committer_email='pleng-commit@example.com',
         message=f'Change\n\nCo-Authored-By: Alice <{email}>')
     api = _ScriptedApi({
         ('GET', endpoint, None): _Response(
             200, {'total_count': 1, 'items': [
-                {'author': None, 'committer': {'login': 'alice'}}]}),
+                {
+                    'author': None,
+                    'committer': {'login': 'alice'},
+                    'commit': {
+                        'author': {'email': email},
+                        'committer': {'email': 'different@example.com'},
+                    },
+                },
+            ]}),
+        ('GET', 'repos/owner/repo/collaborators/Pleng/permission', None):
+            _Response(403, {'message': 'no push access'}),
     })
 
     reasons = pr_attribution.check_commits(
         api, 'owner/repo', 'alice', [commit])
 
-    assert len(reasons) == 0
+    assert reasons == [
+        'Commit 0123456 carries the Co-Authored-By trailer Alice '
+        '<peter+tag@example.com>, which does not resolve to a GitHub account.',
+        'Commit 0123456 is authored by Pleng, who is not you (@alice), has '
+        'no Co-Authored-By trailer naming you, and has no push access to this '
+        'repository.',
+    ]
+    assert api.calls == [
+        ('GET', endpoint, None),
+        ('GET', 'repos/owner/repo/collaborators/Pleng/permission', None),
+    ]
+
+
+def test_search_commits_uses_committer_login_when_its_email_matches(tmp=None):
+    del tmp
+    email = 'peter+tag@example.com'
+    endpoint = ('search/commits?q=author-email%3A%22'
+                'peter%2Btag%40example.com%22&per_page=1')
+    commit = _commit(
+        author_login='Pleng', committer_login='Pleng',
+        author_email='pleng@example.com',
+        committer_email='pleng-commit@example.com',
+        message=f'Change\n\nCo-Authored-By: Alice <{email}>')
+    api = _ScriptedApi({
+        ('GET', endpoint, None): _Response(
+            200, {'total_count': 1, 'items': [
+                {
+                    'author': None,
+                    'committer': {'login': 'alice'},
+                    'commit': {
+                        'author': {'email': email},
+                        'committer': {'email': email},
+                    },
+                },
+            ]}),
+    })
+
+    reasons = pr_attribution.check_commits(
+        api, 'owner/repo', 'alice', [commit])
+
+    assert reasons == []
     assert api.calls == [('GET', endpoint, None)]
 
 

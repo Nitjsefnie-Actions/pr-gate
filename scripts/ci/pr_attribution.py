@@ -6,7 +6,7 @@ from urllib.parse import quote, urlencode
 MAX_COMMITS = 250
 _PUSH_PERMISSIONS = frozenset(('write', 'maintain', 'admin'))
 _TRAILER_LINE = re.compile(
-    r'^(?P<token>[A-Za-z0-9-]+):[ \t]+(?P<value>.+?)\s*$')
+    r'^(?P<token>[A-Za-z0-9-]+):[ \t]*(?P<value>.*?)\s*$')
 _COAUTHOR_VALUE = re.compile(r'(?P<name>.+?)\s*<(?P<email>[^<>]+)>\s*$')
 _NEW_STYLE_NOREPLY = re.compile(
     r'(?P<id>[0-9]+)\+(?P<login>[^@]+)@users\.noreply\.github\.com$',
@@ -138,11 +138,24 @@ class _Checker:
         for item in items:
             if not isinstance(item, dict):
                 continue
-            for role in ('author', 'committer'):
-                account = item.get(role)
-                login = account.get('login') if isinstance(account, dict) else None
-                if isinstance(login, str) and login:
-                    return login
+            author = item.get('author')
+            author_login = (
+                author.get('login') if isinstance(author, dict) else None)
+            if isinstance(author_login, str) and author_login:
+                return author_login
+
+            committer = item.get('committer')
+            committer_login = (
+                committer.get('login') if isinstance(committer, dict) else None)
+            commit = item.get('commit')
+            commit_committer = (
+                commit.get('committer') if isinstance(commit, dict) else None)
+            committer_email = (
+                commit_committer.get('email')
+                if isinstance(commit_committer, dict) else None)
+            if (isinstance(committer_login, str) and committer_login
+                    and committer_email == email):
+                return committer_login
         return None
 
     def _has_push_access(self, login):
@@ -193,16 +206,21 @@ def _coauthor_trailers(message):
     parsed = []
     for line in trailer_lines:
         match = _TRAILER_LINE.fullmatch(line)
-        if match is None:
+        if match is not None:
+            parsed.append([match.group('token'), match.group('value').strip()])
+        elif line.startswith((' ', '\t')) and parsed:
+            continuation = line.strip()
+            if continuation:
+                parsed[-1][1] = f'{parsed[-1][1]} {continuation}'.strip()
+        else:
             return []
-        parsed.append(match)
     if not trailer_lines:
         return []
     trailers = []
-    for match in parsed:
-        if match.group('token').casefold() != 'co-authored-by':
+    for token, trailer_value in parsed:
+        if token.casefold() != 'co-authored-by':
             continue
-        value = _COAUTHOR_VALUE.fullmatch(match.group('value'))
+        value = _COAUTHOR_VALUE.fullmatch(trailer_value)
         if value is not None:
             name = value.group('name').strip()
             email = value.group('email').strip()
