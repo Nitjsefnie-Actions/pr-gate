@@ -126,7 +126,7 @@ class _Checker:
                 raise AttributionError(
                     f'GitHub returned {response.status} for {endpoint}')
 
-        query = urlencode({'q': f'author-email:"{email}"', 'per_page': 1})
+        query = urlencode({'q': f'author-email:"{email}"'})
         endpoint = f'search/commits?{query}'
         response = self._request(endpoint)
         if response.status != 200 or not isinstance(response.data, dict):
