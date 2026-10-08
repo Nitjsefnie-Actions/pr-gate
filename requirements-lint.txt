@@ -4,9 +4,9 @@
 # watches this file, so version bumps arrive as pull requests; a version
 # pin inside a workflow run: block is invisible to Dependabot.
 
-pylint==4.1.1 \
-    --hash=sha256:47538540de0a563ff0b6cb781330944b0c9c1a130986ad1c183116ed37ec4538 \
-    --hash=sha256:84901850af1c67240afbe7b0ef696b7ab391ed4838e4ffc48511661026ebc565
+pylint==4.1.2 \
+    --hash=sha256:235f13dc418c0041c649b42a5c35c99f2ffc6ca8b6a7574958eac5335906a68a \
+    --hash=sha256:e34c8636edc7d60a2eaadca4ad6c18a49e202361987a26e81b2a17fa92be28e1
 
 pycodestyle==2.15.0 \
     --hash=sha256:12fd2f73c7b8ee8845a0431111df8faf4c1a07d6e64e2ee7f0c74014dab14181 \
