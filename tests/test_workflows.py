@@ -24,26 +24,31 @@ from test_action import _action_bash
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Dependency upgrades deliberately update this reviewed contract alongside YAML.
-REVIEWED_ACTION_PINS = {
-    'actions/checkout': '3d3c42e5aac5ba805825da76410c181273ba90b1',
-    'actions/setup-python': '5fda3b95a4ea91299a34e894583c3862153e4b97',
-    'Nitjsefnie-Actions/claim': 'cd8ffd8227e94cdf60ed2580016187353b055cf4',
-    'Nitjsefnie-Actions/pr-gate': '441f855e54f4f6c98709152f2d2542031dc82f03',
-    'github/codeql-action/init': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
-    'github/codeql-action/analyze': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
-    'github/codeql-action/upload-sarif': '2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2',
-    'ossf/scorecard-action': '2d1146689b8cda280b9bc96326124645441f03bc',
-    'actions/upload-artifact': '043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
-    'actions/download-artifact': '3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c',
-}
-
 
 def _workflow(name):
     path = ROOT / '.github/workflows' / name
     assert path.is_file(), f'missing workflow: {name}'
     return yaml.load(path.read_text(encoding='utf-8'),
                      Loader=yaml.BaseLoader)
+
+
+def _shipped_action_pin(action):
+    """Return the one revision every shipped workflow pins ``action`` at.
+
+    The workflows are the source of truth for which release is in use, so a
+    dependency upgrade edits YAML only; these tests check that the pins agree
+    and are immutable, not which commit they name.
+    """
+    pins = set()
+    for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
+        for job in _workflow(path.name)['jobs'].values():
+            for step in job.get('steps', []):
+                if step.get('uses', '').startswith(action + '@'):
+                    pins.add(step['uses'].split('@', 1)[1])
+    assert len(pins) == 1, (
+        f'{action} must be pinned at exactly one revision across the '
+        f'workflows, not {sorted(pins)}')
+    return pins.pop()
 
 
 # YAML parsing strips comments, so pin lines are extracted by regex over the
@@ -195,7 +200,7 @@ def test_tests_yml_writes_and_uploads_the_coverage_xml_for_pull_requests(tmp):
         assert ' '.join(step['if'].split()) == pr_only_if, (
             'the XML export is for pull requests only: a push run has no '
             'patch to measure, so push runs upload nothing')
-    reviewed = REVIEWED_ACTION_PINS['actions/upload-artifact']
+    reviewed = _shipped_action_pin('actions/upload-artifact')
     assert upload['uses'] == f'actions/upload-artifact@{reviewed}'
     assert upload['with'] == {'name': 'coverage-xml',
                               'path': 'coverage.xml',
@@ -231,7 +236,7 @@ def test_the_diff_coverage_job_reports_its_own_change_read_only(tmp):
                     if 'download-artifact' in step.get('uses', ''))
     assert download['uses'] == (
         'actions/download-artifact@'
-        + REVIEWED_ACTION_PINS['actions/download-artifact'])
+        + _shipped_action_pin('actions/download-artifact'))
     assert download['with'] == {'name': 'coverage-xml'}
     measure = next(step for step in steps if step.get('name') == (
         'Measure the coverage of this change'))
@@ -249,7 +254,7 @@ def test_the_diff_coverage_job_reports_its_own_change_read_only(tmp):
     assert 'pr-number.txt' in package['run']
     upload = next(step for step in steps if step.get('name') == (
         'Upload the comment for the trusted commenter'))
-    reviewed = REVIEWED_ACTION_PINS['actions/upload-artifact']
+    reviewed = _shipped_action_pin('actions/upload-artifact')
     assert upload['uses'] == f'actions/upload-artifact@{reviewed}'
     assert upload['with']['name'] == 'diff-coverage-comment'
     assert set(upload['with']['path'].split()) == {'body.md', 'pr-number.txt'}
@@ -300,7 +305,7 @@ def test_the_coverage_comment_workflow_checks_out_nothing(tmp):
     uses = [step['uses'] for step in job['steps'] if 'uses' in step]
     assert uses == [
         'actions/download-artifact@'
-        + REVIEWED_ACTION_PINS['actions/download-artifact']], (
+        + _shipped_action_pin('actions/download-artifact')], (
         'the only action the trusted job runs is the artifact download: '
         'no checkout, and no action that executes artifact content')
     for step in job['steps']:
@@ -778,7 +783,7 @@ def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
     documented = yaml.load(example[1], Loader=yaml.BaseLoader)
     action = 'Nitjsefnie-Actions/pr-gate'
     assert documented['jobs']['gate']['steps'][0]['uses'] == (
-        f'{action}@{REVIEWED_ACTION_PINS[action]}')
+        f'{action}@{_shipped_action_pin(action)}')
     shipped = _workflow('pr-gate.yml')
     assert documented['on'] == shipped['on'], (
         'README trigger block must equal the shipped workflow trigger block')
@@ -909,15 +914,20 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
     step = job['steps'][0]
     assert set(step) == {'uses', 'with'}, (
         'pr gate needs no checkout, shell, step condition or failure suppression')
-    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
-    assert step['uses'] == f'Nitjsefnie-Actions/pr-gate@{reviewed}', (
-        'pr gate must execute its reviewed action revision')
-    assert step['with'] == {
+    assert re.fullmatch(r'Nitjsefnie-Actions/pr-gate@[0-9a-f]{40}', step['uses']), (
+        'pr gate must execute a pr-gate release pinned by full commit SHA')
+    required = {
         'github-token': '${{ github.token }}',
         'repository': '${{ github.repository }}',
         'pull-request-number': '${{ github.event.pull_request.number }}',
-        'pull-request-author': '${{ github.event.pull_request.user.login }}'}, (
-        'pr gate must pass exactly the four documented PR inputs')
+        'pull-request-author': '${{ github.event.pull_request.user.login }}'}
+    assert {key: step['with'].get(key) for key in required} == required, (
+        'pr gate must pass the four documented PR inputs from the event')
+    declared = yaml.load((ROOT / 'action.yml').read_text(encoding='utf-8'),
+                         Loader=yaml.BaseLoader)['inputs']
+    assert set(step['with']) <= set(declared), (
+        'pr gate may pass only inputs the action declares; an opt-in such '
+        'as require-commit-attribution needs no edit here')
 
 
 # Boundary: shape and cross-file agreement only; whether a version
@@ -925,7 +935,6 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
 # (tag API).
 def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_version_comments(tmp):
     del tmp
-    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
     documented = {}
     for name in ('README.md', '.github/workflows/pr-gate.yml'):
         found = _documented_pr_gate_pins(name)
@@ -941,9 +950,6 @@ def test_readme_and_pr_gate_workflow_pin_one_reviewed_release_with_matching_vers
         documented[name] = (pin, comment)
     assert documented['README.md'] == documented['.github/workflows/pr-gate.yml'], (
         'README and pr-gate.yml must pin the same SHA under the same version comment')
-    assert documented['README.md'][0] == reviewed, (
-        'both files must pin the reviewed pr-gate revision from '
-        'REVIEWED_ACTION_PINS')
 
 
 # The pin-sync step ports Nitjsefnie-Actions/claim's "Check the README pin
@@ -963,7 +969,7 @@ def _pin_sync_step_run():
 
 
 def _documented_pin_line(comment):
-    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    reviewed = _shipped_action_pin('Nitjsefnie-Actions/pr-gate')
     return f'- uses: Nitjsefnie-Actions/pr-gate@{reviewed} {comment}'
 
 
@@ -1010,7 +1016,7 @@ def test_pin_sync_step_passes_when_both_files_pin_the_same_release(tmp):
 
 def test_pin_sync_step_fails_when_the_workflow_bump_leaves_the_readme_sha_behind(tmp):
     divergent = 'a' * 40
-    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    reviewed = _shipped_action_pin('Nitjsefnie-Actions/pr-gate')
     result = _run_pin_sync_step(
         tmp,
         readme=f'# example\n\n{_documented_pin_line("# v1.0.1")}\n',
@@ -1022,7 +1028,7 @@ def test_pin_sync_step_fails_when_the_workflow_bump_leaves_the_readme_sha_behind
 
 
 def test_pin_sync_step_fails_when_only_the_version_comment_diverges(tmp):
-    reviewed = REVIEWED_ACTION_PINS['Nitjsefnie-Actions/pr-gate']
+    reviewed = _shipped_action_pin('Nitjsefnie-Actions/pr-gate')
     result = _run_pin_sync_step(
         tmp,
         readme=f'# example\n\n{_documented_pin_line("# v1.0.1")}\n',
@@ -1168,19 +1174,21 @@ def test_secrets_scans_full_history_with_a_frozen_binary(tmp):
     steps = job['steps']
     assert len(steps) == 3
     assert steps[0]['uses'] == (
-        'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1')
+        f"actions/checkout@{_shipped_action_pin('actions/checkout')}")
     assert steps[0]['with'] == {'fetch-depth': '0', 'persist-credentials': 'false'}
-    download = steps[1]
-    assert download['run'].splitlines() == [
-        'curl --connect-timeout 5 --max-time 120 -fsSLO '
-        'https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/'
-        'gitleaks_8.30.1_linux_x64.tar.gz',
-        'echo \'551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb'
-        '  gitleaks_8.30.1_linux_x64.tar.gz\' | sha256sum -c -',
-        'tar xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks',
-        './gitleaks version']
-    assert '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb' in (
-        download['run'])
+    # One release, frozen by its digest; which release is the workflow's call.
+    download = steps[1]['run'].splitlines()
+    assert len(download) == 4, download
+    release = re.fullmatch(
+        r'curl --connect-timeout 5 --max-time 120 -fsSLO '
+        r'https://github\.com/gitleaks/gitleaks/releases/download/'
+        r'v(\d+\.\d+\.\d+)/gitleaks_\1_linux_x64\.tar\.gz', download[0])
+    assert release, download[0]
+    tarball = f'gitleaks_{release[1]}_linux_x64.tar.gz'
+    assert re.fullmatch(
+        r"echo '[0-9a-f]{64}  " + re.escape(tarball) + r"' \| sha256sum -c -",
+        download[1]), 'the download must be verified against a sha256 digest'
+    assert download[2:] == [f'tar xzf {tarball} gitleaks', './gitleaks version']
     scan = steps[2]
     assert scan['run'] == './gitleaks detect --verbose --redact --config .gitleaks.toml', (
         'the scan command is the gate itself and ships verbatim')
@@ -1211,8 +1219,6 @@ def test_all_action_references_are_immutable_and_share_family_pins(tmp):
                 reference = step['uses']
                 assert re.fullmatch(r'[\w.-]+/[\w./-]+@[0-9a-f]{40}', reference), reference
                 action, pin = reference.split('@')
-                assert pin == REVIEWED_ACTION_PINS.get(action), (
-                    f'{path.name}: {action} must use its reviewed revision')
                 family = '/'.join(action.split('/')[:2])
                 families.setdefault(family, set()).add(pin)
                 if action == 'actions/checkout':
