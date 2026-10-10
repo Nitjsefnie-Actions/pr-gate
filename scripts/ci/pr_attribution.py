@@ -214,8 +214,6 @@ def _coauthor_trailers(message):
                 parsed[-1][1] = f'{parsed[-1][1]} {continuation}'.strip()
         else:
             return []
-    if not trailer_lines:
-        return []
     trailers = []
     for token, trailer_value in parsed:
         if token.casefold() != 'co-authored-by':
