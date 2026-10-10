@@ -68,6 +68,20 @@ def _check(commit, responses=None, *, commits=None):
     return pr_attribution.check_commits(api, 'owner/repo', 'alice', commits), api
 
 
+class _TransportFailureApi(_ScriptedApi):
+    """`gh` dies before any HTTP status exists: request() raises.
+
+    The scripted doubles answer with responses only, so the transport arm
+    of pr_attribution's `_request` wrapper is modelled here the way
+    test_pr_gate's `_TransportFailureApi` models the gate's own.
+    """
+
+    def request(self, method, endpoint, payload=None):
+        if endpoint.startswith('users/'):
+            raise RuntimeError('gh was not found on PATH')
+        return super().request(method, endpoint, payload)
+
+
 def test_unrelated_author_without_exemption_is_refused_and_closed(tmp):
     del tmp
     commit = _commit()
@@ -739,6 +753,32 @@ def test_commit_trailer_parser_recognizes_separated_raw_trailer_paragraph(tmp=No
     assert api.calls == [('GET', 'users/alice', None)]
 
 
+def test_trailer_block_survives_trailing_blank_lines(tmp=None):
+    del tmp
+    message = (
+        'Change implementation\n\n'
+        'Co-Authored-By: Alice <alice@users.noreply.github.com>\n\n')
+    git_output = subprocess.run(
+        ['git', 'interpret-trailers', '--parse'],
+        input=message.encode('utf-8'), capture_output=True, check=True
+    ).stdout.decode('utf-8').replace('\r\n', '\n')
+    assert git_output == (
+        'Co-Authored-By: Alice <alice@users.noreply.github.com>\n')
+
+    commit = _commit(message=message)
+    api = _ScriptedApi({
+        ('GET', 'users/alice', None): _Response(
+            200, {'login': 'alice', 'id': 112233}),
+    })
+    reasons = pr_attribution.check_commits(api, 'owner/repo', 'alice', [commit])
+
+    # The trailer resolves to the actor, so the unrelated author is exempt;
+    # without the trailing-blank-line strip the parser returns no trailers,
+    # and the author identity check fires instead.
+    assert reasons == []
+    assert api.calls == [('GET', 'users/alice', None)]
+
+
 def test_script_search_resolution_transmits_accept_header_and_parses_query(tmp):
     email = 'peter+tag@example.com'
     fixture = _script_fixtures()
@@ -783,6 +823,153 @@ def test_exactly_250_commits_are_fetched_in_no_more_than_three_pages(tmp):
              if call['argv'][4] == 'repos/owner/repo/pulls/99/commits'
              and any(argument.startswith('page=') for argument in call['argv'])]
     assert pages == [1, 2, 3]
+
+
+def test_non_object_commit_item_is_an_attribution_error(tmp=None):
+    del tmp
+    api = _ScriptedApi({})
+
+    try:
+        pr_attribution.check_commits(
+            api, 'owner/repo', 'alice', ['not an object'])
+    except pr_attribution.AttributionError as error:
+        assert str(error) == 'commit response item is not an object'
+    else:
+        raise AssertionError('a non-object commit item was accepted')
+
+
+def test_commit_item_without_a_payload_object_is_checked_defensively(tmp=None):
+    # Drives three defaults at once: a commit item with no `commit` object
+    # leaves the payload fallback, the per-role identity fallback and the
+    # non-string message branch all to take.
+    del tmp
+    commit = {
+        'sha': '0123456789abcdef0123456789abcdef01234567',
+        'author': None,
+        'committer': None,
+    }
+    api = _ScriptedApi({})
+
+    reasons = pr_attribution.check_commits(api, 'owner/repo', 'alice', [commit])
+
+    assert reasons == [
+        'Commit 0123456 is authored by Unknown author <unknown>, which does '
+        'not resolve to a GitHub account.',
+        'Commit 0123456 is committed by Unknown committer <unknown>, which '
+        'does not resolve to a GitHub account.',
+    ]
+
+
+def test_trailer_resolution_skips_a_non_object_commit_identity(tmp=None):
+    del tmp
+    commit = _commit(
+        message='Change\n\nCo-Authored-By: Alice '
+        '<alice@users.noreply.github.com>')
+    commit['commit']['author'] = 'not an object'
+    api = _ScriptedApi({
+        ('GET', 'users/alice', None): _Response(
+            200, {'login': 'alice', 'id': 112233}),
+    })
+
+    reasons = pr_attribution.check_commits(api, 'owner/repo', 'alice', [commit])
+
+    assert reasons == []
+    assert api.calls == [('GET', 'users/alice', None)]
+
+
+def test_trailer_resolution_skips_a_non_object_github_user(tmp=None):
+    del tmp
+    commit = _commit(
+        message='Change\n\nCo-Authored-By: Alice '
+        '<alice@users.noreply.github.com>')
+    commit['author'] = 'not an object'
+    api = _ScriptedApi({
+        ('GET', 'users/alice', None): _Response(
+            200, {'login': 'alice', 'id': 112233}),
+    })
+
+    reasons = pr_attribution.check_commits(api, 'owner/repo', 'alice', [commit])
+
+    # A commit author with no linked login is refused even though the
+    # trailer resolves; the identity skip under test only applies to
+    # trailer resolution, not to the author check itself.
+    assert reasons == [
+        'Commit 0123456 is authored by Pleng <pleng@example.com>, which does '
+        'not resolve to a GitHub account.']
+    assert api.calls == [('GET', 'users/alice', None)]
+
+
+def test_search_results_items_must_be_a_list(tmp=None):
+    del tmp
+    email = 'peter@example.com'
+    endpoint = ('search/commits?q=author-email%3A%22'
+                'peter%40example.com%22')
+    commit = _commit(
+        author_login='alice', committer_login='alice',
+        message=f'Change\n\nCo-Authored-By: Peter <{email}>')
+    api = _ScriptedApi({
+        ('GET', endpoint, None): _Response(
+            200, {'total_count': 0, 'items': 'not a list'}),
+    })
+
+    try:
+        pr_attribution.check_commits(api, 'owner/repo', 'alice', [commit])
+    except pr_attribution.AttributionError as error:
+        assert str(error) == (
+            f'GitHub returned malformed search results for {endpoint}')
+    else:
+        raise AssertionError('malformed search results were accepted')
+
+
+def test_search_result_items_must_be_objects(tmp=None):
+    del tmp
+    email = 'peter@example.com'
+    endpoint = ('search/commits?q=author-email%3A%22'
+                'peter%40example.com%22')
+    commit = _commit(
+        author_login='alice', committer_login='alice',
+        message=f'Change\n\nCo-Authored-By: Peter <{email}>')
+    api = _ScriptedApi({
+        ('GET', endpoint, None): _Response(
+            200, {'total_count': 1, 'items': [42]}),
+    })
+
+    reasons = pr_attribution.check_commits(api, 'owner/repo', 'alice', [commit])
+
+    assert reasons == [
+        'Commit 0123456 carries the Co-Authored-By trailer Peter '
+        '<peter@example.com>, which does not resolve to a GitHub account.']
+    assert api.calls == [('GET', endpoint, None)]
+
+
+def test_transport_failure_during_user_lookup_is_an_attribution_error(tmp=None):
+    del tmp
+    commit = _commit(
+        message='Change\n\nCo-Authored-By: Alice '
+        '<alice@users.noreply.github.com>')
+    api = _TransportFailureApi({})
+
+    try:
+        pr_attribution.check_commits(api, 'owner/repo', 'alice', [commit])
+    except pr_attribution.AttributionError as error:
+        assert str(error) == 'gh was not found on PATH'
+    else:
+        raise AssertionError('a transport failure was read as an email miss')
+
+
+def test_commit_list_transport_failure_is_an_attribution_error(tmp=None):
+    del tmp
+    api = _attribution_api(
+        [_commit()],
+        paginate_error='gh pagination exceeded 3 commit pages')
+
+    try:
+        pr_attribution.commit_attribution_reasons(
+            api, 'owner/repo', 99, 'alice', api.pull)
+    except pr_attribution.AttributionError as error:
+        assert str(error) == 'gh pagination exceeded 3 commit pages'
+    else:
+        raise AssertionError('a paginate transport failure was not wrapped')
 
 
 if __name__ == '__main__':
