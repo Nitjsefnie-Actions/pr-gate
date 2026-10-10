@@ -1061,6 +1061,20 @@ def test_pagination_stops_after_fifty_full_pages(tmp):
     assert api.calls[-1][3][-1] == 'page=50'
 
 
+def test_pagination_stops_after_three_full_commit_pages(tmp):
+    del tmp
+    gate = _gate_module()
+    assert gate is not None, 'scripts/ci/pr_gate.py is not implemented'
+    pages = [gate.Response(200, list(range(100))) for _ in range(3)]
+    api = _PaginationApi(pages)
+    error = _runtime_error(
+        lambda: gate.GhApi.paginate(api, 'repos/x/pulls/1/commits'))
+    assert error == 'gh pagination exceeded 3 commit pages'
+    assert len(api.calls) == 3
+    assert api.calls[0][3][-1] == 'page=1'
+    assert api.calls[-1][3][-1] == 'page=3'
+
+
 def test_paginate_runtime_error_is_reported_by_run(tmp):
     del tmp
     api = _api(paginate_error='boom')
