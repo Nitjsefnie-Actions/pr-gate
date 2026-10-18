@@ -65,8 +65,7 @@ jobs:
         run: python -m coverage xml -o coverage.xml
       - name: Upload the coverage XML report
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && github.event_name == 'pull_request'
-        # actions/upload-artifact v7.0.1
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage-xml
           path: coverage.xml
@@ -94,8 +93,7 @@ jobs:
       contents: read
 
     steps:
-      # actions/checkout v7.0.1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The merge commit the event named, and the exact SHA `suites`
           # measured. Resolving refs/pull/N/merge here instead would let
@@ -106,8 +104,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # actions/download-artifact v8.0.1
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: coverage-xml
 
@@ -130,8 +127,7 @@ jobs:
           printf '%s\n' "$PR_NUMBER" > pr-number.txt
 
       - name: Upload the comment for the trusted commenter
-        # actions/upload-artifact v7.0.1
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: diff-coverage-comment
           path: |
