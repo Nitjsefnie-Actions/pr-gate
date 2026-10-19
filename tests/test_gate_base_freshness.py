@@ -121,6 +121,7 @@ def test_gate_paths_on_this_repository(tmp):
         '.github/workflows/audit.yml',
         '.github/workflows/claim.yml',
         '.github/workflows/codeql.yml',
+        '.github/workflows/comment-share.yml',
         '.github/workflows/coverage-comment.yml',
         '.github/workflows/lint.yml',
         '.github/workflows/pr-gate.yml',
