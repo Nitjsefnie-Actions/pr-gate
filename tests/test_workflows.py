@@ -806,7 +806,8 @@ def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_action
             'branches': ['main'],
             'paths-ignore': ['README.md', 'CONTRIBUTING.md',
                              'CODE_OF_CONDUCT.md', 'LICENSE']
-            + (['.github/ci-thresholds.json', 'pyright-baseline.json']
+            + (['.github/ci-thresholds.json', 'pyright-baseline.json',
+                '.github/comment-share.json']
                if name in ('tests.yml', 'types.yml') else [])}, name
     # actionlint is the one required workflow whose push trigger carries no
     # paths-ignore: a documentation-only push to main runs no other
@@ -842,6 +843,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     # pr-gate.yml carries contents: read, issues: read and pull-requests:
     # write at WORKFLOW level, its gate job inheriting.
     contracts = {
+        'comment-share.yml': ({'contents': 'read'}, {'comment-share': (None, '10')}),
         'tests.yml': ({'contents': 'read'}, {
             'suites': (None, '20'),
             'diff-coverage': ({'contents': 'read'}, '10')}),
@@ -1527,6 +1529,48 @@ def test_pyyaml_pin_agrees_across_the_hash_pinned_manifests(tmp):
     assert pins['requirements-test.txt'] == pins['requirements-actionlint.txt'], (
         'the two manifests must pin the same PyYAML release: the actionlint '
         'job and the suites import the same module')
+
+
+def test_comment_share_workflow_checks_every_pr_at_the_pinned_defaults(tmp):
+    del tmp
+    workflow = _workflow('comment-share.yml')
+    assert workflow['on'] == {'pull_request': '', 'push': {'branches': ['main']}}
+    assert workflow['permissions'] == {'contents': 'read'}
+    assert workflow['concurrency'] == {
+        'group': 'comment-share-${{ github.ref }}', 'cancel-in-progress': 'true'}
+    assert set(workflow['jobs']) == {'comment-share'}
+    job = workflow['jobs']['comment-share']
+    assert 'name' not in job
+    assert 'if' not in job
+    assert job['runs-on'] == 'ubuntu-latest'
+    assert job['timeout-minutes'] == '10'
+    checkout, action, *_ = job['steps']
+    assert checkout == {
+        'uses': 'actions/checkout@' + _shipped_action_pin('actions/checkout'),
+        'with': {'ref': '${{ github.event.pull_request.head.sha || github.sha }}',
+                 'fetch-depth': '0', 'persist-credentials': 'false'}}
+    assert action == {
+        'uses': 'Nitjsefnie-Actions/comment-ratchet@721426819be9e05deb76d56364f671b87fa05fbf',
+        'with': {'target': '15', 'records': '.github/comment-share.json',
+                 'mode': 'auto', 'base-ref': '${{ github.event.pull_request.base.sha }}'}}
+    source = (ROOT / '.github/workflows/comment-share.yml').read_text(encoding='utf-8')
+    pins = re.findall(r'^\s*- uses: (Nitjsefnie-Actions/comment-ratchet@[^\n]+)$',
+                      source, re.MULTILINE)
+    assert pins == [
+        'Nitjsefnie-Actions/comment-ratchet@721426819be9e05deb76d56364f671b87fa05fbf # v1.0.0']
+    for step in job['steps']:
+        assert 'continue-on-error' not in step
+
+
+def test_comment_share_seed_has_integer_byte_pairs(tmp):
+    del tmp
+    path = ROOT / '.github/comment-share.json'
+    assert path.is_file(), 'initial adoption requires a committed seed'
+    records = json.loads(path.read_text(encoding='utf-8'))
+    assert isinstance(records, dict)
+    for pair in records.values():
+        assert isinstance(pair, list) and len(pair) == 2
+        assert all(type(value) is int for value in pair)
 
 
 if __name__ == '__main__':

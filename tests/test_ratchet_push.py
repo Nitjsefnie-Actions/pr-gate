@@ -28,7 +28,7 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     del tmp
     workflow = _workflow('ratchet-push.yml')
     assert workflow['on'] == {'workflow_run': {
-        'workflows': ['tests', 'types'], 'types': ['completed']}}
+        'workflows': ['tests', 'types', 'comment share'], 'types': ['completed']}}
     assert workflow['permissions'] == {}
     assert workflow['concurrency'] == {'group': 'ratchet-push', 'cancel-in-progress': 'false'}
     assert set(workflow['jobs']) == {'push'}
@@ -375,14 +375,15 @@ def test_artifact_listing_uses_exact_names_and_propagates_api_failure(tmp):
             assert (run / 'outputs').read_text().strip() == f'ratchet={expected}'
 
 
-def test_both_carriers_ignore_both_records_on_push_only(tmp):
+def test_both_carriers_ignore_all_three_records_on_push_only(tmp):
     del tmp
     for name in ('tests.yml', 'types.yml'):
         events = _workflow(name)['on']
         assert events['push']['branches'] == ['main']
         assert events['push']['paths-ignore'] == [
             'README.md', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', 'LICENSE',
-            '.github/ci-thresholds.json', 'pyright-baseline.json']
+            '.github/ci-thresholds.json', 'pyright-baseline.json',
+            '.github/comment-share.json']
         assert events['pull_request'] == ''
 
 
@@ -532,6 +533,84 @@ def test_push_with_only_base_metadata_does_not_commit_or_push(tmp):
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert not any(command[0] in ('add', 'commit', 'push') for command in commands)
     assert not (tmp / 'ratchet-repo/base.txt').exists()
+
+
+def test_comment_share_name_matches_the_ratchet_push_subscription(tmp):
+    del tmp
+    assert _workflow('comment-share.yml')['name'] == 'comment share'
+    assert _workflow('ratchet-push.yml')['on']['workflow_run']['workflows'] == [
+        'tests', 'types', 'comment share']
+
+
+def test_comment_share_stages_after_the_gate_and_uploads_the_shared_artifact(tmp):
+    del tmp
+    steps = _workflow('comment-share.yml')['jobs']['comment-share']['steps']
+    assert len(steps) == 4
+    stage = _step('comment-share.yml', 'Stage changed records for the ratchet push')
+    upload = _step('comment-share.yml', 'Upload the changed records')
+    assert steps[2:] == [stage, upload]
+    assert stage['id'] == 'stage'
+    assert stage['if'] == "github.event_name == 'push'"
+    assert stage['env'] == {'BASE_SHA': '${{ github.sha }}'}
+    assert upload['if'] == "success() && steps.stage.outputs.changed == 'true'"
+    assert upload['uses'] == ('actions/upload-artifact@'
+                              + _shipped_action_pin('actions/upload-artifact'))
+    assert upload['with'] == {
+        'name': 'ratchet-push', 'path': '${{ runner.temp }}/ratchet-data',
+        'include-hidden-files': 'true', 'retention-days': '1', 'if-no-files-found': 'error'}
+
+
+def _comment_share_stage_fixture(tmp):
+    repo = tmp / 'repo'
+    (repo / '.github').mkdir(parents=True)
+    records = repo / '.github/comment-share.json'
+    records.write_text('{"source.py": [20, 100]}\n', encoding='utf-8')
+    _git(repo, 'init', '-b', 'main')
+    _git(repo, 'config', 'user.name', 'fixture')
+    _git(repo, 'config', 'user.email', 'fixture@example.com')
+    _git(repo, 'config', 'commit.gpgsign', 'false')
+    _git(repo, 'add', '.github/comment-share.json')
+    _git(repo, 'commit', '-m', 'fixture')
+    base = _git(repo, 'rev-parse', 'HEAD')
+    return repo, records, base
+
+
+def _run_comment_share_stage(tmp, repo, base):
+    script = _step('comment-share.yml', 'Stage changed records for the ratchet push')['run']
+    return _run(script, tmp, {
+        'RUNNER_TEMP': str(tmp), 'GITHUB_OUTPUT': str(tmp / 'outputs'), 'BASE_SHA': base}, repo)
+
+
+def test_comment_share_staging_unchanged_records_stages_nothing(tmp):
+    repo, _, base = _comment_share_stage_fixture(tmp)
+    result = _run_comment_share_stage(tmp, repo, base)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert (tmp / 'outputs').read_text().strip() == 'changed=false'
+    assert not (tmp / 'ratchet-data').exists()
+
+
+def test_comment_share_staging_preserves_the_records_path_and_measured_head(tmp):
+    repo, records, base = _comment_share_stage_fixture(tmp)
+    records.write_text('{"source.py": [19, 100]}\n', encoding='utf-8')
+    result = _run_comment_share_stage(tmp, repo, base)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert (tmp / 'outputs').read_text().strip() == 'changed=true'
+    artifact = tmp / 'ratchet-data'
+    assert sorted(p.relative_to(artifact).as_posix() for p in artifact.rglob('*')
+                  if p.is_file()) == ['.github/comment-share.json', 'base.txt']
+    assert (artifact / '.github/comment-share.json').read_bytes() == records.read_bytes()
+    assert (artifact / 'base.txt').read_text() == base + '\n'
+
+
+def test_comment_share_staging_refuses_a_different_checkout_head(tmp):
+    repo, records, base = _comment_share_stage_fixture(tmp)
+    _git(repo, 'commit', '--allow-empty', '-m', 'different head')
+    records.write_text('{"source.py": [19, 100]}\n', encoding='utf-8')
+    result = _run_comment_share_stage(tmp, repo, base)
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    assert 'Checkout does not match the measured run head' in result.stderr
+    assert not (tmp / 'ratchet-data').exists()
+    assert not (tmp / 'outputs').exists()
 
 
 if __name__ == '__main__':
