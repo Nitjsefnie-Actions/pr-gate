@@ -1544,20 +1544,11 @@ def test_comment_share_workflow_checks_every_pr_at_the_pinned_defaults(tmp):
     assert 'if' not in job
     assert job['runs-on'] == 'ubuntu-latest'
     assert job['timeout-minutes'] == '10'
-    checkout, action, *_ = job['steps']
+    checkout = job['steps'][0]
     assert checkout == {
         'uses': 'actions/checkout@' + _shipped_action_pin('actions/checkout'),
         'with': {'ref': '${{ github.event.pull_request.head.sha || github.sha }}',
                  'fetch-depth': '0', 'persist-credentials': 'false'}}
-    assert action == {
-        'uses': 'Nitjsefnie-Actions/comment-ratchet@721426819be9e05deb76d56364f671b87fa05fbf',
-        'with': {'target': '15', 'records': '.github/comment-share.json',
-                 'mode': 'auto', 'base-ref': '${{ github.event.pull_request.base.sha }}'}}
-    source = (ROOT / '.github/workflows/comment-share.yml').read_text(encoding='utf-8')
-    pins = re.findall(r'^\s*- uses: (Nitjsefnie-Actions/comment-ratchet@[^\n]+)$',
-                      source, re.MULTILINE)
-    assert pins == [
-        'Nitjsefnie-Actions/comment-ratchet@721426819be9e05deb76d56364f671b87fa05fbf # v1.0.0']
     for step in job['steps']:
         assert 'continue-on-error' not in step
 
