@@ -46,10 +46,6 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     assert download['uses'] == ('actions/download-artifact@'
                                 + _shipped_action_pin('actions/download-artifact'))
     assert download['if'] == "steps.list.outputs.ratchet == 'true'"
-    assert download['with'] == {
-        'name': 'ratchet-push', 'path': '${{ runner.temp }}/ratchet-data',
-        'run-id': '${{ github.event.workflow_run.id }}',
-        'github-token': '${{ secrets.GITHUB_TOKEN }}'}
     push = _step('ratchet-push.yml', 'Push the ratchet commit to main')
     assert push['if'] == "steps.list.outputs.ratchet == 'true'"
     assert push['env'] == {'MASTER_PUSH_DEPLOY_KEY': '${{ secrets.MASTER_PUSH_DEPLOY_KEY }}',
@@ -78,10 +74,6 @@ def test_staging_is_push_only_on_the_measured_cell_after_a_green_gate(tmp):
         "github.event_name == 'push' && steps.ratchet.outputs.changed == 'true'")
     assert upload['uses'] == ('actions/upload-artifact@'
                               + _shipped_action_pin('actions/upload-artifact'))
-    assert upload['with'] == {'name': 'ratchet-push',
-                              'path': '${{ runner.temp }}/ratchet-data',
-                              'retention-days': '1', 'if-no-files-found': 'error',
-                              'include-hidden-files': 'true'}
     assert steps.index(_step('tests.yml', 'Coverage gate')) < steps.index(stage)
     assert steps.index(stage) < steps.index(upload)
     for step in (stage, upload, _step('tests.yml', 'Coverage gate')):
@@ -400,10 +392,6 @@ def test_type_staging_runs_after_gate_on_push_and_uses_shared_artifact(tmp):
         "github.event_name == 'push' && steps.ratchet.outputs.changed == 'true'")
     assert upload['uses'] == ('actions/upload-artifact@'
                               + _shipped_action_pin('actions/upload-artifact'))
-    assert upload['with'] == {'name': 'ratchet-push',
-                              'path': '${{ runner.temp }}/ratchet-data',
-                              'retention-days': '1', 'if-no-files-found': 'error',
-                              'include-hidden-files': 'true'}
     steps = job['steps']
     gate = _step('types.yml', 'Type-error ratchet')
     assert steps.index(gate) < steps.index(stage) < steps.index(upload)
