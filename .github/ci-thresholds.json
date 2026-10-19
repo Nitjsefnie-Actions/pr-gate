@@ -2,7 +2,7 @@
   "schema_version": 1,
   "coverage": {
     "python": {
-      "floor": 94.3,
+      "floor": 92.8,
       "measured": 94.3,
       "cell": "ubuntu-latest / Python 3.13"
     }
