@@ -6,6 +6,8 @@ on:
     # come from this repository's triggering run. The top-level job reads
     # its protected environment's deploy key; it executes no PR code,
     # installs no packages, and pushes with SSH rather than the job token.
+    # It installs whatever record files the triggering run staged, at their
+    # staged repo-relative paths; base.txt is measurement metadata only.
     # Both carriers remeasure on the next eligible main push. If one
     # carrier's ratchet commit makes its sibling's measurement stale, that
     # sibling can stage its improvement again on that next eligible push.
@@ -89,21 +91,37 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
-          if [ -f "$RUNNER_TEMP/ratchet-data/ci-thresholds.json" ]; then
-            cp "$RUNNER_TEMP/ratchet-data/ci-thresholds.json" "$RUNNER_TEMP/ratchet-repo/.github/ci-thresholds.json"
-            git -C "$RUNNER_TEMP/ratchet-repo" add .github/ci-thresholds.json
-          fi
-          if [ -f "$RUNNER_TEMP/ratchet-data/pyright-baseline.json" ]; then
-            cp "$RUNNER_TEMP/ratchet-data/pyright-baseline.json" "$RUNNER_TEMP/ratchet-repo/pyright-baseline.json"
-            git -C "$RUNNER_TEMP/ratchet-repo" add pyright-baseline.json
-          fi
+          # Validate every destination before installing any record. NUL
+          # separators preserve spaces and other shell characters in paths.
+          python - "$RUNNER_TEMP/ratchet-data" "$RUNNER_TEMP/ratchet-repo" > "$RUNNER_TEMP/ratchet-files" <<'PYTHON'
+          import os
+          import sys
+          from pathlib import Path
+          data = Path(sys.argv[1])
+          repo = Path(sys.argv[2]).resolve()
+          for source in sorted(data.rglob('*')):
+              relative = source.relative_to(data)
+              if relative == Path('base.txt') or not source.is_file():
+                  continue
+              if relative.is_absolute() or not (repo / relative).resolve().is_relative_to(repo):
+                  sys.exit(f'unsafe staged path: {relative}')
+              sys.stdout.buffer.write(os.fsencode(relative.as_posix()) + b'\0')
+          PYTHON
+          installed=()
+          while IFS= read -r -d '' relative; do
+            destination="$RUNNER_TEMP/ratchet-repo/$relative"
+            mkdir -p "${destination%/*}"
+            cp -- "$RUNNER_TEMP/ratchet-data/$relative" "$destination"
+            GIT_LITERAL_PATHSPECS=1 git -C "$RUNNER_TEMP/ratchet-repo" add -- "$relative"
+            installed+=("$relative")
+          done < "$RUNNER_TEMP/ratchet-files"
           git -C "$RUNNER_TEMP/ratchet-repo" config user.name 'github-actions[bot]'
           git -C "$RUNNER_TEMP/ratchet-repo" config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          if [ -z "$(git -C "$RUNNER_TEMP/ratchet-repo" status --porcelain .github/ci-thresholds.json pyright-baseline.json)" ]; then
+          if [ "${#installed[@]}" -eq 0 ] || [ -z "$(GIT_LITERAL_PATHSPECS=1 git -C "$RUNNER_TEMP/ratchet-repo" status --porcelain -- "${installed[@]}")" ]; then
             echo "No ratchet move is justified by this run: nothing to commit."
             exit 0
           fi
-          git -C "$RUNNER_TEMP/ratchet-repo" commit -m 'Ratchet CI records: raise coverage floor / tighten type baseline (automated)'
+          git -C "$RUNNER_TEMP/ratchet-repo" commit -m 'Ratchet CI records (automated)'
           if ! git -C "$RUNNER_TEMP/ratchet-repo" push origin HEAD:main; then
             git -C "$RUNNER_TEMP/ratchet-repo" fetch --quiet origin main
             if [ "$(git -C "$RUNNER_TEMP/ratchet-repo" rev-parse HEAD^)" = "$(git -C "$RUNNER_TEMP/ratchet-repo" rev-parse FETCH_HEAD)" ]; then

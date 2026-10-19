@@ -79,7 +79,8 @@ def test_staging_is_push_only_on_the_measured_cell_after_a_green_gate(tmp):
                               + _shipped_action_pin('actions/upload-artifact'))
     assert upload['with'] == {'name': 'ratchet-push',
                               'path': '${{ runner.temp }}/ratchet-data',
-                              'retention-days': '1', 'if-no-files-found': 'error'}
+                              'retention-days': '1', 'if-no-files-found': 'error',
+                              'include-hidden-files': 'true'}
     assert steps.index(_step('tests.yml', 'Coverage gate')) < steps.index(stage)
     assert steps.index(stage) < steps.index(upload)
     for step in (stage, upload, _step('tests.yml', 'Coverage gate')):
@@ -127,7 +128,7 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
         assert outputs.read_text().strip() == f'changed={str(changed).lower()}'
         if changed:
             assert (artifact / 'base.txt').read_text() == base + '\n'
-            record = json.loads((artifact / 'ci-thresholds.json').read_text())
+            record = json.loads((artifact / '.github/ci-thresholds.json').read_text())
             assert record['coverage']['python'] == {'floor': 92.0, 'measured': 92.0, 'cell': 'keep'}
         else:
             assert not artifact.exists(), 'equal/lower coverage must stage no artifact'
@@ -189,7 +190,7 @@ def _git(repo, *args):
 
 
 def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
-              move_on_push=False, records=('coverage',)):
+              move_on_push=False, records=('coverage',), extra_records=None, escape=False):
     step = _step('ratchet-push.yml', 'Push the ratchet commit to main')
     repo = tmp / 'remote'
     repo.mkdir()
@@ -209,13 +210,14 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
     artifact.mkdir()
     (artifact / 'base.txt').write_text(('0' * 40 if stale else base) + '\n', encoding='utf-8')
     if 'coverage' in records:
+        (artifact / '.github').mkdir()
         if unchanged:
-            shutil.copyfile(thresholds, artifact / 'ci-thresholds.json')
+            shutil.copyfile(thresholds, artifact / '.github/ci-thresholds.json')
         else:
             module = _util.load(ROOT / 'scripts/ci/coverage_ratchet.py',
                                 'coverage_ratchet_under_test')
             assert module.main(['--thresholds', str(thresholds), '--measured', '94.2',
-                                '--output', str(artifact / 'ci-thresholds.json')]) == 0
+                                '--output', str(artifact / '.github/ci-thresholds.json')]) == 0
     if 'types' in records:
         shutil.copyfile(baseline, artifact / 'pyright-baseline.json')
         if not unchanged:
@@ -224,6 +226,21 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
             module = _util.load(ROOT / 'scripts/ci/type_ratchet.py', 'type_ratchet_under_test')
             assert module.main(['--tighten', '--baseline',
                                 str(artifact / 'pyright-baseline.json'), str(report)]) == 0
+    for relative, content in (extra_records or {}).items():
+        path = artifact / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding='utf-8')
+    if escape:
+        outside = tmp / 'outside'
+        outside.mkdir()
+        installed_repo = tmp / 'ratchet-repo'
+        installed_repo.mkdir()
+        link = installed_repo / 'escape'
+        if os.name == 'nt':
+            subprocess.run(['cmd', '/c', 'mklink', '/J', str(link), str(outside)],
+                           check=True, capture_output=True, text=True)
+        else:
+            link.symlink_to('../outside', target_is_directory=True)
     boundary = tmp / 'boundary.py'
     boundary.write_text(_GIT_BOUNDARY, encoding='utf-8')
     bash_env = tmp / 'bash-env'
@@ -255,11 +272,11 @@ def test_raise_commits_exact_staged_data_and_pushes_only_main(tmp):
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert ['fetch', '--quiet', 'origin', 'main'] in commands
     assert ['remote', 'add', 'origin', 'git@github.com:owner/repo.git'] in commands
-    assert ['add', '.github/ci-thresholds.json'] in commands
+    assert ['add', '--', '.github/ci-thresholds.json'] in commands
     assert ['config', 'user.name', 'github-actions[bot]'] in commands
     assert ['config', 'user.email',
             '41898282+github-actions[bot]@users.noreply.github.com'] in commands
-    subject = 'Ratchet CI records: raise coverage floor / tighten type baseline (automated)'
+    subject = 'Ratchet CI records (automated)'
     assert ['commit', '-m', subject] in commands
     assert commands[-1] == ['push', 'origin', 'HEAD:main']
     repo = tmp / 'ratchet-repo'
@@ -363,7 +380,8 @@ def test_type_staging_runs_after_gate_on_push_and_uses_shared_artifact(tmp):
                               + _shipped_action_pin('actions/upload-artifact'))
     assert upload['with'] == {'name': 'ratchet-push',
                               'path': '${{ runner.temp }}/ratchet-data',
-                              'retention-days': '1', 'if-no-files-found': 'error'}
+                              'retention-days': '1', 'if-no-files-found': 'error',
+                              'include-hidden-files': 'true'}
     steps = job['steps']
     gate = _step('types.yml', 'Type-error ratchet')
     assert steps.index(gate) < steps.index(stage) < steps.index(upload)
@@ -424,7 +442,7 @@ def test_push_applies_type_only_and_combined_records_once(tmp):
             record = json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))
             assert record['coverage']['python']['floor'] == 94.2
         assert changed == expected
-        assert ['add', 'pyright-baseline.json'] in commands
+        assert ['add', '--', 'pyright-baseline.json'] in commands
         assert sum(command[0] == 'commit' for command in commands) == 1
         assert commands.count(['push', 'origin', 'HEAD:main']) == 1
 
@@ -442,6 +460,57 @@ def test_stale_and_unchanged_type_records_never_push(tmp):
                 run / 'remote/pyright-baseline.json').read_bytes()
             if stale:
                 assert '::notice::' in result.stdout and 'main moved' in summary.lower()
+
+
+def test_push_installs_three_records_at_their_staged_paths_once(tmp):
+    third = '.github/extra records/item[1].json'
+    decoy = tmp / 'ratchet-repo/.github/extra records/item1.json'
+    decoy.parent.mkdir(parents=True)
+    decoy.write_text('unrelated worktree file\n', encoding='utf-8')
+    content = '{"example_count":1}\n'
+    result, commands, _ = _push_run(tmp, records=('coverage', 'types'),
+                                    extra_records={third: content})
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    repo = tmp / 'ratchet-repo'
+    expected = {'.github/ci-thresholds.json', 'pyright-baseline.json', third}
+    changed = set(_git(repo, 'diff-tree', '--no-commit-id', '--name-only',
+                       '-r', 'HEAD').splitlines())
+    assert changed == expected
+    assert _git(repo, 'show', f'HEAD:{third}') == content.strip()
+    assert {tuple(command) for command in commands if command[0] == 'add'} == {
+        ('add', '--', path) for path in expected}
+    status = [command for command in commands if command[:2] == ['status', '--porcelain']]
+    assert len(status) == 1
+    assert status[0][2] == '--' and set(status[0][3:]) == expected
+    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
+    assert sum(command[0] == 'commit' for command in commands) == 1
+    assert not (repo / 'base.txt').exists()
+
+
+def test_push_installs_an_unlisted_record_without_known_records(tmp):
+    third = 'records/another.json'
+    result, commands, _ = _push_run(tmp, records=(), extra_records={third: '{}\n'})
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert _git(tmp / 'ratchet-repo', 'diff-tree', '--no-commit-id', '--name-only',
+                '-r', 'HEAD') == third
+    assert ['add', '--', third] in commands
+    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
+
+
+def test_push_refuses_a_staged_destination_that_traverses_outside_the_repo(tmp):
+    result, commands, _ = _push_run(tmp, records=('coverage', 'types'), escape=True,
+                                    extra_records={'escape/record.json': '{}\n'})
+    assert result.returncode != 0, (result.stdout, result.stderr)
+    assert 'unsafe staged path' in result.stderr
+    assert not any(command[0] in ('add', 'commit', 'push') for command in commands)
+    assert not (tmp / 'outside/record.json').exists()
+
+
+def test_push_with_only_base_metadata_does_not_commit_or_push(tmp):
+    result, commands, _ = _push_run(tmp, records=())
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert not any(command[0] in ('add', 'commit', 'push') for command in commands)
+    assert not (tmp / 'ratchet-repo/base.txt').exists()
 
 
 if __name__ == '__main__':
