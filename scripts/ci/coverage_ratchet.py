@@ -5,16 +5,19 @@ followed by one decimal place, with nonzero/non-100 endpoints clamped to
 0.1/99.9. The workflow supplies coverage report --format=total's string.
 The recorded ``measured`` value rises only when a new measurement beats it
 by more than the raise hysteresis, and a raise sets ``floor`` one hysteresis
-below the new value, so a later dip cannot turn the coverage gate red; a
-measurement within the hysteresis justifies no raise and writes nothing.
+below the new value: after a raise the coverage gate fails only on a dip
+deeper than the hysteresis. A measurement within the hysteresis justifies
+no raise and writes nothing. Both the hysteresis comparison and the written
+floor are decimal-exact at the percentages' one-decimal precision.
 """
 import argparse
 import json
 import math
 import sys
+from decimal import Decimal
 from pathlib import Path
 
-RAISE_HYSTERESIS = 1.5
+RAISE_HYSTERESIS = Decimal('1.5')
 
 
 def _percentage(value):
@@ -47,9 +50,10 @@ def main(argv=None):
             raise ValueError('recorded measured coverage is below its floor')
         if not isinstance(record['cell'], str) or not record['cell'].strip():
             raise ValueError('coverage cell must be a nonempty string')
-        if measured - previous <= RAISE_HYSTERESIS:
+        exact = Decimal(str(measured))
+        if exact - Decimal(str(previous)) <= RAISE_HYSTERESIS:
             return 3
-        record.update(floor=measured - RAISE_HYSTERESIS, measured=measured)
+        record.update(floor=float(exact - RAISE_HYSTERESIS), measured=measured)
         args.output.write_text(json.dumps(document, indent=2, allow_nan=False) + '\n',
                                encoding='utf-8')
     except (OSError, ValueError, TypeError, KeyError) as error:
