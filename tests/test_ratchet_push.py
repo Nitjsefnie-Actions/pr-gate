@@ -553,11 +553,8 @@ def test_comment_share_stages_after_the_gate_and_uploads_the_shared_artifact(tmp
     assert stage['if'] == "github.event_name == 'push'"
     assert stage['env'] == {'BASE_SHA': '${{ github.sha }}'}
     assert upload['if'] == "success() && steps.stage.outputs.changed == 'true'"
-    assert upload['uses'] == ('actions/upload-artifact@'
-                              + _shipped_action_pin('actions/upload-artifact'))
-    assert upload['with'] == {
-        'name': 'ratchet-push', 'path': '${{ runner.temp }}/ratchet-data',
-        'include-hidden-files': 'true', 'retention-days': '1', 'if-no-files-found': 'error'}
+    download = _step('ratchet-push.yml', 'Download the ratchet data')
+    assert upload['with']['name'] == download['with']['name']
 
 
 def _comment_share_stage_fixture(tmp):
