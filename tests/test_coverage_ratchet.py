@@ -52,11 +52,25 @@ def test_raise_needs_more_than_the_hysteresis_and_keeps_a_gap(tmp):
     code, output, _ = _invoke(tmp, '94.2')
     assert code == 3 and not output.exists(), (
         'a dip to just above the floor justifies no raise')
+    # Floating-point subtraction alone would raise on this decimal tie
+    # (64.4 - 62.9 evaluates above 1.5) and write a 17-digit floor.
+    document = _record()
+    document['coverage']['python'].update(floor=61.4, measured=62.9)
+    code, output, _ = _invoke(tmp, '64.4', document)
+    assert code == 3 and not output.exists(), (
+        'a 64.4-from-62.9 tie never raises')
     code, output, _ = _invoke(tmp, '95.2')
     assert code == 0
     written = json.loads(output.read_text(encoding='utf-8'))['coverage']['python']
     assert written['floor'] == 95.2 - 1.5, 'a raise keeps the gap below measured'
     assert written['measured'] == 95.2
+    document = _record()
+    document['coverage']['python'].update(floor=61.4, measured=62.9)
+    code, output, _ = _invoke(tmp, '64.6', document)
+    assert code == 0
+    written = json.loads(output.read_text(encoding='utf-8'))['coverage']['python']
+    assert written['floor'] == 63.1, 'a raise writes a clean one-decimal floor'
+    assert written['measured'] == 64.6
 
 
 def test_equal_and_lower_write_nothing_even_over_existing_output(tmp):
