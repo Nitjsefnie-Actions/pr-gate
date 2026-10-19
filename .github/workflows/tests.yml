@@ -6,7 +6,7 @@ on:
   push:
     branches: [main]
     # Ratchet-only commits stay silent; code and other policy paths run tests.
-    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE, .github/ci-thresholds.json, pyright-baseline.json]
+    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE, .github/ci-thresholds.json, pyright-baseline.json, .github/comment-share.json]
   pull_request:
   workflow_dispatch:
 
