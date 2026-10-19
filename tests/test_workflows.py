@@ -119,10 +119,10 @@ def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
     del tmp
     steps = _workflow('tests.yml')['jobs']['suites']['steps']
     coverage_steps = [step for step in steps
-                      if 'coverage' in step.get('run', '')]
+                      if 'coverage' in step.get('run', '')
+                      and step.get('id') != 'ratchet']
     assert len(coverage_steps) == 4, (
-        'exactly the measure, summary, gate and XML-export steps may '
-        'mention coverage')
+        'the four coverage reporting/gating steps exclude ratchet staging')
     measured_if = ("matrix.os == 'ubuntu-latest' "
                    "&& matrix.python == '3.13'")
     pr_only_if = f"{measured_if} && github.event_name == 'pull_request'"
@@ -153,7 +153,8 @@ def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
             f'the plain run {run!r} must stay unmeasured and unconditional')
     for step in steps:
         if step in coverage_steps or step.get('name') == (
-                'Upload the coverage XML report'):
+                'Upload the coverage XML report') or step.get('name') in (
+                    'Stage the ratchet data', 'Upload the ratchet data'):
             continue
         assert 'if' not in step, (
             'checkout, setup-python, install, the plain suite and the lint '
@@ -163,10 +164,10 @@ def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
 def test_coverage_gate_reads_floor_from_committed_thresholds(tmp):
     del tmp
     steps = [step for step in _workflow('tests.yml')['jobs']['suites']['steps']
-             if 'coverage' in step.get('run', '')]
+             if 'coverage' in step.get('run', '')
+             and step.get('id') != 'ratchet']
     assert len(steps) == 4, (
-        'exactly the measure, summary, gate and XML-export steps mention '
-        'coverage; the export adds a fourth without touching the gate trio')
+        'the four reporting/gating steps exclude ratchet staging')
     measure = next(step for step in steps if 'coverage run' in step['run'])
     summary = next(step for step in steps
                    if 'GITHUB_STEP_SUMMARY' in step['run'])
@@ -200,7 +201,7 @@ def test_tests_yml_writes_and_uploads_the_coverage_xml_for_pull_requests(tmp):
     for step in (write, upload):
         assert ' '.join(step['if'].split()) == pr_only_if, (
             'the XML export is for pull requests only: a push run has no '
-            'patch to measure, so push runs upload nothing')
+            'patch to measure, so push runs upload no XML')
     reviewed = _shipped_action_pin('actions/upload-artifact')
     assert upload['uses'] == f'actions/upload-artifact@{reviewed}'
     assert upload['with'] == {'name': 'coverage-xml',
@@ -426,7 +427,7 @@ def test_tests_yml_uploads_disjoint_artifact_names(tmp):
     names = [step['with']['name']
              for job in jobs.values() for step in job['steps']
              if step.get('uses', '').startswith('actions/upload-artifact@')]
-    assert sorted(names) == ['coverage-xml', 'diff-coverage-comment']
+    assert sorted(names) == ['coverage-xml', 'diff-coverage-comment', 'ratchet-push']
     assert len(names) == len(set(names)), (
         'two uploads under one name would overwrite: the second upload '
         'silently drops the first artifact')
@@ -804,7 +805,8 @@ def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_action
         assert events['push'] == {
             'branches': ['main'],
             'paths-ignore': ['README.md', 'CONTRIBUTING.md',
-                             'CODE_OF_CONDUCT.md', 'LICENSE']}, name
+                             'CODE_OF_CONDUCT.md', 'LICENSE']
+            + (['.github/ci-thresholds.json'] if name == 'tests.yml' else [])}, name
     # actionlint is the one required workflow whose push trigger carries no
     # paths-ignore: a documentation-only push to main runs no other
     # workflow at all, so the merge-marker check it hosts would never see
@@ -842,6 +844,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'tests.yml': ({'contents': 'read'}, {
             'suites': (None, '20'),
             'diff-coverage': ({'contents': 'read'}, '10')}),
+        'ratchet-push.yml': ({}, {'push': ({'actions': 'read'}, '15')}),
         'actionlint.yml': ({'contents': 'read'}, {
             'actionlint': (None, '15')}),
         'audit.yml': ({'contents': 'read'}, {'pip-audit': (None, '15')}),
@@ -869,6 +872,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         ('pr-gate.yml', 'gate'),
         ('scorecard.yml', 'analysis'),
         ('tests.yml', 'diff-coverage'),
+        ('ratchet-push.yml', 'push'),
         ('coverage-comment.yml', 'comment'),
     }
     for name, (permissions, jobs) in contracts.items():
