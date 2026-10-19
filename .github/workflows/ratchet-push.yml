@@ -12,7 +12,7 @@ on:
     # carrier's ratchet commit makes its sibling's measurement stale, that
     # sibling can stage its improvement again on that next eligible push.
     # Record-only pushes are ignored by both carriers to prevent a loop.
-    workflows: [tests, types]
+    workflows: [tests, types, comment share]
     types: [completed]
 
 permissions: {}

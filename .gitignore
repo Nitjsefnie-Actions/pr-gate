@@ -22,12 +22,14 @@
 !.github/PULL_REQUEST_TEMPLATE.md
 !.github/dependabot.yml
 !.github/ci-thresholds.json
+!.github/comment-share.json
 !.github/ISSUE_TEMPLATE/
 .github/ISSUE_TEMPLATE/*
 !.github/ISSUE_TEMPLATE/bug-report.md
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/tests.yml
+!.github/workflows/comment-share.yml
 !.github/workflows/coverage-comment.yml
 !.github/workflows/actionlint.yml
 !.github/workflows/lint.yml

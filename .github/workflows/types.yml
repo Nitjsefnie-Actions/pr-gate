@@ -25,7 +25,7 @@ on:
     # the same commit a second time under a different ref, which the
     # `concurrency` group cannot collapse.
     branches: [main]
-    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE, .github/ci-thresholds.json, pyright-baseline.json]
+    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE, .github/ci-thresholds.json, pyright-baseline.json, .github/comment-share.json]
   pull_request:
   workflow_dispatch:
 

@@ -1,0 +1,110 @@
+{
+  ".github/dependabot.yml": [
+    845,
+    1338
+  ],
+  ".github/workflows/actionlint.yml": [
+    5777,
+    9029
+  ],
+  ".github/workflows/audit.yml": [
+    3098,
+    4976
+  ],
+  ".github/workflows/claim.yml": [
+    854,
+    1410
+  ],
+  ".github/workflows/codeql.yml": [
+    1826,
+    2659
+  ],
+  ".github/workflows/coverage-comment.yml": [
+    2512,
+    7031
+  ],
+  ".github/workflows/lint.yml": [
+    1467,
+    2285
+  ],
+  ".github/workflows/pr-gate.yml": [
+    496,
+    1152
+  ],
+  ".github/workflows/ratchet-push.yml": [
+    828,
+    5093
+  ],
+  ".github/workflows/scorecard.yml": [
+    202,
+    1196
+  ],
+  ".github/workflows/secrets.yml": [
+    1560,
+    2351
+  ],
+  ".github/workflows/tests.yml": [
+    1687,
+    5527
+  ],
+  ".github/workflows/types.yml": [
+    1330,
+    2974
+  ],
+  "scripts/ci/commit_scopes.py": [
+    6177,
+    11823
+  ],
+  "scripts/ci/coverage_ratchet.py": [
+    630,
+    2202
+  ],
+  "scripts/ci/diff_coverage.py": [
+    3466,
+    9406
+  ],
+  "scripts/ci/gate_base_freshness.py": [
+    10680,
+    19838
+  ],
+  "scripts/ci/pr_body_closing.py": [
+    1499,
+    2033
+  ],
+  "scripts/ci/pr_gate.py": [
+    4605,
+    22606
+  ],
+  "scripts/ci/type_ratchet.py": [
+    1280,
+    4192
+  ],
+  "tests/_parser_guard.py": [
+    665,
+    2245
+  ],
+  "tests/_prfootnotes.py": [
+    3768,
+    19452
+  ],
+  "tests/_prgate_message.py": [
+    1696,
+    3933
+  ],
+  "tests/test_pr_body_closing.py": [
+    4821,
+    22056
+  ],
+  "tests/test_pr_body_elements.py": [
+    1313,
+    3312
+  ],
+  "tests/test_pr_gate.py": [
+    6983,
+    35856
+  ],
+  "tests/test_pr_gate_reopen_retry.py": [
+    5336,
+    16607
+  ]
+}
