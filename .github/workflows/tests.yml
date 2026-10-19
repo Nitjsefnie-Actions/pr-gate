@@ -68,8 +68,8 @@ jobs:
           mkdir -p "$RUNNER_TEMP/ratchet-output"
           if python scripts/ci/coverage_ratchet.py --measured "$measured" \
             --output "$RUNNER_TEMP/ratchet-output/ci-thresholds.json"; then
-            mkdir -p "$RUNNER_TEMP/ratchet-data"
-            cp "$RUNNER_TEMP/ratchet-output/ci-thresholds.json" "$RUNNER_TEMP/ratchet-data/ci-thresholds.json"
+            mkdir -p "$RUNNER_TEMP/ratchet-data/.github"
+            cp "$RUNNER_TEMP/ratchet-output/ci-thresholds.json" "$RUNNER_TEMP/ratchet-data/.github/ci-thresholds.json"
             printf '%s\n' "$MEASURED_HEAD" > "$RUNNER_TEMP/ratchet-data/base.txt"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
@@ -85,6 +85,7 @@ jobs:
         with:
           name: ratchet-push
           path: ${{ runner.temp }}/ratchet-data
+          include-hidden-files: true
           retention-days: 1
           if-no-files-found: error
       # The two steps below feed the informational diff-coverage job, which
