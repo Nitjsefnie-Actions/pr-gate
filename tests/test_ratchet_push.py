@@ -1,6 +1,7 @@
 """Run the shipped ratchet shell with real local git and fake network transport."""
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -114,18 +115,25 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
         run = tmp / str(count)
         run.mkdir()
         data = CoverageData(basename=str(run / '.coverage'))
-        data.add_lines({str(source): set(range(1, count + 1))})
+        # The reporter resolves filenames, including macOS /var aliases.
+        # Synthetic data must use the same physical source path.
+        data.add_lines({str(source.resolve()): set(range(1, count + 1))})
         data.write()
         outputs = run / 'outputs'
         outputs.touch()
         base = 'a' * 40
-        result = _run(script, run, {
+        result = _run("PS4='+ '\nset -x\n" + script, run, {
             'RUNNER_TEMP': str(run), 'GITHUB_OUTPUT': str(outputs),
             'MEASURED_HEAD': base, 'COVERAGE_FILE': str(run / '.coverage'),
             'PATH': os.pathsep.join((str(Path(sys.executable).parent), os.environ['PATH']))}, repo)
-        assert result.returncode == 0, (result.stdout, result.stderr)
+        actual = outputs.read_text()
+        captured = re.search(r'^\+ measured=(.*)$', result.stderr, re.MULTILINE)
+        measured = captured[1] if captured else '<not captured>'
+        diagnostic = (f'outputs={actual!r}; measured={measured!r}; '
+                      f'stdout={result.stdout!r}; stderr={result.stderr!r}')
+        assert result.returncode == 0, diagnostic
         artifact = run / 'ratchet-data'
-        assert outputs.read_text().strip() == f'changed={str(changed).lower()}'
+        assert actual.strip() == f'changed={str(changed).lower()}', diagnostic
         if changed:
             assert (artifact / 'base.txt').read_text() == base + '\n'
             record = json.loads((artifact / '.github/ci-thresholds.json').read_text())
@@ -147,6 +155,18 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
     result = _run(script, bad, environment, repo)
     assert result.returncode == 2, (result.stdout, result.stderr)
     assert not (bad / 'ratchet-data').exists()
+
+
+def test_staging_measurements_survive_a_temporary_directory_alias(tmp):
+    physical = tmp / 'physical'
+    physical.mkdir()
+    alias = tmp / 'alias'
+    if os.name == 'nt':
+        subprocess.run(['cmd', '/c', 'mklink', '/J', str(alias), str(physical)],
+                       check=True, capture_output=True, text=True)
+    else:
+        alias.symlink_to(physical, target_is_directory=True)
+    test_staging_executes_real_measurement_and_helper_decisions(alias)
 
 
 # All local git operations are real. Only fetch/push (the remote boundary)
