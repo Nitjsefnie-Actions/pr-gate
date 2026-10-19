@@ -36,15 +36,31 @@ def _invoke(tmp, measured, document=None):
 
 
 def test_raise_updates_only_floor_and_measured(tmp):
-    code, output, _ = _invoke(tmp, '94.2')
+    code, output, _ = _invoke(tmp, '95.2')
     assert code == 0
     expected = _record()
-    expected['coverage']['python'].update(floor=94.2, measured=94.2)
+    expected['coverage']['python'].update(floor=95.2 - 1.5, measured=95.2)
     assert json.loads(output.read_text(encoding='utf-8')) == expected
 
 
-def test_equal_and_lower_write_nothing_even_over_existing_output(tmp):
+def test_raise_needs_more_than_the_hysteresis_and_keeps_a_gap(tmp):
+    # Issue #95: a measurement within the hysteresis justifies no raise, and
+    # a raise keeps a fixed 1.5-point gap below the new measured value, so
+    # the record never reads floor == measured again.
+    code, output, _ = _invoke(tmp, '95.1')
+    assert code == 3 and not output.exists(), 'a 1.5-point tie never raises'
     code, output, _ = _invoke(tmp, '94.2')
+    assert code == 3 and not output.exists(), (
+        'a dip to just above the floor justifies no raise')
+    code, output, _ = _invoke(tmp, '95.2')
+    assert code == 0
+    written = json.loads(output.read_text(encoding='utf-8'))['coverage']['python']
+    assert written['floor'] == 95.2 - 1.5, 'a raise keeps the gap below measured'
+    assert written['measured'] == 95.2
+
+
+def test_equal_and_lower_write_nothing_even_over_existing_output(tmp):
+    code, output, _ = _invoke(tmp, '95.2')
     assert code == 0
     before = output.read_bytes()
     for measured in ('91.9', '91.8', '0.0'):
@@ -64,17 +80,19 @@ def test_precision_matches_coverage_report_total(tmp):
         document['coverage']['python'].update(floor=0, measured=0)
         code, output, _ = _invoke(tmp, raw, document)
         assert float(display_covered(float(raw), 1)) == expected
-        if expected:
+        if expected > 1.5:
             assert code == 0
-            assert json.loads(output.read_text())['coverage']['python']['floor'] == expected
+            record = json.loads(output.read_text())['coverage']['python']
+            assert record['measured'] == expected
+            assert record['floor'] == expected - 1.5
         else:
-            assert code == 3
+            assert code == 3, 'a measurement within the hysteresis never raises'
     code, _, _ = _invoke(tmp, '91.94')
     assert code == 3, 'sub-precision improvement cannot raise the record'
 
 
 def test_malformed_measurements_fail_loud_without_writing(tmp):
-    code, output, _ = _invoke(tmp, '94.2')
+    code, output, _ = _invoke(tmp, '95.2')
     assert code == 0
     before = output.read_bytes()
     for raw in ('', 'garbage', '94.2%', 'NaN', 'Infinity', '-0.1', '100.1'):
@@ -84,7 +102,7 @@ def test_malformed_measurements_fail_loud_without_writing(tmp):
 
 
 def test_invalid_thresholds_fail_loud_without_writing(tmp):
-    code, output, _ = _invoke(tmp, '94.2')
+    code, output, _ = _invoke(tmp, '95.2')
     assert code == 0
     before = output.read_bytes()
     documents = [False, [], {}, {'coverage': []}, {'coverage': {'python': []}}]
@@ -105,7 +123,7 @@ def test_cli_malformed_json_missing_file_and_write_error_fail(tmp):
     module = _util.load(SCRIPT, 'coverage_ratchet_under_test')
     source = tmp / 'thresholds.json'
     output = tmp / 'output.json'
-    args = ['--thresholds', str(source), '--measured', '95.0', '--output', str(output)]
+    args = ['--thresholds', str(source), '--measured', '95.2', '--output', str(output)]
     with contextlib.redirect_stderr(io.StringIO()):
         assert module.main(args) == 2
         source.write_text('{', encoding='utf-8')

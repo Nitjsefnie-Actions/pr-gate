@@ -3,12 +3,18 @@
 Percentages use coverage report --precision=1 semantics: Python's round()
 followed by one decimal place, with nonzero/non-100 endpoints clamped to
 0.1/99.9. The workflow supplies coverage report --format=total's string.
+The recorded ``measured`` value rises only when a new measurement beats it
+by more than the raise hysteresis, and a raise sets ``floor`` one hysteresis
+below the new value, so a later dip cannot turn the coverage gate red; a
+measurement within the hysteresis justifies no raise and writes nothing.
 """
 import argparse
 import json
 import math
 import sys
 from pathlib import Path
+
+RAISE_HYSTERESIS = 1.5
 
 
 def _percentage(value):
@@ -41,9 +47,9 @@ def main(argv=None):
             raise ValueError('recorded measured coverage is below its floor')
         if not isinstance(record['cell'], str) or not record['cell'].strip():
             raise ValueError('coverage cell must be a nonempty string')
-        if measured <= floor:
+        if measured - previous <= RAISE_HYSTERESIS:
             return 3
-        record.update(floor=measured, measured=measured)
+        record.update(floor=measured - RAISE_HYSTERESIS, measured=measured)
         args.output.write_text(json.dumps(document, indent=2, allow_nan=False) + '\n',
                                encoding='utf-8')
     except (OSError, ValueError, TypeError, KeyError) as error:

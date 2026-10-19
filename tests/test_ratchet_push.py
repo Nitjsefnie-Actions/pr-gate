@@ -106,9 +106,10 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
     (repo / 'scripts/ci').mkdir(parents=True)
     shutil.copyfile(ROOT / 'scripts/ci/coverage_ratchet.py',
                     repo / 'scripts/ci/coverage_ratchet.py')
-    thresholds = {'coverage': {'python': {'floor': 91.9, 'measured': 93.6, 'cell': 'keep'}}}
+    thresholds = {'coverage': {'python': {'floor': 88.9, 'measured': 90.4, 'cell': 'keep'}}}
     (repo / '.github/ci-thresholds.json').write_text(json.dumps(thresholds), encoding='utf-8')
-    # Real coverage output: 920/1000 is 92.0, 919/1000 is 91.9, 918/1000 is 91.8.
+    # Real coverage output: 920/1000 is 92.0 (a 1.6-point raise), 919/1000 is
+    # 91.9 (exactly the 1.5-point tie, no raise), 918/1000 is 91.8 (no raise).
     source = repo / 'measured.py'
     source.write_text('x = 1\n' * 1000, encoding='utf-8')
     for count, changed in [(920, True), (919, False), (918, False)]:
@@ -137,7 +138,7 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
         if changed:
             assert (artifact / 'base.txt').read_text() == base + '\n'
             record = json.loads((artifact / '.github/ci-thresholds.json').read_text())
-            assert record['coverage']['python'] == {'floor': 92.0, 'measured': 92.0, 'cell': 'keep'}
+            assert record['coverage']['python'] == {'floor': 90.5, 'measured': 92.0, 'cell': 'keep'}
         else:
             assert not artifact.exists(), 'equal/lower coverage must stage no artifact'
     bad = tmp / 'bad'
@@ -236,7 +237,7 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         else:
             module = _util.load(ROOT / 'scripts/ci/coverage_ratchet.py',
                                 'coverage_ratchet_under_test')
-            assert module.main(['--thresholds', str(thresholds), '--measured', '94.2',
+            assert module.main(['--thresholds', str(thresholds), '--measured', '95.2',
                                 '--output', str(artifact / '.github/ci-thresholds.json')]) == 0
     if 'types' in records:
         shutil.copyfile(baseline, artifact / 'pyright-baseline.json')
@@ -301,7 +302,7 @@ def test_raise_commits_exact_staged_data_and_pushes_only_main(tmp):
     assert commands[-1] == ['push', 'origin', 'HEAD:main']
     repo = tmp / 'ratchet-repo'
     record = json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))
-    assert record['coverage']['python'] == {'floor': 94.2, 'measured': 94.2, 'cell': 'keep'}
+    assert record['coverage']['python'] == {'floor': 93.7, 'measured': 95.2, 'cell': 'keep'}
     assert _git(repo, 'show', '--format=%an|%ae', '--no-patch') == (
         'github-actions[bot]|41898282+github-actions[bot]@users.noreply.github.com')
     assert _git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD') == (
@@ -460,7 +461,7 @@ def test_push_applies_type_only_and_combined_records_once(tmp):
         if 'coverage' in records:
             expected.add('.github/ci-thresholds.json')
             record = json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))
-            assert record['coverage']['python']['floor'] == 94.2
+            assert record['coverage']['python']['floor'] == 93.7
         assert changed == expected
         assert ['add', '--', 'pyright-baseline.json'] in commands
         assert sum(command[0] == 'commit' for command in commands) == 1
