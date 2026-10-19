@@ -20,12 +20,15 @@ count of a real run of the pinned checker over the tree it gates:
         python scripts/ci/type_ratchet.py report.json
         # type errors: 48 measured, 48 recorded: within baseline
 
-Re-seed by editing pyright-baseline.json in the same commit as the fix
-that justifies the new number; never raise it to admit a new error.
+With --tighten, a complete report whose error count is strictly lower
+atomically lowers the baseline: exit 0 changed, 3 unchanged, 2 invalid.
+The default gate behavior above is unchanged. Never raise the baseline
+to admit a new error.
 """
 import argparse
 import json
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -73,12 +76,38 @@ def main(argv=None):
         '--baseline', type=Path, default=BASELINE,
         help='baseline JSON holding {"error_count": N} '
              '(default: pyright-baseline.json at the repository root)')
+    parser.add_argument('--tighten', action='store_true',
+                        help='lower the baseline only when strictly fewer errors are measured')
     arguments = parser.parse_args(argv)
     try:
         text = (arguments.report.read_text(encoding='utf-8')
                 if arguments.report is not None else sys.stdin.read())
-        measured = count_errors(json.loads(text))
+        document = json.loads(text)
+        measured = count_errors(document)
         recorded = load_baseline(arguments.baseline)
+        if arguments.tighten:
+            diagnostics = document.get('generalDiagnostics')
+            summary = document.get('summary')
+            if not isinstance(diagnostics, list) or not isinstance(summary, dict):
+                raise ValueError('tightening requires diagnostics and a summary')
+            reported = summary.get('errorCount')
+            if type(reported) is not int or reported != measured:
+                raise ValueError('summary errorCount must match the measured error count')
+            if any(item.get('severity') not in ('error', 'warning', 'information')
+                   for item in diagnostics):
+                raise ValueError('tightening requires a valid severity on every diagnostic')
+            if measured >= recorded:
+                return 3
+            # Replace only after the complete lower record has been written;
+            # an interrupted write leaves the original baseline intact.
+            with tempfile.TemporaryDirectory(dir=arguments.baseline.parent,
+                                             prefix='.type-ratchet-') as directory:
+                staged = Path(directory) / arguments.baseline.name
+                staged.write_text(json.dumps({'error_count': measured}, indent=2) + '\n',
+                                  encoding='utf-8')
+                staged.chmod(arguments.baseline.stat().st_mode)
+                staged.replace(arguments.baseline)
+            return 0
     except (OSError, ValueError) as error:
         print(f'type_ratchet: {error}', file=sys.stderr)
         return 2

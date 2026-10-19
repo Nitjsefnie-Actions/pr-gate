@@ -205,6 +205,81 @@ def test_main_entry_point_maps_the_verdict_to_exit_status(tmp):
     assert '0 measured' in result.stdout
 
 
+def test_tighten_cli_writes_strictly_lower_count(tmp):
+    baseline = tmp / 'baseline.json'
+    _baseline(baseline, 3)
+    report = tmp / 'report.json'
+    report.write_text(json.dumps(_document(errors=1)), encoding='utf-8')
+    result = subprocess.run([sys.executable, str(SCRIPT), '--tighten',
+                             '--baseline', str(baseline), str(report)],
+                            capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert json.loads(baseline.read_text()) == {'error_count': 1}
+
+
+def test_tighten_equal_higher_and_zero_preserve_the_successful_write(tmp):
+    baseline = tmp / 'baseline.json'
+    _baseline(baseline, 4)
+    code, _ = _invoke('--tighten', '--baseline', baseline, document=_document(errors=2))
+    assert code == 0
+    assert json.loads(baseline.read_text()) == {'error_count': 2}
+    before = baseline.read_bytes()
+    for count in (2, 3, 5):
+        code, _ = _invoke('--tighten', '--baseline', baseline, document=_document(errors=count))
+        assert code == 3, count
+        assert baseline.read_bytes() == before
+    code, _ = _invoke('--tighten', '--baseline', baseline,
+                      document=_document(warnings=2, informations=1))
+    assert code == 0
+    assert json.loads(baseline.read_text()) == {'error_count': 0}
+    before = baseline.read_bytes()
+    code, _ = _invoke('--tighten', '--baseline', baseline, document=_document())
+    assert code == 3 and baseline.read_bytes() == before
+
+
+def test_tighten_refuses_malformed_or_incomplete_reports_without_writes(tmp):
+    baseline = tmp / 'baseline.json'
+    _baseline(baseline, 4)
+    code, _ = _invoke('--tighten', '--baseline', baseline, document=_document(errors=2))
+    assert code == 0
+    before = baseline.read_bytes()
+    documents = [[], {}, {'summary': {'errorCount': 0}},
+                 {'generalDiagnostics': []},
+                 {'generalDiagnostics': [], 'summary': []},
+                 {'generalDiagnostics': [False], 'summary': {'errorCount': 0}},
+                 {'generalDiagnostics': 'bad', 'summary': {'errorCount': 0}}]
+    for bad_count in (True, -1, '0', None, 1):
+        documents.append({'generalDiagnostics': [], 'summary': {'errorCount': bad_count}})
+    for severity in (None, 'fatal'):
+        documents.append({'generalDiagnostics': [{'severity': severity}],
+                          'summary': {'errorCount': 0}})
+    for document in documents:
+        with contextlib.redirect_stderr(io.StringIO()) as error:
+            code, _ = _invoke('--tighten', '--baseline', baseline, document=document)
+        assert code == 2 and error.getvalue(), document
+        assert baseline.read_bytes() == before
+    with contextlib.redirect_stderr(io.StringIO()) as error:
+        code, _ = _invoke('--tighten', '--baseline', baseline, stdin_text='{bad')
+    assert code == 2 and error.getvalue()
+    assert baseline.read_bytes() == before
+
+
+def test_tighten_refuses_malformed_baseline_without_writing(tmp):
+    baseline = tmp / 'baseline.json'
+    for content in ('{bad', '[]', '{}', '{"error_count":true}',
+                    '{"error_count":-1}', '{"error_count":"2"}'):
+        baseline.write_text(content, encoding='utf-8')
+        before = baseline.read_bytes()
+        with contextlib.redirect_stderr(io.StringIO()) as error:
+            code, _ = _invoke('--tighten', '--baseline', baseline, document=_document())
+        assert code == 2 and error.getvalue()
+        assert baseline.read_bytes() == before
+    absent = tmp / 'absent.json'
+    with contextlib.redirect_stderr(io.StringIO()) as error:
+        code, _ = _invoke('--tighten', '--baseline', absent, document=_document())
+    assert code == 2 and error.getvalue() and not absent.exists()
+
+
 if __name__ == '__main__':
     from _util import collect, runner
     raise SystemExit(runner(collect(globals()), tmp_prefix='typeratchet_'))

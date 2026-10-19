@@ -806,7 +806,8 @@ def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_action
             'branches': ['main'],
             'paths-ignore': ['README.md', 'CONTRIBUTING.md',
                              'CODE_OF_CONDUCT.md', 'LICENSE']
-            + (['.github/ci-thresholds.json'] if name == 'tests.yml' else [])}, name
+            + (['.github/ci-thresholds.json', 'pyright-baseline.json']
+               if name in ('tests.yml', 'types.yml') else [])}, name
     # actionlint is the one required workflow whose push trigger carries no
     # paths-ignore: a documentation-only push to main runs no other
     # workflow at all, so the merge-marker check it hosts would never see
