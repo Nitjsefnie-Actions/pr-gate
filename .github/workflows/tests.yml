@@ -5,8 +5,8 @@ name: tests
 on:
   push:
     branches: [main]
-    # Deny only human documentation; new code and policy paths still run tests.
-    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE]
+    # Ratchet-only commits stay silent; code and other policy paths run tests.
+    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE, .github/ci-thresholds.json]
   pull_request:
   workflow_dispatch:
 
@@ -57,9 +57,39 @@ jobs:
         run: |
           floor="$(python -c 'import json; print(json.load(open(".github/ci-thresholds.json"))["coverage"]["python"]["floor"])')"
           python -m coverage report --fail-under="$floor" --precision=1
+      - name: Stage the ratchet data
+        id: ratchet
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && github.event_name == 'push'
+        shell: bash
+        env:
+          MEASURED_HEAD: ${{ github.sha }}
+        run: |
+          measured="$(python -m coverage report --format=total --precision=1)"
+          mkdir -p "$RUNNER_TEMP/ratchet-output"
+          if python scripts/ci/coverage_ratchet.py --measured "$measured" \
+            --output "$RUNNER_TEMP/ratchet-output/ci-thresholds.json"; then
+            mkdir -p "$RUNNER_TEMP/ratchet-data"
+            cp "$RUNNER_TEMP/ratchet-output/ci-thresholds.json" "$RUNNER_TEMP/ratchet-data/ci-thresholds.json"
+            printf '%s\n' "$MEASURED_HEAD" > "$RUNNER_TEMP/ratchet-data/base.txt"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -ne 3 ]; then
+              exit "$status"
+            fi
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload the ratchet data
+        if: github.event_name == 'push' && steps.ratchet.outputs.changed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ratchet-push
+          path: ${{ runner.temp }}/ratchet-data
+          retention-days: 1
+          if-no-files-found: error
       # The two steps below feed the informational diff-coverage job, which
       # needs the report in machine-readable form and only for pull requests:
-      # a push run has no patch to measure, so push runs upload nothing.
+      # a push run has no patch to measure, so it uploads no XML.
       - name: Write the coverage XML report
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && github.event_name == 'pull_request'
         run: python -m coverage xml -o coverage.xml
