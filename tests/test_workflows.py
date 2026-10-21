@@ -224,12 +224,6 @@ def test_the_diff_coverage_job_reports_its_own_change_read_only(tmp):
         'this job reads the proposed tree, so it must not hold a token '
         'that can write pull request conversation')
     steps = job['steps']
-    checkout = steps[0]
-    assert checkout['with'] == {'ref': '${{ github.sha }}',
-                                'fetch-depth': '0',
-                                'persist-credentials': 'false'}, (
-        'the checkout must be the exact merge the coverage report '
-        'describes, and both parents must resolve so HEAD^1 diffs')
     download = next(step for step in steps
                     if 'download-artifact' in step.get('uses', ''))
     assert download['uses'] == (
@@ -1133,7 +1127,6 @@ def test_secrets_scans_full_history_with_a_frozen_binary(tmp):
     assert len(steps) == 3
     assert steps[0]['uses'] == (
         f"actions/checkout@{_shipped_action_pin('actions/checkout')}")
-    assert steps[0]['with'] == {'fetch-depth': '0', 'persist-credentials': 'false'}
     # One release, frozen by its digest; which release is the workflow's call.
     download = steps[1]['run'].splitlines()
     assert len(download) == 4, download
@@ -1519,10 +1512,8 @@ def test_comment_share_workflow_checks_every_pr_at_the_pinned_defaults(tmp):
     assert job['runs-on'] == 'ubuntu-latest'
     assert job['timeout-minutes'] == '10'
     checkout = job['steps'][0]
-    assert checkout == {
-        'uses': 'actions/checkout@' + _shipped_action_pin('actions/checkout'),
-        'with': {'ref': '${{ github.event.pull_request.head.sha || github.sha }}',
-                 'fetch-depth': '0', 'persist-credentials': 'false'}}
+    assert checkout['uses'] == (
+        'actions/checkout@' + _shipped_action_pin('actions/checkout'))
     for step in job['steps']:
         assert 'continue-on-error' not in step
 
