@@ -44,8 +44,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_GATE_REPOSITORY: ${{ github.repository }}
-          VERSION: ${{ inputs.version }}
-        run: python scripts/ci/release_dispatch.py verify "$PR_GATE_REPOSITORY" "$VERSION"
+          PR_GATE_VERSION: ${{ inputs.version }}
+        run: python scripts/ci/release_dispatch.py verify "$PR_GATE_REPOSITORY" "$PR_GATE_VERSION"
 
   publish:
     needs: verify
@@ -70,6 +70,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           PR_GATE_REPOSITORY: ${{ github.repository }}
-          VERSION: ${{ inputs.version }}
-          RELEASE_SHA: ${{ needs.verify.outputs.sha }}
-        run: python scripts/ci/release_dispatch.py publish "$PR_GATE_REPOSITORY" "$VERSION" "$RELEASE_SHA"
+          PR_GATE_VERSION: ${{ inputs.version }}
+          PR_GATE_RELEASE_SHA: ${{ needs.verify.outputs.sha }}
+        run: python scripts/ci/release_dispatch.py publish "$PR_GATE_REPOSITORY" "$PR_GATE_VERSION" "$PR_GATE_RELEASE_SHA"
