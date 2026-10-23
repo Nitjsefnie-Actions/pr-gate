@@ -106,9 +106,6 @@ def test_ci_runs_supported_platforms_and_python_versions(tmp):
     runs = [step['run'] for step in job['steps'] if 'run' in step]
     assert 'python run_tests.py' in runs
     assert 'python -m ruff check --select E9,F63,F7,F82 .' in runs
-    for step in job['steps']:
-        if step.get('uses', '').startswith('actions/checkout@'):
-            assert step['with']['persist-credentials'] == 'false'
 
 
 # Boundary: exactly one matrix cell measures coverage, so a summary line and a
@@ -1179,18 +1176,31 @@ def test_secrets_scans_full_history_with_a_frozen_binary(tmp):
 
 def test_all_action_references_are_immutable_and_share_family_pins(tmp):
     del tmp
-    families = {}
+    steps_by_path = []
     for path in sorted((ROOT / '.github/workflows').glob('*.yml')):
         for job in _workflow(path.name)['jobs'].values():
-            for step in job['steps']:
-                if 'uses' not in step:
-                    continue
-                reference = step['uses']
-                action, pin = reference.split('@')
-                family = '/'.join(action.split('/')[:2])
-                families.setdefault(family, set()).add(pin)
-                if action == 'actions/checkout':
-                    assert step.get('with', {}).get('persist-credentials') == 'false', path
+            steps_by_path.append((path, job['steps']))
+    action_paths = subprocess.run(
+        ['git', 'ls-files', '--', 'action.yml', '*/action.yml'],
+        cwd=ROOT, check=True, capture_output=True, text=True).stdout.splitlines()
+    for name in action_paths:
+        path = ROOT / name
+        action = yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
+        steps_by_path.append((path, action['runs']['steps']))
+    families = {}
+    checkouts = 0
+    for path, steps in steps_by_path:
+        for step in steps:
+            if 'uses' not in step:
+                continue
+            reference = step['uses']
+            action, pin = reference.split('@')
+            family = '/'.join(action.split('/')[:2])
+            families.setdefault(family, set()).add(pin)
+            if action == 'actions/checkout':
+                checkouts += 1
+                assert step.get('with', {}).get('persist-credentials') == 'false', path
+    assert checkouts, 'no checkouts found: the persist-credentials assertion would be vacuous'
     assert families
     for family, pins in families.items():
         assert len(pins) == 1, f'{family} must use one revision across all action paths'
