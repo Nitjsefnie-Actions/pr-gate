@@ -118,6 +118,16 @@ def _action_bash(*, windows=None, environment=None):
 
 
 def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
+    metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
+    step = metadata['runs']['steps'][0]
+    assert step['env'] == {
+        'PR_GATE_ACTOR': '${{ inputs.pull-request-author }}',
+        'GH_TOKEN': '${{ inputs.github-token }}',
+        'PR_GATE_PR': '${{ inputs.pull-request-number }}',
+        'PR_GATE_ACTION_PATH': '${{ github.action_path }}',
+        'PR_GATE_REPO': '${{ inputs.repository }}',
+        'PR_GATE_REQUIRE_COMMIT_ATTRIBUTION': '${{ inputs.require-commit-attribution }}',
+        'PR_GATE_TEMPLATE_PATH': '${{ inputs.template-path }}'}
     for index, (base, head) in enumerate(POLICY_REVISIONS):
         directory = Path(tmp) / str(index)
         directory.mkdir()
