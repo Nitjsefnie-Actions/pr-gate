@@ -308,6 +308,10 @@ def test_the_coverage_comment_workflow_resolves_the_pr_and_refuses_stale(tmp):
     steps = _workflow('coverage-comment.yml')['jobs']['comment']['steps']
     artifact = next(step for step in steps if step.get('name') == (
         'Check for the comment artifact'))
+    assert artifact['env'] == {
+        'GH_TOKEN': '${{ github.token }}',
+        'PR_GATE_REPO': '${{ github.repository }}',
+        'PR_GATE_RUN_ID': '${{ github.event.workflow_run.id }}'}
     run = artifact['run']
     assert "-H 'Cache-Control: no-cache'" in run
     assert '--paginate' in run
@@ -315,6 +319,12 @@ def test_the_coverage_comment_workflow_resolves_the_pr_and_refuses_stale(tmp):
     assert '.expired == false' in run
     resolve = next(step for step in steps if step.get('name') == (
         'Resolve the target pull request from the event'))
+    assert resolve['env'] == {
+        'GH_TOKEN': '${{ github.token }}',
+        'PR_GATE_REPO': '${{ github.repository }}',
+        'PR_GATE_HEAD_SHA': '${{ github.event.workflow_run.head_sha }}',
+        'PR_GATE_HEAD_REPO': '${{ github.event.workflow_run.head_repository.full_name }}',
+        'PR_GATE_EVENT_NUMBERS': '${{ toJSON(github.event.workflow_run.pull_requests.*.number) }}'}
     run = resolve['run']
     assert 'pull_requests.*.number' in resolve['env']['PR_GATE_EVENT_NUMBERS'], (
         'the event is the first source of the pull request number')
@@ -342,6 +352,11 @@ def test_the_coverage_comment_workflow_posts_one_marker_comment_in_place(tmp):
     steps = _workflow('coverage-comment.yml')['jobs']['comment']['steps']
     post = next(step for step in steps if step.get('name') == (
         'Post or update the pull request comment'))
+    assert post['env'] == {
+        'GH_TOKEN': '${{ github.token }}',
+        'PR_GATE_REPO': '${{ github.repository }}',
+        'PR_GATE_HEAD_SHA': '${{ github.event.workflow_run.head_sha }}',
+        'PR_GATE_PR_NUMBER': '${{ steps.pr.outputs.number }}'}
     run = post['run']
     assert 'test -f body.md' in run and 'test -f pr-number.txt' in run
     assert '[ "$claimed" != "$PR_GATE_PR_NUMBER" ]' in run, (
