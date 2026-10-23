@@ -241,7 +241,7 @@ def test_the_diff_coverage_job_reports_its_own_change_read_only(tmp):
     package = next(step for step in steps if step.get('name') == (
         'Package the comment for the trusted commenter'))
     assert package['env'] == {
-        'PR_NUMBER': '${{ github.event.pull_request.number }}'}
+        'PR_GATE_PR_NUMBER': '${{ github.event.pull_request.number }}'}
     assert 'pr-number.txt' in package['run']
     upload = next(step for step in steps if step.get('name') == (
         'Upload the comment for the trusted commenter'))
@@ -316,9 +316,9 @@ def test_the_coverage_comment_workflow_resolves_the_pr_and_refuses_stale(tmp):
     resolve = next(step for step in steps if step.get('name') == (
         'Resolve the target pull request from the event'))
     run = resolve['run']
-    assert 'pull_requests.*.number' in resolve['env']['EVENT_NUMBERS'], (
+    assert 'pull_requests.*.number' in resolve['env']['PR_GATE_EVENT_NUMBERS'], (
         'the event is the first source of the pull request number')
-    assert 'repos/$HEAD_REPO/commits/$HEAD_SHA/pulls' in run, (
+    assert 'repos/$PR_GATE_HEAD_REPO/commits/$PR_GATE_HEAD_SHA/pulls' in run, (
         'a fork pull request arrives with an empty pull_requests, so the '
         'head repository is asked which one owns the commit')
     assert 'expected one pull request' in run, (
@@ -344,7 +344,7 @@ def test_the_coverage_comment_workflow_posts_one_marker_comment_in_place(tmp):
         'Post or update the pull request comment'))
     run = post['run']
     assert 'test -f body.md' in run and 'test -f pr-number.txt' in run
-    assert '[ "$claimed" != "$PR_NUMBER" ]' in run, (
+    assert '[ "$claimed" != "$PR_GATE_PR_NUMBER" ]' in run, (
         'the claimed number is checked against the event, never obeyed')
     assert 'refusing to post' in run, (
         'a mismatch is a loud failure: it is the signal somebody tried')
@@ -361,10 +361,10 @@ def test_the_coverage_comment_workflow_posts_one_marker_comment_in_place(tmp):
     assert '-X POST' in run and '-X PATCH' in run, (
         'one comment: posted when absent, updated in place when present')
     assert ("printf '%s\\n\\n' \"$marker\"\n"
-            "  printf 'Measured at %s.\\n\\n' \"$HEAD_SHA\"\n"
+            "  printf 'Measured at %s.\\n\\n' \"$PR_GATE_HEAD_SHA\"\n"
             '  cat body.md\n') in run, (
         'the comment names the commit it measured: the Measured-at line '
-        'sits between the marker and the body, and HEAD_SHA reaches it '
+        'sits between the marker and the body, and PR_GATE_HEAD_SHA reaches it '
         'through env, never interpolation')
     calls = [match.start() for match
              in re.finditer(r'if ! revalidate_head; then', run)]
@@ -390,7 +390,7 @@ def test_the_coverage_comment_workflow_fails_loud_at_every_refusal(tmp):
     post = next(step for step in steps if step.get('name') == (
         'Post or update the pull request comment'))
     run = post['run']
-    mismatch = _arm(run, 'if [ "$claimed" != "$PR_NUMBER" ]')
+    mismatch = _arm(run, 'if [ "$claimed" != "$PR_GATE_PR_NUMBER" ]')
     assert 'exit 1' in mismatch and 'exit 0' not in mismatch, (
         'a claimed-number mismatch must fail the step loudly: the message '
         'alone is not the refusal, and exit 0 here would post an aimed '

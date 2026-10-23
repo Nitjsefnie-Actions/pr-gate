@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Pull-request gate state transitions and write ordering."""
 import itertools
+import json
 import os
 import re
 import subprocess
@@ -11,7 +12,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _util  # noqa: E402
 from _prgate import (  # noqa: E402
-    BOT, CLOSED_FIRST, CLOSED_MARKER, MARKER, OPEN_FIRST, REOPEN_FIRST,
+    BOT, CLI_FOOTER_HTML, CLOSED_FIRST, CLOSED_MARKER, MARKER, OPEN_FIRST, REOPEN_FIRST,
     RESOLVED_FIRST, TEMPLATE,
     _api, _assert_ci_recovery_note, _assert_gate_message, _assert_no_writes,
     _assert_script_error,
@@ -1131,10 +1132,111 @@ def test_main_reports_missing_repo(tmp):
     gate = _gate_module()
     with mock.patch.dict(os.environ):
         os.environ.pop('REPO', None)
+        os.environ.pop('PR_GATE_REPO', None)
         code, output, error = _capture(gate.main)
     assert code == 1
     assert output == ''
     assert error == "pr gate failed: 'REPO'\n"
+
+
+def _run_main(tmp, environment, fixtures):
+    gate = _gate_module()
+    assert gate is not None
+    directory, _command = _write_gh_stub(tmp)
+    fixtures_path = tmp / 'fixtures.json'
+    fixtures_path.write_text(json.dumps(fixtures), encoding='utf-8')
+    calls_path = tmp / 'calls.jsonl'
+    calls_path.write_text('', encoding='utf-8')
+    with mock.patch.dict(os.environ):
+        for name in ('REPO', 'PR', 'ACTOR', 'REQUIRE_COMMIT_ATTRIBUTION', 'TEMPLATE_PATH'):
+            os.environ.pop(name, None)
+            os.environ.pop(f'PR_GATE_{name}', None)
+        os.environ.update({
+            'PATH': f'{directory}{os.pathsep}{os.environ["PATH"]}',
+            'GH_TOKEN': 'stub', 'STUB_FIXTURES': str(fixtures_path),
+            'STUB_CALLS': str(calls_path), **environment})
+        result = _capture(gate.main)
+    calls = [json.loads(line) for line in calls_path.read_text(
+        encoding='utf-8').splitlines()]
+    return result, calls
+
+
+def test_main_prefers_prefixed_environment(tmp):
+    fixtures = _script_fixtures()
+    fixtures.update(repository='owner/new', pull_number='42',
+                    template_path='policy/new.md',
+                    rendered=_valid_html(repo='owner/new') + CLI_FOOTER_HTML)
+    result, calls = _run_main(tmp, {
+        'REPO': 'owner/legacy', 'PR_GATE_REPO': 'owner/new',
+        'PR': '98', 'PR_GATE_PR': '42',
+        'ACTOR': 'bob', 'PR_GATE_ACTOR': 'alice',
+        'REQUIRE_COMMIT_ATTRIBUTION': 'false',
+        'PR_GATE_REQUIRE_COMMIT_ATTRIBUTION': ' TrUe ',
+        'TEMPLATE_PATH': 'policy/legacy.md',
+        'PR_GATE_TEMPLATE_PATH': 'policy/new.md',
+    }, fixtures)
+    assert result[0] == 0, (result, calls)
+    endpoints = [call['argv'][4] for call in calls]
+    assert endpoints[0] == 'repos/owner/new/pulls/42', endpoints
+    assert any(endpoint.startswith('repos/owner/new/contents/policy/new.md?ref=')
+               for endpoint in endpoints), endpoints
+    assert 'repos/owner/new/pulls/42/commits' in endpoints, endpoints
+    assert _recorded_writes(calls) == []
+
+
+def test_main_falls_back_to_legacy_environment(tmp):
+    fixtures = _script_fixtures()
+    fixtures.update(repository='owner/legacy', pull_number='43',
+                    template_path='policy/legacy.md',
+                    rendered=_valid_html(repo='owner/legacy') + CLI_FOOTER_HTML)
+    result, calls = _run_main(tmp, {
+        'REPO': 'owner/legacy', 'PR': '43', 'ACTOR': 'alice',
+        'REQUIRE_COMMIT_ATTRIBUTION': 'true',
+        'TEMPLATE_PATH': 'policy/legacy.md',
+    }, fixtures)
+    assert result[0] == 0, (result, calls)
+    endpoints = [call['argv'][4] for call in calls]
+    assert endpoints[0] == 'repos/owner/legacy/pulls/43', endpoints
+    assert any(endpoint.startswith('repos/owner/legacy/contents/policy/legacy.md?ref=')
+               for endpoint in endpoints), endpoints
+    assert 'repos/owner/legacy/pulls/43/commits' in endpoints, endpoints
+    assert _recorded_writes(calls) == []
+
+
+def test_main_optional_environment_defaults_and_empty_attribution(tmp):
+    cases = ({}, {'REQUIRE_COMMIT_ATTRIBUTION': ''}, {
+        'REQUIRE_COMMIT_ATTRIBUTION': 'true',
+        'PR_GATE_REQUIRE_COMMIT_ATTRIBUTION': ''})
+    for index, optional in enumerate(cases):
+        directory = tmp / str(index)
+        directory.mkdir()
+        result, calls = _run_main(directory, {
+            'PR_GATE_REPO': 'owner/repo', 'PR_GATE_PR': '99',
+            'PR_GATE_ACTOR': 'alice', **optional,
+        }, _script_fixtures())
+        assert result[0] == 0, (result, calls)
+        endpoints = [call['argv'][4] for call in calls]
+        assert any(endpoint.startswith(
+            'repos/owner/repo/contents/.github/PULL_REQUEST_TEMPLATE.md?ref=')
+                   for endpoint in endpoints), endpoints
+        assert 'repos/owner/repo/pulls/99/commits' not in endpoints, endpoints
+        assert _recorded_writes(calls) == []
+
+
+def test_main_empty_template_path_is_not_replaced_by_fallback_or_default(tmp):
+    cases = ({'TEMPLATE_PATH': ''}, {
+        'TEMPLATE_PATH': '.github/PULL_REQUEST_TEMPLATE.md',
+        'PR_GATE_TEMPLATE_PATH': ''})
+    for index, optional in enumerate(cases):
+        directory = tmp / str(index)
+        directory.mkdir()
+        result, calls = _run_main(directory, {
+            'PR_GATE_REPO': 'owner/repo', 'PR_GATE_PR': '99',
+            'PR_GATE_ACTOR': 'alice', **optional,
+        }, _script_fixtures())
+        assert result == (1, '', 'pr gate failed: template path must be a '
+                          'relative repository file path\n'), (result, calls)
+        assert _recorded_writes(calls) == []
 
 
 def test_gh_stub_refuses_unmodelled_calls(tmp):

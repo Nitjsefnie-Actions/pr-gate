@@ -189,7 +189,7 @@ def test_commit_attribution_input_is_opt_in_and_reaches_main(tmp):
     assert 'true' in input_definition['description']
     assert 'case-insensitive' in input_definition['description']
     step = metadata['runs']['steps'][0]
-    assert step['env']['REQUIRE_COMMIT_ATTRIBUTION'] == (
+    assert step['env']['PR_GATE_REQUIRE_COMMIT_ATTRIBUTION'] == (
         '${{ inputs.require-commit-attribution }}')
 
     commit = {
