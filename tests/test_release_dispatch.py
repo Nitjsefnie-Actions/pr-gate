@@ -61,15 +61,24 @@ def test_version_requires_canonical_three_component_semver(tmp):
 def test_numeric_latest_tag_allows_exactly_three_successors(tmp):
     del tmp
     module = _load()
-    for version in ('2.10.1', '2.11.0', '3.0.0'):
-        api = API({f'repos/{REPO}/tags': [
-            [{'name': 'v2.9.0'}, {'name': 'v99.0.0-rc.1'}],
-            [{'name': 'v2.10.0'}, {'name': 'not-a-release'}]]})
-        module.validate_version(api, REPO, version)
-        assert '--paginate' in api.calls[0] and '--slurp' in api.calls[0]
-    for version in ('2.10.0', '2.9.1', '2.10.2', '2.11.1', '3.0.1', '4.0.0'):
-        api = API({f'repos/{REPO}/tags': [[{'name': 'v2.10.0'}]]})
-        _refuses(module, partial(module.validate_version, api, REPO, version), 'successor')
+    histories = (
+        ([[{'name': 'v2.9.0'}, {'name': 'v99.0.0-rc.1'}],
+          [{'name': 'v2.10.0'}, {'name': 'not-a-release'}]],
+         ('2.10.1', '2.11.0', '3.0.0'),
+         ('7.4.7', '7.5.0', '8.0.0', '2.10.0', '2.9.1', '2.10.2',
+          '2.11.1', '3.0.1', '4.0.0')),
+        ([[{'name': 'v7.4.5'}], [{'name': 'v7.4.6'}]],
+         ('7.4.7', '7.5.0', '8.0.0'),
+         ('2.10.1', '2.11.0', '3.0.0', '7.4.6', '7.4.8', '7.5.1', '8.0.1', '9.0.0')),
+    )
+    for pages, accepted, refused in histories:
+        for version in refused:
+            api = API({f'repos/{REPO}/tags': pages})
+            _refuses(module, partial(module.validate_version, api, REPO, version), 'successor')
+        for version in accepted:
+            api = API({f'repos/{REPO}/tags': pages})
+            module.validate_version(api, REPO, version)
+            assert '--paginate' in api.calls[0] and '--slurp' in api.calls[0]
 
 
 def test_version_refuses_missing_releases_and_rejects_shape_before_reads(tmp):
