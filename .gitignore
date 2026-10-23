@@ -52,6 +52,7 @@ scripts/ci/*
 !scripts/ci/pr_gate.py
 !scripts/ci/type_ratchet.py
 !scripts/ci/gate_base_freshness.py
+!scripts/ci/release_dispatch.py
 !scripts/ci/commit_scopes.py
 !scripts/ci/diff_coverage.py
 !tests/
@@ -83,6 +84,7 @@ tests/*
 !tests/test_workflows.py
 !tests/test_type_ratchet.py
 !tests/test_gate_base_freshness.py
+!tests/test_release_dispatch.py
 !tests/test_commit_scopes.py
 !tests/test_diff_coverage.py
 !.github/workflows/ratchet-push.yml
