@@ -827,6 +827,9 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     # pr-gate.yml carries contents: read, issues: read and pull-requests:
     # write at WORKFLOW level, its gate job inheriting.
     contracts = {
+        'release-dispatch.yml': ({}, {
+            'verify': ({'contents': 'read', 'actions': 'read', 'checks': 'read'}, '50'),
+            'publish': ({'contents': 'write'}, '10')}),
         'comment-share.yml': ({'contents': 'read'}, {'comment-share': (None, '10')}),
         'tests.yml': ({'contents': 'read'}, {
             'suites': (None, '20'),
