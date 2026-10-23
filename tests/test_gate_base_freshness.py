@@ -126,6 +126,7 @@ def test_gate_paths_on_this_repository(tmp):
         '.github/workflows/lint.yml',
         '.github/workflows/pr-gate.yml',
         '.github/workflows/ratchet-push.yml',
+        '.github/workflows/release-dispatch.yml',
         '.github/workflows/scorecard.yml',
         '.github/workflows/secrets.yml',
         '.github/workflows/tests.yml',
@@ -146,6 +147,7 @@ def test_gate_paths_on_this_repository(tmp):
         'scripts/ci/pr_content.py',
         'scripts/ci/pr_gate.py',
         'scripts/ci/pr_policy.py',
+        'scripts/ci/release_dispatch.py',
         'scripts/ci/type_ratchet.py',
     ]), done.stdout
 

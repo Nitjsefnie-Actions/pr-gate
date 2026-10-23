@@ -29,6 +29,7 @@
 !.github/workflows/
 .github/workflows/*
 !.github/workflows/tests.yml
+!.github/workflows/release-dispatch.yml
 !.github/workflows/comment-share.yml
 !.github/workflows/coverage-comment.yml
 !.github/workflows/actionlint.yml
