@@ -646,14 +646,14 @@ def _run_script(tmp, fixtures, *, require_commit_attribution=False):
         **os.environ,
         'PATH': f'{directory}{os.pathsep}{os.environ["PATH"]}',
         'GH_TOKEN': 'stub',
-        'REPO': 'owner/repo',
-        'PR': '99',
-        'ACTOR': 'alice',
+        'PR_GATE_REPO': 'owner/repo',
+        'PR_GATE_PR': '99',
+        'PR_GATE_ACTOR': 'alice',
         'STUB_FIXTURES': str(fixtures_path),
         'STUB_CALLS': str(calls_path),
     }
     if require_commit_attribution:
-        environment['REQUIRE_COMMIT_ATTRIBUTION'] = 'true'
+        environment['PR_GATE_REQUIRE_COMMIT_ATTRIBUTION'] = 'true'
     result = subprocess.run(
         [sys.executable, 'scripts/ci/pr_gate.py'], cwd=ROOT,
         env=environment, capture_output=True, text=True, timeout=30)

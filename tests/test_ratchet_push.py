@@ -48,8 +48,9 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     assert download['if'] == "steps.list.outputs.ratchet == 'true'"
     push = _step('ratchet-push.yml', 'Push the ratchet commit to main')
     assert push['if'] == "steps.list.outputs.ratchet == 'true'"
-    assert push['env'] == {'MASTER_PUSH_DEPLOY_KEY': '${{ secrets.MASTER_PUSH_DEPLOY_KEY }}',
-                           'REPO': '${{ github.repository }}'}
+    assert push['env'] == {
+        'PR_GATE_MASTER_PUSH_DEPLOY_KEY': '${{ secrets.MASTER_PUSH_DEPLOY_KEY }}',
+        'PR_GATE_REPO': '${{ github.repository }}'}
     for step in job['steps']:
         assert 'continue-on-error' not in step
         assert '${{' not in step.get('run', '')
@@ -68,7 +69,7 @@ def test_staging_is_push_only_on_the_measured_cell_after_a_green_gate(tmp):
     assert ' '.join(stage['if'].split()) == (
         "matrix.os == 'ubuntu-latest' && matrix.python == '3.13' "
         "&& github.event_name == 'push'")
-    assert stage['env'] == {'MEASURED_HEAD': '${{ github.sha }}'}
+    assert stage['env'] == {'PR_GATE_MEASURED_HEAD': '${{ github.sha }}'}
     assert stage['shell'] == 'bash'
     assert upload['if'] == (
         "github.event_name == 'push' && steps.ratchet.outputs.changed == 'true'")
@@ -117,7 +118,7 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
         base = 'a' * 40
         result = _run("PS4='+ '\nset -x\n" + script, run, {
             'RUNNER_TEMP': str(run), 'GITHUB_OUTPUT': str(outputs),
-            'MEASURED_HEAD': base, 'COVERAGE_FILE': str(run / '.coverage'),
+            'PR_GATE_MEASURED_HEAD': base, 'COVERAGE_FILE': str(run / '.coverage'),
             'PATH': os.pathsep.join((str(Path(sys.executable).parent), os.environ['PATH']))}, repo)
         actual = outputs.read_text()
         captured = re.search(r'^\+ measured=(.*)$', result.stderr, re.MULTILINE)
@@ -136,7 +137,7 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
     bad = tmp / 'bad'
     bad.mkdir()
     environment = {'RUNNER_TEMP': str(bad), 'GITHUB_OUTPUT': str(bad / 'out'),
-                   'MEASURED_HEAD': base, 'COVERAGE_FILE': str(bad / 'missing')}
+                   'PR_GATE_MEASURED_HEAD': base, 'COVERAGE_FILE': str(bad / 'missing')}
     result = _run(script, bad, environment, repo)
     assert result.returncode != 0
     assert not (bad / 'ratchet-data/base.txt').exists()
@@ -266,8 +267,8 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         'GIT_BOUNDARY': str(boundary), 'REAL_GIT': shutil.which('git') or 'git',
         'LOCAL_REMOTE': str(repo), 'GIT_LOG': str(log), 'KEY_INPUT': str(tmp / 'key'),
         'AGENT_CLEANUP': str(tmp / 'cleanup'), 'RUNNER_TEMP': str(tmp),
-        'GITHUB_STEP_SUMMARY': str(summary), 'REPO': 'owner/repo',
-        'MASTER_PUSH_DEPLOY_KEY': '' if empty else ''.join(chr(c) for c in (102, 105, 120)),
+        'GITHUB_STEP_SUMMARY': str(summary), 'PR_GATE_REPO': 'owner/repo',
+        'PR_GATE_MASTER_PUSH_DEPLOY_KEY': '' if empty else ''.join(chr(c) for c in (102, 105, 120)),
         'PUSH_STATUS': str(push_status), 'MOVE_ON_PUSH': str(move_on_push).lower()}, tmp)
     calls = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
     commands = [call[2:] if call[:1] == ['-C'] else call for call in calls]
@@ -276,7 +277,7 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
 
 def test_empty_key_fails_closed_before_any_git_operation(tmp):
     result, commands, _ = _push_run(tmp, empty=True)
-    assert result.returncode != 0 and 'MASTER_PUSH_DEPLOY_KEY' in result.stderr
+    assert result.returncode != 0 and 'PR_GATE_MASTER_PUSH_DEPLOY_KEY' in result.stderr
     assert commands == []
 
 
@@ -337,8 +338,8 @@ def test_artifact_listing_uses_exact_names_and_propagates_api_failure(tmp):
     step = _step('ratchet-push.yml', "List the triggering run's artifacts")
     assert step['id'] == 'list'
     assert step['env'] == {'GH_TOKEN': '${{ github.token }}',
-                           'REPO': '${{ github.repository }}',
-                           'RUN_ID': '${{ github.event.workflow_run.id }}'}
+                           'PR_GATE_REPO': '${{ github.repository }}',
+                           'PR_GATE_RUN_ID': '${{ github.event.workflow_run.id }}'}
     boundary = tmp / 'bash-env'
     boundary.write_text(
         'gh() { printf "%s\\n" "$*" >> "$CALLS"; '
@@ -354,7 +355,8 @@ def test_artifact_listing_uses_exact_names_and_propagates_api_failure(tmp):
         result = _run(step['run'], run, {
             'BASH_ENV': str(boundary), 'CALLS': str(run / 'calls'),
             'NAMES': str(run / 'names'), 'API_STATUS': status,
-            'GITHUB_OUTPUT': str(run / 'outputs'), 'REPO': 'owner/repo', 'RUN_ID': '42'}, tmp)
+            'GITHUB_OUTPUT': str(run / 'outputs'), 'PR_GATE_REPO': 'owner/repo',
+            'PR_GATE_RUN_ID': '42'}, tmp)
         assert (run / 'calls').read_text().strip() == (
             "api -H Cache-Control: no-cache --paginate "
             "repos/owner/repo/actions/runs/42/artifacts "
@@ -387,7 +389,7 @@ def test_type_staging_runs_after_gate_on_push_and_uses_shared_artifact(tmp):
     upload = _step('types.yml', 'Upload the ratchet data')
     assert stage['if'] == "github.event_name == 'push'"
     assert stage['id'] == 'ratchet'
-    assert stage['env'] == {'MEASURED_HEAD': '${{ github.sha }}'}
+    assert stage['env'] == {'PR_GATE_MEASURED_HEAD': '${{ github.sha }}'}
     assert upload['if'] == (
         "github.event_name == 'push' && steps.ratchet.outputs.changed == 'true'")
     assert upload['uses'] == ('actions/upload-artifact@'
@@ -419,7 +421,7 @@ def test_type_staging_executes_helper_for_lower_equal_higher_and_error(tmp):
         (run / 'pyright-report.json').write_text(json.dumps(document), encoding='utf-8')
         outputs = run / 'outputs'
         outputs.touch()
-        result = _run(script, run, {'RUNNER_TEMP': str(run), 'MEASURED_HEAD': base,
+        result = _run(script, run, {'RUNNER_TEMP': str(run), 'PR_GATE_MEASURED_HEAD': base,
                                     'GITHUB_OUTPUT': str(outputs)}, repo)
         assert result.returncode == status, (result.stdout, result.stderr)
         artifact = run / 'ratchet-data'
@@ -539,7 +541,7 @@ def test_comment_share_stages_after_the_gate_and_uploads_the_shared_artifact(tmp
     assert steps[2:] == [stage, upload]
     assert stage['id'] == 'stage'
     assert stage['if'] == "github.event_name == 'push'"
-    assert stage['env'] == {'BASE_SHA': '${{ github.sha }}'}
+    assert stage['env'] == {'PR_GATE_BASE_SHA': '${{ github.sha }}'}
     assert upload['if'] == "success() && steps.stage.outputs.changed == 'true'"
     download = _step('ratchet-push.yml', 'Download the ratchet data')
     assert upload['with']['name'] == download['with']['name']
@@ -563,7 +565,8 @@ def _comment_share_stage_fixture(tmp):
 def _run_comment_share_stage(tmp, repo, base):
     script = _step('comment-share.yml', 'Stage changed records for the ratchet push')['run']
     return _run(script, tmp, {
-        'RUNNER_TEMP': str(tmp), 'GITHUB_OUTPUT': str(tmp / 'outputs'), 'BASE_SHA': base}, repo)
+        'RUNNER_TEMP': str(tmp), 'GITHUB_OUTPUT': str(tmp / 'outputs'),
+        'PR_GATE_BASE_SHA': base}, repo)
 
 
 def test_comment_share_staging_unchanged_records_stages_nothing(tmp):

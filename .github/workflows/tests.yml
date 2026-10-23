@@ -62,7 +62,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && github.event_name == 'push'
         shell: bash
         env:
-          MEASURED_HEAD: ${{ github.sha }}
+          PR_GATE_MEASURED_HEAD: ${{ github.sha }}
         run: |
           measured="$(python -m coverage report --format=total --precision=1)"
           mkdir -p "$RUNNER_TEMP/ratchet-output"
@@ -70,7 +70,7 @@ jobs:
             --output "$RUNNER_TEMP/ratchet-output/ci-thresholds.json"; then
             mkdir -p "$RUNNER_TEMP/ratchet-data/.github"
             cp "$RUNNER_TEMP/ratchet-output/ci-thresholds.json" "$RUNNER_TEMP/ratchet-data/.github/ci-thresholds.json"
-            printf '%s\n' "$MEASURED_HEAD" > "$RUNNER_TEMP/ratchet-data/base.txt"
+            printf '%s\n' "$PR_GATE_MEASURED_HEAD" > "$RUNNER_TEMP/ratchet-data/base.txt"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             status=$?
@@ -153,9 +153,9 @@ jobs:
 
       - name: Package the comment for the trusted commenter
         env:
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_GATE_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          printf '%s\n' "$PR_NUMBER" > pr-number.txt
+          printf '%s\n' "$PR_GATE_PR_NUMBER" > pr-number.txt
 
       - name: Upload the comment for the trusted commenter
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

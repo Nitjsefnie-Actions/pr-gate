@@ -38,11 +38,11 @@ jobs:
         id: list
         env:
           GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
+          PR_GATE_REPO: ${{ github.repository }}
+          PR_GATE_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           names="$(gh api -H 'Cache-Control: no-cache' --paginate \
-            "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
+            "repos/$PR_GATE_REPO/actions/runs/$PR_GATE_RUN_ID/artifacts" \
             --jq '.artifacts[] | select(.expired != true) | .name')"
           ratchet=false
           if printf '%s\n' "$names" | grep -qx 'ratchet-push'; then
@@ -60,16 +60,16 @@ jobs:
       - name: Push the ratchet commit to main
         if: steps.list.outputs.ratchet == 'true'
         env:
-          MASTER_PUSH_DEPLOY_KEY: ${{ secrets.MASTER_PUSH_DEPLOY_KEY }}
-          REPO: ${{ github.repository }}
+          PR_GATE_MASTER_PUSH_DEPLOY_KEY: ${{ secrets.MASTER_PUSH_DEPLOY_KEY }}
+          PR_GATE_REPO: ${{ github.repository }}
         run: |
-          if [ -z "${MASTER_PUSH_DEPLOY_KEY:-}" ]; then
-            echo "MASTER_PUSH_DEPLOY_KEY is empty: the main-push environment is missing its secret" >&2
+          if [ -z "${PR_GATE_MASTER_PUSH_DEPLOY_KEY:-}" ]; then
+            echo "PR_GATE_MASTER_PUSH_DEPLOY_KEY is empty: the main-push environment is missing its secret" >&2
             exit 1
           fi
           eval "$(ssh-agent -s)" >/dev/null
           trap 'kill "$SSH_AGENT_PID" 2>/dev/null || true' EXIT
-          ssh-add <(printf '%s\n' "$MASTER_PUSH_DEPLOY_KEY") >/dev/null
+          ssh-add <(printf '%s\n' "$PR_GATE_MASTER_PUSH_DEPLOY_KEY") >/dev/null
           # Published GitHub host keys: https://api.github.com/meta
           printf '%s\n' \
             'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' \
@@ -78,7 +78,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/ratchet-known-hosts"
           base="$(cat "$RUNNER_TEMP/ratchet-data/base.txt")"
           git init -q "$RUNNER_TEMP/ratchet-repo"
-          git -C "$RUNNER_TEMP/ratchet-repo" remote add origin "git@github.com:${REPO}.git"
+          git -C "$RUNNER_TEMP/ratchet-repo" remote add origin "git@github.com:${PR_GATE_REPO}.git"
           git -C "$RUNNER_TEMP/ratchet-repo" fetch --quiet origin main
           git -C "$RUNNER_TEMP/ratchet-repo" checkout -B push FETCH_HEAD
           fetched="$(git -C "$RUNNER_TEMP/ratchet-repo" rev-parse HEAD)"

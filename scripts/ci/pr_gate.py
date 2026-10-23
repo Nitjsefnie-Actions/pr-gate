@@ -732,20 +732,29 @@ def run(api, repo: str, pr: str, actor: str, template: str | None = None,
         return 1
 
 
+def _environment(name: str, default: str | None = None) -> str:
+    try:
+        return os.environ[f'PR_GATE_{name}']
+    except KeyError:
+        if default is None:
+            return os.environ[name]
+        return os.environ.get(name, default)
+
+
 def main() -> int:
     try:
-        repo = os.environ['REPO']
-        pr = os.environ['PR']
-        actor = os.environ['ACTOR']
+        repo = _environment('REPO')
+        pr = _environment('PR')
+        actor = _environment('ACTOR')
     except (KeyError, OSError) as error:
         print(f'pr gate failed: {error}', file=sys.stderr)
         return 1
     require_commit_attribution = (
-        os.environ.get('REQUIRE_COMMIT_ATTRIBUTION', 'false')
+        _environment('REQUIRE_COMMIT_ATTRIBUTION', 'false')
         .strip().casefold() == 'true')
     return run(
         GhApi(), repo, pr, actor,
-        template_path=os.environ.get(
+        template_path=_environment(
             'TEMPLATE_PATH', '.github/PULL_REQUEST_TEMPLATE.md'),
         require_commit_attribution=require_commit_attribution)
 

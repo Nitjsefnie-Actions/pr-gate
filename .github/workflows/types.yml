@@ -72,12 +72,12 @@ jobs:
         id: ratchet
         if: github.event_name == 'push'
         env:
-          MEASURED_HEAD: ${{ github.sha }}
+          PR_GATE_MEASURED_HEAD: ${{ github.sha }}
         run: |
           if python scripts/ci/type_ratchet.py --tighten "$RUNNER_TEMP/pyright-report.json"; then
             mkdir -p "$RUNNER_TEMP/ratchet-data"
             cp pyright-baseline.json "$RUNNER_TEMP/ratchet-data/pyright-baseline.json"
-            printf '%s\n' "$MEASURED_HEAD" > "$RUNNER_TEMP/ratchet-data/base.txt"
+            printf '%s\n' "$PR_GATE_MEASURED_HEAD" > "$RUNNER_TEMP/ratchet-data/base.txt"
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             status=$?
