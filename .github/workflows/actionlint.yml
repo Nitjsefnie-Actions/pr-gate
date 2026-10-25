@@ -125,8 +125,8 @@ jobs:
         # trap documented on actionlint.yml's pull_request trigger).
         #
         # After setup-python: the check runs on the interpreter the setup
-        # step put on PATH, not on the runner's unversioned python3, and a
-        # head that fails here never pays for the installs that follow.
+        # step put on PATH, not the runner's unversioned python3, and a
+        # head that fails here never pays for what follows.
         run: python3 scripts/ci/gate_base_freshness.py
 
       - name: Refuse a commit whose scope names a workflow outside the ci type
