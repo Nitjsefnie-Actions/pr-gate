@@ -4,9 +4,11 @@ name: tests
 # Python version runs the same real parser/controller/action suites on each OS.
 on:
   push:
+    # Default branch only: a pull-request head already gets one run from
+    # the `pull_request` event below, and an unfiltered `push` schedules
+    # the same commit a second time under a different ref, which the
+    # `concurrency` group cannot collapse.
     branches: [main]
-    # Ratchet-only commits stay silent; code and other policy paths run tests.
-    paths-ignore: [README.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, LICENSE, .github/ci-thresholds.json, pyright-baseline.json, .github/comment-share.json]
   pull_request:
   workflow_dispatch:
 
@@ -14,7 +16,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: tests-${{ github.event.pull_request.number || github.ref }}
+  group: tests-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -88,9 +90,9 @@ jobs:
           include-hidden-files: true
           retention-days: 1
           if-no-files-found: error
-      # The two steps below feed the informational diff-coverage job, which
-      # needs the report in machine-readable form and only for pull requests:
-      # a push run has no patch to measure, so it uploads no XML.
+      # The two steps below feed the informational diff-coverage job: it
+      # needs machine-readable output, and only a pull request has a patch
+      # to measure.
       - name: Write the coverage XML report
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13' && github.event_name == 'pull_request'
         run: python -m coverage xml -o coverage.xml
@@ -104,12 +106,11 @@ jobs:
       - name: Lint Python
         run: python -m ruff check --select E9,F63,F7,F82 .
 
-  # INFORMATIONAL, never a gate. A comment that failed to post must not be
-  # able to block a merge, and the number it reports is one a reviewer
-  # judges: a refactor that only moves code, and a change that only deletes,
-  # both read low for reasons a threshold cannot tell apart. The coverage
-  # gate in `suites` is the gate; this reports the other number — how much
-  # of what THIS pull request added was reached — in the job summary and,
+  # INFORMATIONAL, never a gate: a failed comment post must not block a
+  # merge, and the number is a reviewer's judgment — a pure move or pure
+  # deletion reads low for reasons no threshold tells apart. The `suites`
+  # coverage gate is the gate; this reports the other number, how much of
+  # what this pull request added was reached, in the job summary and,
   # through the trusted `coverage comment` workflow, on the pull request.
   diff-coverage:
     needs: suites
@@ -118,8 +119,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
-    # This job reads the proposed tree, so it must not carry a token that
-    # can write conversation. The trusted workflow_run commenter owns that.
+    # This job reads the proposed tree, so it must not carry a
+    # conversation-writing token; the trusted workflow_run commenter owns
+    # that.
     permissions:
       contents: read
 
@@ -127,9 +129,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # The merge commit the event named, and the exact SHA `suites`
-          # measured. Resolving refs/pull/N/merge here instead would let
-          # GitHub hand this job a different tree than the one the report
-          # describes.
+          # measured. Resolving refs/pull/N/merge instead would hand this
+          # job a different tree than the report describes.
           ref: ${{ github.sha }}
           # Both parents of that merge commit, which the diff below needs.
           fetch-depth: 0
@@ -140,12 +141,11 @@ jobs:
           name: coverage-xml
 
       - name: Measure the coverage of this change
-        # HEAD is the merge tree checked out above and HEAD^1 is, by
-        # construction, the base tip that was merged into it. The event
-        # payload's `base.sha` is NOT that: the base branch can advance
-        # between the event and the checkout, and every base commit merged
-        # in since would then be reported as a line this pull request
-        # added.
+        # HEAD is the merge tree checked out above; HEAD^1 is, by
+        # construction, the base tip merged into it. The event payload's
+        # `base.sha` is NOT that: the base branch can advance between the
+        # event and the checkout, and every base commit merged in since
+        # would be reported as a line this pull request added.
         run: |
           git diff --text --no-ext-diff --no-textconv --unified=0 HEAD^1 HEAD > patch.diff
           python3 scripts/ci/diff_coverage.py --coverage coverage.xml --diff patch.diff > body.md
