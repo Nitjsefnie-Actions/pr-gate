@@ -804,6 +804,9 @@ def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_action
             # coverage ratchet stages nothing and ratchet-push commits
             # nothing — no loop (issue 131).
             assert events['push'] == {'branches': ['main']}, name
+            assert _workflow(name)['concurrency'] == {
+                'group': "tests-${{ github.event_name == 'push' && github.sha || github.ref }}",
+                'cancel-in-progress': 'true'}, name
         else:
             assert events['push'] == {
                 'branches': ['main'],
