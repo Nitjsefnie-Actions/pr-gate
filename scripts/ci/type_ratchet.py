@@ -13,8 +13,8 @@ The recorded number is a measured seed, never a guess. It is the error
 count of a real run of the pinned checker over the tree it gates:
 
     pyright==1.1.414 (pip pin in requirements-lint.txt), basic mode,
-    pyrightconfig.json, Python 3.13.14, Linux, at base commit bd6aa28,
-    2026-10-02:
+    pyrightconfig.json, Python 3.15.1, Linux, at base commit 0acb087,
+    2026-10-25:
 
         pyright --outputjson > report.json
         python scripts/ci/type_ratchet.py report.json
