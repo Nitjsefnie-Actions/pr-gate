@@ -55,8 +55,8 @@ through GitHub's contents API at that PR's **base commit SHA**, and asks GitHub
 to render the body. It never checks out or executes PR-head code. Inputs enter
 the process through environment variables, not shell-source interpolation.
 
-The runner must provide Python 3.11–3.14 as `python`, Bash, and GitHub CLI `gh`.
-GitHub-hosted runners provide these tools. Runtime Python code uses only the
+The action brings its own Python. The runner needs only Bash and GitHub CLI
+`gh`. GitHub-hosted runners provide these tools. Runtime Python code uses only the
 standard library. For a self-hosted runner, install the tools before this step.
 
 | Input | Meaning |
