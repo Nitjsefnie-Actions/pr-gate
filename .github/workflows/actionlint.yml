@@ -75,6 +75,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.15"
+
       - name: Check no tracked file carries a merge-conflict marker
         # a3363ac landed on main with `<<<<<<< HEAD` and the `>>>>>>> 0d9bffc`
         # line still in README.md, and three review rounds and every gate in
@@ -120,9 +124,9 @@ jobs:
         # reporting at all and block every pull request instead (see the same
         # trap documented on actionlint.yml's pull_request trigger).
         #
-        # Before setup-python and every install: work done against a base
-        # main has already moved on from is work whose verdict does not
-        # carry, and a head that fails here never pays for what follows.
+        # After setup-python: the check runs on the interpreter the setup
+        # step put on PATH, not on the runner's unversioned python3, and a
+        # head that fails here never pays for the installs that follow.
         run: python3 scripts/ci/gate_base_freshness.py
 
       - name: Refuse a commit whose scope names a workflow outside the ci type
@@ -135,10 +139,6 @@ jobs:
         # After the freshness step: both compare the head against freshly
         # fetched main, and both must read the rebased head.
         run: python3 scripts/ci/commit_scopes.py
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: "3.13"
 
       - name: Check the README pin matches pr-gate.yml
         # Dependabot's github-actions ecosystem reads workflow files and action
