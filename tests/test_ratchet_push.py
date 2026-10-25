@@ -220,12 +220,13 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
     (repo / '.github').mkdir()
     thresholds = repo / '.github/ci-thresholds.json'
     thresholds.write_text(json.dumps({'coverage': {'python': {
-        'floor': 91.9, 'measured': 93.6, 'cell': 'keep'}}}) + '\n', encoding='utf-8')
+        'floor': 91.9, 'measured': 93.6, 'cell': 'keep'}}}) + '\n', encoding='utf-8',
+        newline='\n')
     baseline = repo / 'pyright-baseline.json'
     baseline.write_text(
         '{\n  "error_count": 3,\n  "schema_version": 1,\n  "checked_at": "base"\n}\n'
         if move == 'split'
-        else '{"error_count":3}\n', encoding='utf-8')
+        else '{"error_count":3}\n', encoding='utf-8', newline='\n')
     _git(repo, 'add', '.github/ci-thresholds.json', 'pyright-baseline.json')
     _git(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture')
     base = _git(repo, 'rev-parse', 'HEAD')
@@ -235,21 +236,23 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
             baseline.write_text('{"error_count":2}\n', encoding='utf-8')
             _git(repo, 'add', 'pyright-baseline.json')
         elif move == 'other':
-            (repo / 'note.txt').write_text('not a record\n', encoding='utf-8')
+            (repo / 'note.txt').write_text('not a record\n', encoding='utf-8', newline='\n')
             _git(repo, 'add', 'note.txt')
         elif move == 'conflict':
             thresholds.write_text(json.dumps({'coverage': {'python': {
-                'floor': 90.1, 'measured': 91.0, 'cell': 'keep'}}}) + '\n', encoding='utf-8')
+                'floor': 90.1, 'measured': 91.0, 'cell': 'keep'}}}) + '\n', encoding='utf-8',
+                newline='\n')
             _git(repo, 'add', '.github/ci-thresholds.json')
         elif move == 'split':
             baseline.write_text(
                 '{\n  "error_count": 3,\n  "schema_version": 1,\n'
-                '  "checked_at": "moved"\n}\n', encoding='utf-8')
+                '  "checked_at": "moved"\n}\n', encoding='utf-8', newline='\n')
             _git(repo, 'add', 'pyright-baseline.json')
         _git(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'moved after the base')
     artifact = tmp / 'ratchet-data'
     artifact.mkdir()
-    (artifact / 'base.txt').write_text(('0' * 40 if stale else base) + '\n', encoding='utf-8')
+    (artifact / 'base.txt').write_text(('0' * 40 if stale else base) + '\n',
+                                       encoding='utf-8', newline='\n')
     if 'coverage' in records:
         (artifact / '.github').mkdir()
         if unchanged:
@@ -270,7 +273,7 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
     for relative, content in (extra_records or {}).items():
         path = artifact / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content, encoding='utf-8')
+        path.write_text(content, encoding='utf-8', newline='\n')
     if escape:
         outside = tmp / 'outside'
         outside.mkdir()
