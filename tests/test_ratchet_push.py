@@ -225,8 +225,18 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
     baseline = repo / 'pyright-baseline.json'
     baseline.write_text(
         '{\n  "error_count": 3,\n  "schema_version": 1,\n  "checked_at": "base"\n}\n'
-        if move == 'split'
+        if move in ('split', 'broken-json')
         else '{"error_count":3}\n', encoding='utf-8', newline='\n')
+    if move == 'size-record':
+        (repo / '.github/size-baseline.json').write_text(
+            '{\n  "baseline": {\n    "big.py": 700\n  }\n}\n',
+            encoding='utf-8', newline='\n')
+        _git(repo, 'add', '.github/size-baseline.json')
+    if move == 'cs-record':
+        (repo / '.github/comment-share.json').write_text(
+            '{\n  "source.py": [\n    20,\n    100\n  ]\n}\n',
+            encoding='utf-8', newline='\n')
+        _git(repo, 'add', '.github/comment-share.json')
     _git(repo, 'add', '.github/ci-thresholds.json', 'pyright-baseline.json')
     _git(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture')
     base = _git(repo, 'rev-parse', 'HEAD')
@@ -247,6 +257,23 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
             baseline.write_text(
                 '{\n  "error_count": 3,\n  "schema_version": 1,\n'
                 '  "checked_at": "moved"\n}\n', encoding='utf-8', newline='\n')
+            _git(repo, 'add', 'pyright-baseline.json')
+        elif move == 'size-record':
+            (repo / '.github/size-baseline.json').write_text(
+                '{\n  "baseline": {\n    "big.py": 650\n  }\n}\n',
+                encoding='utf-8', newline='\n')
+            _git(repo, 'add', '.github/size-baseline.json')
+        elif move == 'cs-record':
+            (repo / '.github/comment-share.json').write_text(
+                '{\n  "source.py": [\n    19,\n    100\n  ]\n}\n',
+                encoding='utf-8', newline='\n')
+            _git(repo, 'add', '.github/comment-share.json')
+        elif move == 'broken-json':
+            # The in-between edit merges line-clean with the staged one and
+            # leaves the merge result syntactically invalid.
+            baseline.write_text(
+                '{\n  "error_count": 3,\n  "schema_version": 1,\n'
+                '  "checked_at": ,\n}\n', encoding='utf-8', newline='\n')
             _git(repo, 'add', 'pyright-baseline.json')
         _git(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'moved after the base')
     artifact = tmp / 'ratchet-data'
@@ -393,6 +420,45 @@ def test_a_split_records_edit_on_a_moved_main_merges_clean(tmp):
     assert json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))[
         'coverage']['python']['floor'] == 93.7
     assert commands.count(['push', 'origin', 'HEAD:main']) == 1
+
+
+def test_a_size_record_edit_on_moved_main_lands_the_raise(tmp):
+    result, commands, summary = _push_run(tmp, move='size-record')
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert json.loads(_git(tmp / 'ratchet-repo', 'show',
+                           'HEAD:.github/ci-thresholds.json'))[
+        'coverage']['python']['floor'] == 93.7
+    assert json.loads(_git(tmp / 'remote', 'show',
+                           'HEAD:.github/size-baseline.json'))['baseline']['big.py'] == 650
+    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
+    assert 'main moved' not in summary.lower()
+
+
+def test_a_comment_share_edit_on_moved_main_lands_the_raise(tmp):
+    result, commands, summary = _push_run(tmp, move='cs-record')
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert json.loads(_git(tmp / 'ratchet-repo', 'show',
+                           'HEAD:.github/ci-thresholds.json'))[
+        'coverage']['python']['floor'] == 93.7
+    assert json.loads(_git(tmp / 'remote', 'show',
+                           'HEAD:.github/comment-share.json'))['source.py'] == [19, 100]
+    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
+    assert 'main moved' not in summary.lower()
+
+
+def test_invalid_merged_records_drop_the_raise(tmp):
+    result, commands, summary = _push_run(
+        tmp, records=('coverage',),
+        extra_records={'pyright-baseline.json':
+                       '{\n  "error_count": 1,\n  "schema_version": 1,\n'
+                       '  "checked_at": "base"\n}\n'},
+        move='broken-json')
+    assert result.returncode == 0, result.stderr
+    assert '::notice::' in result.stdout and 'main moved' in summary.lower()
+    assert 'not valid json' in summary.lower()
+    assert not any(command[0] in ('commit', 'push') for command in commands)
+    assert _blob(tmp / 'remote', 'pyright-baseline.json').endswith(
+        b'  "checked_at": ,\n}\n')
 
 
 def test_no_diff_does_not_commit_or_push(tmp):
