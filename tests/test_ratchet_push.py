@@ -10,7 +10,8 @@ from pathlib import Path
 from coverage import CoverageData
 import _util
 from test_action import _action_bash
-from test_workflows import _CELL_OPERAND, _workflow, _shipped_action_pin
+from test_workflows import _workflow, _shipped_action_pin
+from _measuredcell import measured_if, measured_python
 from test_type_ratchet import _document
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,20 +68,10 @@ def test_staging_is_push_only_on_the_measured_cell_after_a_green_gate(tmp):
     stage = _step('tests.yml', 'Stage the ratchet data')
     upload = _step('tests.yml', 'Upload the ratchet data')
     assert stage['id'] == 'ratchet'
-    # The staging version is read from the step's own `if:` text — never
-    # held as a test literal — and tied back into the matrix the same
-    # workflow declares: an operand the matrix does not carry names no
-    # cell, so staging would silently stop running.
-    match = _CELL_OPERAND.search(stage['if'])
-    assert match, 'the staging step must pin one measured python cell'
-    operand = match[1]
     matrix = _workflow('tests.yml')['jobs']['suites']['strategy']['matrix']
-    assert operand in matrix['python'], (
-        "the staging step's python operand must stay in the matrix the "
-        'same workflow declares, or staging runs on no cell')
+    operand = measured_python(matrix, [stage])
     assert ' '.join(stage['if'].split()) == (
-        f"matrix.os == 'ubuntu-latest' && matrix.python == '{operand}' "
-        "&& github.event_name == 'push'")
+        f"{measured_if(operand)} && github.event_name == 'push'")
     assert stage['env'] == {'PR_GATE_MEASURED_HEAD': '${{ github.sha }}'}
     assert stage['shell'] == 'bash'
     assert upload['if'] == (
@@ -113,16 +104,15 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
                     repo / 'scripts/ci/coverage_ratchet.py')
     thresholds = {'coverage': {'python': {'floor': 88.9, 'measured': 90.4, 'cell': 'keep'}}}
     (repo / '.github/ci-thresholds.json').write_text(json.dumps(thresholds), encoding='utf-8')
-    # Real coverage output: 920/1000 is 92.0 (a 1.6-point raise), 919/1000 is
-    # 91.9 (exactly the 1.5-point tie, no raise), 918/1000 is 91.8 (no raise).
+    # Real coverage output: 920/1000 is 92.0 (raise); 919 is the tie, 918 no.
     source = repo / 'measured.py'
     source.write_text('x = 1\n' * 1000, encoding='utf-8')
     for count, changed in [(920, True), (919, False), (918, False)]:
         run = tmp / str(count)
         run.mkdir()
         data = CoverageData(basename=str(run / '.coverage'))
-        # The reporter resolves filenames, including macOS /var aliases.
-        # Synthetic data must use the same physical source path.
+        # The reporter resolves filenames, including macOS /var aliases, so
+        # synthetic data must use the same physical source path.
         data.add_lines({str(source.resolve()): set(range(1, count + 1))})
         data.write()
         outputs = run / 'outputs'
@@ -153,8 +143,7 @@ def test_staging_executes_real_measurement_and_helper_decisions(tmp):
     result = _run(script, bad, environment, repo)
     assert result.returncode != 0
     assert not (bad / 'ratchet-data/base.txt').exists()
-    # Measurement succeeds, but the helper refuses a malformed record. This
-    # distinguishes its error status from its no-raise status in the caller.
+    # Measurement succeeds, but the helper refuses a malformed record.
     thresholds['coverage']['python']['floor'] = 'invalid'
     (repo / '.github/ci-thresholds.json').write_text(json.dumps(thresholds), encoding='utf-8')
     environment['COVERAGE_FILE'] = str(tmp / '920/.coverage')
@@ -175,9 +164,8 @@ def test_staging_measurements_survive_a_temporary_directory_alias(tmp):
     test_staging_executes_real_measurement_and_helper_decisions(alias)
 
 
-# All local git operations are real. Only fetch/push (the remote boundary)
-# and ssh-agent/ssh-add (credential boundary) are replaced. Unknown network
-# operations are refused, and every invocation is retained for argv assertions.
+# All local git operations are real; fetch/push (remote boundary) and
+# ssh-agent/ssh-add (credential boundary) are replaced, invocations retained.
 _GIT_BOUNDARY = r'''
 import json
 import os
@@ -539,8 +527,7 @@ def test_the_type_carrier_ignores_the_three_records_on_push_only(tmp):
         '.github/comment-share.json']
     assert events['pull_request'] == ''
     # The coverage carrier runs unfiltered: a record-only push re-measures
-    # the same values and stages nothing, so its silence on a record-only
-    # push is the ratchet's, not a path filter (issue 131).
+    # the same values and stages nothing; its silence is the ratchet's (131).
     assert 'paths-ignore' not in _workflow('tests.yml')['on']['push']
 
 
