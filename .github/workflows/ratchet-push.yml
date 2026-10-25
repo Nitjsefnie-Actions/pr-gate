@@ -10,9 +10,9 @@ on:
     # repo-relative paths; base.txt is measurement metadata only.
     # Both carriers remeasure on the next eligible main push; if one
     # carrier's ratchet commit makes its sibling's measurement stale, that
-    # sibling stages its improvement again there. Record-only pushes never
-    # loop: remeasuring stages nothing, and the type carrier path-filters
-    # them.
+    # sibling can stage its improvement again there. A record-only push
+    # never loops: remeasuring stages nothing; the type carrier
+    # path-filters it.
     workflows: [tests, types, comment share]
     types: [completed]
 
