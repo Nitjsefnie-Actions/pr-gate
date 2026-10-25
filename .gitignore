@@ -23,6 +23,7 @@
 !.github/dependabot.yml
 !.github/ci-thresholds.json
 !.github/comment-share.json
+!.github/size-baseline.json
 !.github/ISSUE_TEMPLATE/
 .github/ISSUE_TEMPLATE/*
 !.github/ISSUE_TEMPLATE/bug-report.md
@@ -89,6 +90,7 @@ tests/*
 !tests/test_commit_scopes.py
 !tests/test_diff_coverage.py
 !.github/workflows/ratchet-push.yml
+!.github/workflows/size-baseline.yml
 !scripts/ci/coverage_ratchet.py
 !tests/test_coverage_ratchet.py
 !tests/test_ratchet_push.py

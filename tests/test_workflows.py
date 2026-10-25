@@ -852,6 +852,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
             'verify': ({'contents': 'read', 'actions': 'read', 'checks': 'read'}, '50'),
             'publish': ({'contents': 'write'}, '10')}),
         'comment-share.yml': ({'contents': 'read'}, {'comment-share': (None, '10')}),
+        'size-baseline.yml': ({'contents': 'read'}, {'size-baseline': (None, '10')}),
         'tests.yml': ({'contents': 'read'}, {
             'suites': (None, '20'),
             'diff-coverage': ({'contents': 'read'}, '10')}),
@@ -1564,6 +1565,115 @@ def test_comment_share_seed_has_integer_byte_pairs(tmp):
     for pair in records.values():
         assert isinstance(pair, list) and len(pair) == 2
         assert all(type(value) is int for value in pair)
+
+
+# The size gate mirrors comment-share.yml: one job, mode auto on the same two
+# events, and staging that uploads the shared ratchet-push artifact only when
+# a main-push tighten changed the records file. The action reference is a
+# reviewed full SHA whose version comment names the reviewed release; this
+# suite checks cross-file pin agreement (one revision per family, via
+# test_all_action_references_are_immutable_and_share_family_pins), never
+# which commit a pin names or what its with: block passes.
+def test_size_baseline_workflow_checks_every_pr_and_tightens_main(tmp):
+    del tmp
+    workflow = _workflow('size-baseline.yml')
+    assert workflow['name'] == 'size baseline'
+    assert workflow['on'] == {'pull_request': '', 'push': {'branches': ['main']}}
+    assert workflow['permissions'] == {'contents': 'read'}
+    assert workflow['concurrency'] == {
+        'group': 'size-baseline-${{ github.ref }}', 'cancel-in-progress': 'true'}
+    assert set(workflow['jobs']) == {'size-baseline'}
+    job = workflow['jobs']['size-baseline']
+    assert 'name' not in job and 'if' not in job
+    assert job['runs-on'] == 'ubuntu-latest'
+    assert job['timeout-minutes'] == '10'
+    steps = job['steps']
+    assert len(steps) == 4
+    checkout, measure, stage, upload = steps
+    assert checkout['uses'] == ('actions/checkout@'
+                                + _shipped_action_pin('actions/checkout'))
+    assert measure['uses'].startswith('Nitjsefnie-Actions/size-ratchet@')
+    assert _shipped_action_pin('Nitjsefnie-Actions/size-ratchet') in measure['uses']
+    assert stage['id'] == 'stage'
+    assert stage['if'] == "github.event_name == 'push'"
+    assert stage['env'] == {'PR_GATE_BASE_SHA': '${{ github.sha }}'}
+    assert upload['if'] == "success() && steps.stage.outputs.changed == 'true'"
+    download = next(step for step in
+                    _workflow('ratchet-push.yml')['jobs']['push']['steps']
+                    if step.get('name') == 'Download the ratchet data')
+    assert upload['with']['name'] == download['with']['name']
+    assert upload['uses'] == ('actions/upload-artifact@'
+                              + _shipped_action_pin('actions/upload-artifact'))
+    for step in steps:
+        assert 'continue-on-error' not in step
+        assert '${{' not in step.get('run', '')
+
+
+def _git(*args):
+    return subprocess.run(['git', *args], check=True,
+                          capture_output=True, text=True).stdout.strip()
+
+
+def _size_stage_fixture(tmp):
+    repo = tmp / 'repo'
+    (repo / '.github').mkdir(parents=True)
+    records = repo / '.github/size-baseline.json'
+    records.write_text('{\n  "baseline": {\n    "big.py": 700\n  }\n}\n', encoding='utf-8')
+    _git('init', '-b', 'main', str(repo))
+    for argument in (('config', 'user.name', 'fixture'),
+                     ('config', 'user.email', 'fixture@example.com'),
+                     ('config', 'commit.gpgsign', 'false')):
+        _git('-C', str(repo), *argument)
+    _git('-C', str(repo), 'add', '.github/size-baseline.json')
+    _git('-C', str(repo), 'commit', '-m', 'fixture')
+    return repo, records, _git('-C', str(repo), 'rev-parse', 'HEAD')
+
+
+def _run_size_stage(tmp, repo, base):
+    script = _named_run(
+        _workflow('size-baseline.yml')['jobs']['size-baseline']['steps'],
+        'Stage changed records for the ratchet push')
+    script_path = Path(tmp) / 'step.sh'
+    script_path.write_text(script, encoding='utf-8', newline='\n')
+    return subprocess.run(
+        [_action_bash(), '-e', str(script_path)], cwd=repo,
+        env={**os.environ, 'RUNNER_TEMP': str(tmp),
+             'GITHUB_OUTPUT': str(Path(tmp) / 'outputs'),
+             'PR_GATE_BASE_SHA': base},
+        capture_output=True, text=True, timeout=120)
+
+
+def test_size_staging_unchanged_records_stage_nothing(tmp):
+    repo, _, base = _size_stage_fixture(tmp)
+    result = _run_size_stage(tmp, repo, base)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert (Path(tmp) / 'outputs').read_text().strip() == 'changed=false'
+    assert not (Path(tmp) / 'ratchet-data').exists()
+
+
+def test_size_staging_preserves_the_records_path_and_measured_head(tmp):
+    repo, records, base = _size_stage_fixture(tmp)
+    records.write_text(
+        '{\n  "baseline": {\n    "big.py": 650\n  }\n}\n', encoding='utf-8')
+    result = _run_size_stage(tmp, repo, base)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert (Path(tmp) / 'outputs').read_text().strip() == 'changed=true'
+    artifact = Path(tmp) / 'ratchet-data'
+    assert sorted(p.relative_to(artifact).as_posix() for p in artifact.rglob('*')
+                  if p.is_file()) == ['.github/size-baseline.json', 'base.txt']
+    assert (artifact / '.github/size-baseline.json').read_bytes() == records.read_bytes()
+    assert (artifact / 'base.txt').read_text() == base + '\n'
+
+
+def test_size_staging_refuses_a_different_checkout_head(tmp):
+    repo, records, base = _size_stage_fixture(tmp)
+    _git('-C', str(repo), 'commit', '--allow-empty', '-m', 'different head')
+    records.write_text(
+        '{\n  "baseline": {\n    "big.py": 650\n  }\n}\n', encoding='utf-8')
+    result = _run_size_stage(tmp, repo, base)
+    assert result.returncode != 0
+    assert 'Checkout does not match the measured run head' in result.stderr
+    assert not (Path(tmp) / 'ratchet-data').exists()
 
 
 if __name__ == '__main__':
