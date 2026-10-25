@@ -129,6 +129,7 @@ def test_gate_paths_on_this_repository(tmp):
         '.github/workflows/release-dispatch.yml',
         '.github/workflows/scorecard.yml',
         '.github/workflows/secrets.yml',
+        '.github/workflows/size-baseline.yml',
         '.github/workflows/tests.yml',
         '.github/workflows/types.yml',
         'README.md',
