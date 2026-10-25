@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 import _util
 from _prgate import PR_BODY, ROOT, _gate_module, _recorded_writes, _script_fixtures, _write_gh_stub
-from test_action import _action_bash, _expression
+from test_action import _action_bash, _action_steps, _expression
 from test_pr_gate_context import RepositoryApi
 
 CAPTURE = json.loads((Path(__file__).parent / 'pr_bug_whitespace.json').read_text(
@@ -77,7 +77,7 @@ def test_code_whitespace_survives_inline_nesting_and_list_containers(tmp):
 
 def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
     metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
-    step, = metadata['runs']['steps']
+    _, step = _action_steps(metadata)
     assert step['shell'] == 'bash'
     inputs = {'github-token': 'stub-token', 'repository': CAPTURE['repository'],
               'pull-request-number': '233', 'pull-request-author': 'alice',
