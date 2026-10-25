@@ -4,8 +4,8 @@
     1338
   ],
   ".github/workflows/actionlint.yml": [
-    5777,
-    9029
+    5770,
+    9022
   ],
   ".github/workflows/audit.yml": [
     3098,
@@ -32,8 +32,8 @@
     1152
   ],
   ".github/workflows/ratchet-push.yml": [
-    828,
-    5093
+    823,
+    5168
   ],
   ".github/workflows/scorecard.yml": [
     202,
