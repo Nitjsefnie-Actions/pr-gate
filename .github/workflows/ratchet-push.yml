@@ -92,13 +92,7 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
           }
-          # Any change between the measured base and main's tip that is not
-          # a records file drops the run: tighten never raises a record, so
-          # a stale measurement could land one below the file's real count.
-          # Records-only movement does not drop it; the merge below keeps
-          # the edits made in between. The diff runs inside the test so a
-          # base that is no longer a git object fails the comparison, not
-          # the step.
+          # Only a records file may sit between the measured base and main.
           if [ -n "$(git -C "$RUNNER_TEMP/ratchet-repo" diff --name-only "$base" "$fetched" -- \
               ':!.github/ci-thresholds.json' ':!pyright-baseline.json' \
               ':!.github/comment-share.json' ':!.github/size-baseline.json')" ]; then
@@ -125,9 +119,6 @@ jobs:
             destination="$RUNNER_TEMP/ratchet-repo/$relative"
             mkdir -p "${destination%/*}"
             if [ "$fetched" != "$base" ]; then
-              # Three-way merge of this record: main's current copy, the
-              # measured base's copy and this run's staged data, so records
-              # edits made between the base and main survive the landing.
               if ! git -C "$RUNNER_TEMP/ratchet-repo" show "$base:$relative" \
                   > "$RUNNER_TEMP/ratchet-merge-base" 2>/dev/null; then
                 drop "The records at the measured base could not be read for a three-way merge."
