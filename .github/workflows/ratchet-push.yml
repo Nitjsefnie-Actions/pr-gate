@@ -13,7 +13,7 @@ on:
     # sibling can stage its improvement again there. A record-only push
     # never loops: remeasuring stages nothing; the type carrier
     # path-filters it.
-    workflows: [tests, types, comment share]
+    workflows: [tests, types, comment share, size baseline]
     types: [completed]
 
 permissions: {}
@@ -83,14 +83,26 @@ jobs:
           git -C "$RUNNER_TEMP/ratchet-repo" fetch --quiet origin main
           git -C "$RUNNER_TEMP/ratchet-repo" checkout -B push FETCH_HEAD
           fetched="$(git -C "$RUNNER_TEMP/ratchet-repo" rev-parse HEAD)"
-          if [ "$fetched" != "$base" ]; then
-            echo "::notice::Main moved while this run measured; the next push raises instead"
+          drop() {
+            echo '::notice::Main moved under the measurement; the next main push measures again'
             {
-              echo "### Dropped: main moved while this run measured"
-              echo "The measured base $base is no longer main's tip ($fetched)."
-              echo "This run's raise is dropped; the next main push raises instead."
+              echo '### Dropped: main moved while this run measured'
+              echo "$1"
+              echo 'This run is dropped; the next main push measures again.'
             } >> "$GITHUB_STEP_SUMMARY"
             exit 0
+          }
+          # Any change between the measured base and main's tip that is not
+          # a records file drops the run: tighten never raises a record, so
+          # a stale measurement could land one below the file's real count.
+          # Records-only movement does not drop it; the merge below keeps
+          # the edits made in between. The diff runs inside the test so a
+          # base that is no longer a git object fails the comparison, not
+          # the step.
+          if [ -n "$(git -C "$RUNNER_TEMP/ratchet-repo" diff --name-only "$base" "$fetched" -- \
+              ':!.github/ci-thresholds.json' ':!pyright-baseline.json' \
+              ':!.github/comment-share.json' ':!.github/size-baseline.json')" ]; then
+            drop "Non-records changes landed on main between the measured base and its tip."
           fi
           # Validate every destination before installing any record. NUL
           # separators preserve spaces and other shell characters in paths.
@@ -112,7 +124,24 @@ jobs:
           while IFS= read -r -d '' relative; do
             destination="$RUNNER_TEMP/ratchet-repo/$relative"
             mkdir -p "${destination%/*}"
-            cp -- "$RUNNER_TEMP/ratchet-data/$relative" "$destination"
+            if [ "$fetched" != "$base" ]; then
+              # Three-way merge of this record: main's current copy, the
+              # measured base's copy and this run's staged data, so records
+              # edits made between the base and main survive the landing.
+              if ! git -C "$RUNNER_TEMP/ratchet-repo" show "$base:$relative" \
+                  > "$RUNNER_TEMP/ratchet-merge-base" 2>/dev/null; then
+                drop "The records at the measured base could not be read for a three-way merge."
+              fi
+              if ! git merge-file "$destination" "$RUNNER_TEMP/ratchet-merge-base" \
+                  "$RUNNER_TEMP/ratchet-data/$relative"; then
+                drop "Records edits made between the base and main conflict with this run's data."
+              fi
+              if ! python -I -m json.tool "$destination" > /dev/null; then
+                drop "The merged records are not valid JSON."
+              fi
+            else
+              cp -- "$RUNNER_TEMP/ratchet-data/$relative" "$destination"
+            fi
             GIT_LITERAL_PATHSPECS=1 git -C "$RUNNER_TEMP/ratchet-repo" add -- "$relative"
             installed+=("$relative")
           done < "$RUNNER_TEMP/ratchet-files"

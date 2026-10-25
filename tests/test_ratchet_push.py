@@ -28,7 +28,8 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     del tmp
     workflow = _workflow('ratchet-push.yml')
     assert workflow['on'] == {'workflow_run': {
-        'workflows': ['tests', 'types', 'comment share'], 'types': ['completed']}}
+        'workflows': ['tests', 'types', 'comment share', 'size baseline'],
+        'types': ['completed']}}
     assert workflow['permissions'] == {}
     assert workflow['concurrency'] == {'group': 'ratchet-push', 'cancel-in-progress': 'false'}
     assert set(workflow['jobs']) == {'push'}
@@ -202,8 +203,14 @@ def _git(repo, *args):
                           capture_output=True, text=True).stdout.strip()
 
 
+def _blob(repo, path):
+    return subprocess.run(['git', '-C', str(repo), 'show', f'HEAD:{path}'],
+                          check=True, capture_output=True).stdout
+
+
 def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
-              move_on_push=False, records=('coverage',), extra_records=None, escape=False):
+              move_on_push=False, records=('coverage',), extra_records=None, escape=False,
+              move='none'):
     step = _step('ratchet-push.yml', 'Push the ratchet commit to main')
     repo = tmp / 'remote'
     repo.mkdir()
@@ -215,10 +222,31 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
     thresholds.write_text(json.dumps({'coverage': {'python': {
         'floor': 91.9, 'measured': 93.6, 'cell': 'keep'}}}) + '\n', encoding='utf-8')
     baseline = repo / 'pyright-baseline.json'
-    baseline.write_text('{"error_count":3}\n', encoding='utf-8')
+    baseline.write_text(
+        '{\n  "error_count": 3,\n  "schema_version": 1,\n  "checked_at": "base"\n}\n'
+        if move == 'split'
+        else '{"error_count":3}\n', encoding='utf-8')
     _git(repo, 'add', '.github/ci-thresholds.json', 'pyright-baseline.json')
     _git(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture')
     base = _git(repo, 'rev-parse', 'HEAD')
+    if move != 'none':
+        # The commit lands on the remote after the run measured `base`.
+        if move == 'records':
+            baseline.write_text('{"error_count":2}\n', encoding='utf-8')
+            _git(repo, 'add', 'pyright-baseline.json')
+        elif move == 'other':
+            (repo / 'note.txt').write_text('not a record\n', encoding='utf-8')
+            _git(repo, 'add', 'note.txt')
+        elif move == 'conflict':
+            thresholds.write_text(json.dumps({'coverage': {'python': {
+                'floor': 90.1, 'measured': 91.0, 'cell': 'keep'}}}) + '\n', encoding='utf-8')
+            _git(repo, 'add', '.github/ci-thresholds.json')
+        elif move == 'split':
+            baseline.write_text(
+                '{\n  "error_count": 3,\n  "schema_version": 1,\n'
+                '  "checked_at": "moved"\n}\n', encoding='utf-8')
+            _git(repo, 'add', 'pyright-baseline.json')
+        _git(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'moved after the base')
     artifact = tmp / 'ratchet-data'
     artifact.mkdir()
     (artifact / 'base.txt').write_text(('0' * 40 if stale else base) + '\n', encoding='utf-8')
@@ -307,9 +335,61 @@ def test_main_movement_drops_raise_before_commit_and_push(tmp):
     result, commands, summary = _push_run(tmp, stale=True)
     assert result.returncode == 0, result.stderr
     assert '::notice::' in result.stdout and 'main moved' in summary.lower()
+    assert 'could not be read' in summary
     assert not any(command[0] in ('commit', 'push', 'add') for command in commands)
     assert (tmp / 'ratchet-repo/.github/ci-thresholds.json').read_bytes() == (
         tmp / 'remote/.github/ci-thresholds.json').read_bytes()
+
+
+def test_non_records_main_movement_drops_the_raise(tmp):
+    result, commands, summary = _push_run(tmp, move='other')
+    assert result.returncode == 0, result.stderr
+    assert '::notice::' in result.stdout and 'main moved' in summary.lower()
+    assert 'non-records changes' in summary.lower()
+    assert not any(command[0] in ('commit', 'push', 'add') for command in commands)
+    assert (tmp / 'ratchet-repo/.github/ci-thresholds.json').read_bytes() == (
+        tmp / 'remote/.github/ci-thresholds.json').read_bytes()
+
+
+def test_records_only_main_movement_lands_with_the_in_between_edit_preserved(tmp):
+    result, commands, summary = _push_run(tmp, move='records')
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    repo = tmp / 'ratchet-repo'
+    record = json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))
+    assert record['coverage']['python']['floor'] == 93.7
+    assert json.loads(_git(repo, 'show', 'HEAD:pyright-baseline.json')) == {'error_count': 2}
+    changed = set(_git(repo, 'diff-tree', '--no-commit-id', '--name-only',
+                       '-r', 'HEAD').splitlines())
+    assert changed == {'.github/ci-thresholds.json'}
+    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
+    assert 'main moved' not in summary.lower()
+
+
+def test_conflicting_records_edits_drop_the_raise(tmp):
+    result, commands, summary = _push_run(tmp, move='conflict')
+    assert result.returncode == 0, result.stderr
+    assert '::notice::' in result.stdout and 'main moved' in summary.lower()
+    assert 'conflict' in summary.lower()
+    assert not any(command[0] in ('commit', 'push', 'add') for command in commands)
+    assert json.loads(_git(tmp / 'remote', 'show', 'HEAD:.github/ci-thresholds.json'))[
+        'coverage']['python']['floor'] == 90.1
+
+
+def test_a_split_records_edit_on_a_moved_main_merges_clean(tmp):
+    result, commands, _ = _push_run(
+        tmp, records=('coverage',),
+        extra_records={'pyright-baseline.json':
+                       '{\n  "error_count": 1,\n  "schema_version": 1,\n'
+                       '  "checked_at": "base"\n}\n'},
+        move='split')
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    repo = tmp / 'ratchet-repo'
+    assert _blob(repo, 'pyright-baseline.json') == (
+        '{\n  "error_count": 1,\n  "schema_version": 1,\n'
+        '  "checked_at": "moved"\n}\n'.encode())
+    assert json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))[
+        'coverage']['python']['floor'] == 93.7
+    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
 
 
 def test_no_diff_does_not_commit_or_push(tmp):
@@ -530,8 +610,9 @@ def test_push_with_only_base_metadata_does_not_commit_or_push(tmp):
 def test_comment_share_name_matches_the_ratchet_push_subscription(tmp):
     del tmp
     assert _workflow('comment-share.yml')['name'] == 'comment share'
+    assert _workflow('size-baseline.yml')['name'] == 'size baseline'
     assert _workflow('ratchet-push.yml')['on']['workflow_run']['workflows'] == [
-        'tests', 'types', 'comment share']
+        'tests', 'types', 'comment share', 'size baseline']
 
 
 def test_comment_share_stages_after_the_gate_and_uploads_the_shared_artifact(tmp):
