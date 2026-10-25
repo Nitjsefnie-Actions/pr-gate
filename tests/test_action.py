@@ -82,6 +82,28 @@ def _expression(value, inputs):
     return inputs[match[1]]
 
 
+def _action_steps(metadata):
+    """Return the composite's setup and run steps by identity, not position.
+
+    The action carries an interpreter-setup step beside the run step: the
+    run step is selected by its name so no check depends on the steps'
+    order, and the setup step is held only to its existence and its place
+    before the run step — its pin, version comment and with: inputs are
+    never read.
+    """
+    steps = metadata['runs']['steps']
+    setup = [step for step in steps
+             if step.get('uses', '').startswith('actions/setup-python@')]
+    runs = [step for step in steps
+            if step.get('name') == 'Check pull request admission']
+    assert len(setup) == 1, (
+        f'expected exactly one interpreter setup step, found {len(setup)}')
+    assert len(runs) == 1, f'expected exactly one run step, found {len(runs)}'
+    assert steps.index(setup[0]) < steps.index(runs[0]), (
+        'the interpreter setup step must precede the run step')
+    return setup[0], runs[0]
+
+
 def _action_bash(*, windows=None, environment=None):
     environment = os.environ if environment is None else environment
     windows = os.name == 'nt' if windows is None else windows
@@ -119,7 +141,7 @@ def _action_bash(*, windows=None, environment=None):
 
 def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
     metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
-    step = metadata['runs']['steps'][0]
+    _, step = _action_steps(metadata)
     assert step['env'] == {
         'PR_GATE_ACTOR': '${{ inputs.pull-request-author }}',
         'GH_TOKEN': '${{ inputs.github-token }}',
@@ -141,8 +163,8 @@ def _run_packaged_action(tmp, base, head, *,
     for name in ('github-token', 'repository', 'pull-request-number', 'pull-request-author'):
         assert metadata['inputs'][name]['required'] is True
     assert metadata['inputs']['template-path']['default'] == '.github/PULL_REQUEST_TEMPLATE.md'
-    steps = metadata['runs']['steps']
-    assert len(steps) == 1 and steps[0]['shell'] == 'bash'
+    _, run_step = _action_steps(metadata)
+    assert run_step['shell'] == 'bash'
     inputs = {'github-token': 'stub-token', 'repository': 'another-owner/project',
               'pull-request-number': '42', 'pull-request-author': 'sasha',
               'template-path': 'policy/PR template.md',
@@ -169,8 +191,8 @@ def _run_packaged_action(tmp, base, head, *,
     environment = {**os.environ, 'PATH': str(directory) + os.pathsep + os.environ['PATH'],
                    'STUB_FIXTURES': str(fixture_path), 'STUB_CALLS': str(calls_path)}
     environment.update({key: _expression(value, inputs)
-                        for key, value in steps[0]['env'].items()})
-    result = subprocess.run([_action_bash(), '-c', steps[0]['run']], cwd=consumer,
+                        for key, value in run_step['env'].items()})
+    result = subprocess.run([_action_bash(), '-c', run_step['run']], cwd=consumer,
                             env=environment, capture_output=True, text=True, timeout=30)
     calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
     assert result.returncode == 0, (result.stdout, result.stderr, calls)
@@ -198,7 +220,7 @@ def test_commit_attribution_input_is_opt_in_and_reaches_main(tmp):
     assert input_definition['default'] == 'false'
     assert 'true' in input_definition['description']
     assert 'case-insensitive' in input_definition['description']
-    step = metadata['runs']['steps'][0]
+    _, step = _action_steps(metadata)
     assert step['env']['PR_GATE_REQUIRE_COMMIT_ATTRIBUTION'] == (
         '${{ inputs.require-commit-attribution }}')
 
