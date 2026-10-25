@@ -10,7 +10,7 @@ from pathlib import Path
 from coverage import CoverageData
 import _util
 from test_action import _action_bash
-from test_workflows import _workflow, _shipped_action_pin
+from test_workflows import _CELL_OPERAND, _workflow, _shipped_action_pin
 from test_type_ratchet import _document
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,8 +41,9 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     assert job['environment'] == 'main-push'
     assert job['permissions'] == {'actions': 'read'}
     assert job['runs-on'] == 'ubuntu-latest' and int(job['timeout-minutes']) > 0
-    assert all('uses' not in step or step['uses'].startswith('actions/download-artifact@')
-               for step in job['steps'])
+    assert all(step['uses'].startswith(('actions/download-artifact@',
+                                        'actions/setup-python@'))
+               for step in job['steps'] if 'uses' in step)
     download = _step('ratchet-push.yml', 'Download the ratchet data')
     assert download['uses'] == ('actions/download-artifact@'
                                 + _shipped_action_pin('actions/download-artifact'))
@@ -66,8 +67,19 @@ def test_staging_is_push_only_on_the_measured_cell_after_a_green_gate(tmp):
     stage = _step('tests.yml', 'Stage the ratchet data')
     upload = _step('tests.yml', 'Upload the ratchet data')
     assert stage['id'] == 'ratchet'
+    # The staging version is read from the step's own `if:` text — never
+    # held as a test literal — and tied back into the matrix the same
+    # workflow declares: an operand the matrix does not carry names no
+    # cell, so staging would silently stop running.
+    match = _CELL_OPERAND.search(stage['if'])
+    assert match, 'the staging step must pin one measured python cell'
+    operand = match[1]
+    matrix = _workflow('tests.yml')['jobs']['suites']['strategy']['matrix']
+    assert operand in matrix['python'], (
+        "the staging step's python operand must stay in the matrix the "
+        'same workflow declares, or staging runs on no cell')
     assert ' '.join(stage['if'].split()) == (
-        "matrix.os == 'ubuntu-latest' && matrix.python == '3.13' "
+        f"matrix.os == 'ubuntu-latest' && matrix.python == '{operand}' "
         "&& github.event_name == 'push'")
     assert stage['env'] == {'PR_GATE_MEASURED_HEAD': '${{ github.sha }}'}
     assert stage['shell'] == 'bash'
