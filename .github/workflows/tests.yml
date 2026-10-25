@@ -44,8 +44,8 @@ jobs:
         run: python run_tests.py
       # Coverage is measured and gated on one matrix cell so the reported
       # number names a single reproducible environment. The floor
-      # lives in .github/ci-thresholds.json and is never restated here; the
-      # summary renders whether the gate fails.
+      # lives in .github/ci-thresholds.json, never restated here; the
+      # summary renders whether or not the gate fails.
       - name: Measure scripts/ci coverage
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.13'
         env:
