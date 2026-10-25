@@ -6,7 +6,7 @@ parser/controller behavior and place fakes only at GitHub's external API boundar
 
 ## Local setup
 
-Use Python 3.11, 3.12, 3.13, or 3.14. Bash and GitHub CLI are required for
+Use Python 3.14 or 3.15. Bash and GitHub CLI are required for
 action-entrypoint tests; tests replace GitHub with a local executable fixture,
 so they need no token and make no live PR/comment/state changes.
 
@@ -43,8 +43,8 @@ git diff --check
 `run_tests.py` discovers every `tests/test_*.py` module and refuses empty
 discovery/execution. Individual suites also run directly, for example
 `python tests/test_action.py` or `python tests/test_pr_rendered_content.py`.
-CI runs the same tests and Python lint on Linux, Windows, and macOS across all
-four supported Python versions. The separate workflow audit pins actionlint
+CI runs the same tests and Python lint on Linux, Windows, and macOS across both
+supported Python versions. The separate workflow audit pins actionlint
 1.7.12 and zizmor — zizmor's version lives in `requirements-zizmor.txt`,
 hash-verified at install time and updated by Dependabot; its installation
 steps checksum-verify actionlint.
