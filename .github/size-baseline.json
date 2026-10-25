@@ -11,7 +11,7 @@
     "tests/test_pr_body_closing.py": 657,
     "tests/test_pr_gate.py": 1284,
     "tests/test_pr_gate_reopen_retry.py": 513,
-    "tests/test_ratchet_push.py": 691,
+    "tests/test_ratchet_push.py": 757,
     "tests/test_workflows.py": 1680
   }
 }
