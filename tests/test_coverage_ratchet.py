@@ -16,7 +16,7 @@ SCRIPT = ROOT / 'scripts/ci/coverage_ratchet.py'
 
 def _record() -> dict:
     return {'schema_version': 1, 'coverage': {'python': {
-        'floor': 91.9, 'measured': 93.6, 'cell': 'ubuntu-latest / Python 3.13'}},
+        'floor': 91.9, 'measured': 93.6, 'cell': 'ubuntu-latest / Python 3.15'}},
         'unrelated': {'keep': [1, 2]}}
 
 

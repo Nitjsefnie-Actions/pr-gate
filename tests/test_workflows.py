@@ -92,6 +92,32 @@ def _named_run(steps, name):
     return runs[0]
 
 
+_CELL_OPERAND = re.compile(r"matrix\.python == '([^']+)'")
+
+
+def _measured_python(matrix, steps):
+    """Return the matrix.python operand the measured steps select.
+
+    Read out of the steps' own ``if:`` text — never held as a test
+    literal — and tied back into the matrix the same file declares: an
+    operand the matrix does not carry names no cell, so the coverage
+    gate and the ratchet staging would silently stop running.
+    """
+    operands = set()
+    for step in steps:
+        match = _CELL_OPERAND.search(step.get('if', ''))
+        if match:
+            operands.add(match[1])
+    assert operands, 'no step names a matrix.python cell'
+    assert len(operands) == 1, (
+        f'the measured steps must name one python cell, not {sorted(operands)}')
+    operand = operands.pop()
+    assert operand in matrix['python'], (
+        f"the measured python operand {operand!r} must stay in the pinned "
+        'python matrix, or the gate runs on no cell')
+    return operand
+
+
 def test_ci_runs_supported_platforms_and_python_versions(tmp):
     del tmp
     workflow = _workflow('tests.yml')
@@ -100,9 +126,17 @@ def test_ci_runs_supported_platforms_and_python_versions(tmp):
     assert 'paths' not in workflow['on']['push']
     assert not (workflow['on'].get('pull_request') or {})
     job = workflow['jobs']['suites']
-    assert job['strategy']['matrix'] == {
-        'os': ['ubuntu-latest', 'windows-latest', 'macos-latest'],
-        'python': ['3.11', '3.12', '3.13', '3.14']}
+    matrix = job['strategy']['matrix']
+    assert matrix['os'] == ['ubuntu-latest', 'windows-latest', 'macos-latest']
+    # The supported range is held as a shape, not as version literals: the
+    # list carries the range once, oldest first, spelled as versions.
+    versions = matrix['python']
+    assert len(versions) == 2, (
+        f'the matrix carries exactly the supported range, not {versions!r}')
+    assert versions == sorted(versions), (
+        'the supported range is listed oldest first')
+    assert all(re.fullmatch(r'3\.\d+', version) for version in versions), (
+        f'every matrix entry is a version string, not {versions!r}')
     runs = [step['run'] for step in job['steps'] if 'run' in step]
     assert 'python run_tests.py' in runs
     assert 'python -m ruff check --select E9,F63,F7,F82 .' in runs
@@ -114,14 +148,22 @@ def test_ci_runs_supported_platforms_and_python_versions(tmp):
 # (a push run has no patch to measure); unmeasured steps stay unconditional.
 def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
     del tmp
-    steps = _workflow('tests.yml')['jobs']['suites']['steps']
+    workflow = _workflow('tests.yml')
+    matrix = workflow['jobs']['suites']['strategy']['matrix']
+    steps = workflow['jobs']['suites']['steps']
     coverage_steps = [step for step in steps
                       if 'coverage' in step.get('run', '')
                       and step.get('id') != 'ratchet']
     assert len(coverage_steps) == 4, (
         'the four coverage reporting/gating steps exclude ratchet staging')
-    measured_if = ("matrix.os == 'ubuntu-latest' "
-                   "&& matrix.python == '3.13'")
+    # The measured version is read from the steps' own `if:` text — never
+    # held as a test literal — and tied back into the matrix the same file
+    # declares: an operand the matrix does not carry names no cell, the
+    # gate silently stops running, and nothing else names the cell the
+    # coverage steps depend on.
+    operand = _measured_python(matrix, steps)
+    measured_if = (f"matrix.os == 'ubuntu-latest' "
+                   f"&& matrix.python == '{operand}'")
     pr_only_if = f"{measured_if} && github.event_name == 'pull_request'"
     for step in coverage_steps:
         expected = (pr_only_if if 'coverage xml' in step.get('run', '')
@@ -129,17 +171,9 @@ def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
         assert step['if'] == expected, (
             'every coverage step must pin the one measured cell exactly, '
             'and the XML export must additionally pin pull_request events')
-    # An exact `if:` is fail-green on its own: a matrix edit dropping either
-    # operand leaves the condition matching no cell, the gate silently stops
-    # running, and nothing else names the cell the coverage steps depend on.
-    # Tie both operands back into the pinned matrix lists.
-    matrix = _workflow('tests.yml')['jobs']['suites']['strategy']['matrix']
     assert 'ubuntu-latest' in matrix['os'], (
         "the coverage steps' matrix.os operand 'ubuntu-latest' must stay in "
         'the pinned os matrix, or the gate runs on no cell')
-    assert '3.13' in matrix['python'], (
-        "the coverage steps' matrix.python operand '3.13' must stay in the "
-        'pinned python matrix, or the gate runs on no cell')
     unmeasured_runs = ['python run_tests.py',
                        'python -m ruff check --select E9,F63,F7,F82 .',
                        'python -m pip install -r requirements-test.txt']
@@ -186,9 +220,12 @@ def test_coverage_gate_reads_floor_from_committed_thresholds(tmp):
 
 def test_tests_yml_writes_and_uploads_the_coverage_xml_for_pull_requests(tmp):
     del tmp
-    steps = _workflow('tests.yml')['jobs']['suites']['steps']
-    measured_if = ("matrix.os == 'ubuntu-latest' "
-                   "&& matrix.python == '3.13'")
+    workflow = _workflow('tests.yml')
+    suites = workflow['jobs']['suites']
+    steps = suites['steps']
+    measured_if = (f"matrix.os == 'ubuntu-latest' "
+                   f"&& matrix.python == "
+                   f"'{_measured_python(suites['strategy']['matrix'], steps)}'")
     pr_only_if = f"{measured_if} && github.event_name == 'pull_request'"
     write = next(step for step in steps
                  if step.get('name') == 'Write the coverage XML report')
@@ -439,8 +476,10 @@ def test_coverage_thresholds_floor_is_seeded_below_measurement(tmp):
     text = path.read_text(encoding='utf-8')
     thresholds = json.loads(text)
     assert thresholds['schema_version'] == 1
+    suites = _workflow('tests.yml')['jobs']['suites']
+    operand = _measured_python(suites['strategy']['matrix'], suites['steps'])
     python = thresholds['coverage']['python']
-    assert python['cell'] == 'ubuntu-latest / Python 3.13', (
+    assert python['cell'] == f'ubuntu-latest / Python {operand}', (
         'the recorded cell must name the one matrix cell that measures')
     assert re.search(r'"floor":\s*\d+\.\d\b', text), (
         'floor must be a number with exactly one decimal place')
@@ -468,24 +507,34 @@ def test_workflow_audit_includes_composite_metadata(tmp):
     assert workflow['permissions'] == {'contents': 'read'}
     assert workflow['on']['push'] == {'branches': ['main']}
     steps = workflow['jobs']['actionlint']['steps']
-    names = [step.get('name') for step in steps]
-    # The four ported checks run on the runner's system python3 and sit
-    # before any download: cheap refusals precede setup-python and every
-    # install step, so a stale, marker-carrying or mis-scoped head never
-    # pays for the installs that follow.
-    assert names[1] == 'Check no tracked file carries a merge-conflict marker'
-    assert names[2] == "Require this head to carry main's gate-defining commits"
-    assert names[3] == ('Refuse a commit whose scope names a workflow '
-                        'outside the ci type')
-    for step in steps[1:4]:
-        assert set(step) == {'name', 'run'}, (
+    # The ported checks run after setup-python selects the job's pinned
+    # interpreter: the runner's own python3 is unversioned, so the
+    # freshness and commit-scope checks read main through the interpreter
+    # the setup step put on PATH. A stale, marker-carrying or mis-scoped
+    # head still never pays for the installs that follow.
+    setup = next(index for index, step in enumerate(steps)
+                 if step.get('uses', '').startswith('actions/setup-python@'))
+    checks = [
+        'Check no tracked file carries a merge-conflict marker',
+        "Require this head to carry main's gate-defining commits",
+        'Refuse a commit whose scope names a workflow outside the ci type',
+    ]
+    located = {}
+    for name in checks:
+        found = [step for step in steps if step.get('name') == name]
+        assert len(found) == 1, f'expected exactly one step named {name!r}'
+        located[name] = found[0]
+        assert set(found[0]) == {'name', 'run'}, (
             'each ported check is a plain run step: no id, if, env or '
             'failure suppression')
-    marker = steps[1]['run']
+        assert steps.index(found[0]) > setup, (
+            f'{name!r} must run on the interpreter setup-python put on PATH')
+    marker = located[checks[0]]['run']
     assert "git grep -nI -E '^(<{7}( |$)|>{7}( |$)|={7}$)' -- ." in marker
     assert '${{' not in marker
-    assert steps[2]['run'] == 'python3 scripts/ci/gate_base_freshness.py'
-    assert steps[3]['run'] == 'python3 scripts/ci/commit_scopes.py'
+    freshness = located[checks[1]]['run']
+    assert freshness == 'python3 scripts/ci/gate_base_freshness.py'
+    assert located[checks[2]]['run'] == 'python3 scripts/ci/commit_scopes.py'
 
     def _run_of(name):
         return next(step['run'] for step in steps if step.get('name') == name)
@@ -727,7 +776,10 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
     config = json.loads(
         (ROOT / 'pyrightconfig.json').read_text(encoding='utf-8'))
     assert config['typeCheckingMode'] == 'basic'
-    assert config['pythonVersion'] == '3.13'
+    matrix = _workflow('tests.yml')['jobs']['suites']['strategy']['matrix']
+    assert config['pythonVersion'] == matrix['python'][-1], (
+        'pyright must type-check against the newest interpreter the '
+        'supported matrix tests')
     assert config['pythonPlatform'] == 'All'
     assert config['reportMissingModuleSource'] == 'none'
     for directory in ('scripts/ci', 'tests'):
