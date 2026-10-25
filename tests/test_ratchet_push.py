@@ -59,7 +59,6 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
 def test_staging_is_push_only_on_the_measured_cell_after_a_green_gate(tmp):
     del tmp
     workflow = _workflow('tests.yml')
-    assert '.github/ci-thresholds.json' in workflow['on']['push']['paths-ignore']
     assert workflow['on']['push']['branches'] == ['main']
     assert workflow['on']['pull_request'] == ''
     steps = workflow['jobs']['suites']['steps']
@@ -369,16 +368,19 @@ def test_artifact_listing_uses_exact_names_and_propagates_api_failure(tmp):
             assert (run / 'outputs').read_text().strip() == f'ratchet={expected}'
 
 
-def test_both_carriers_ignore_all_three_records_on_push_only(tmp):
+def test_the_type_carrier_ignores_the_three_records_on_push_only(tmp):
     del tmp
-    for name in ('tests.yml', 'types.yml'):
-        events = _workflow(name)['on']
-        assert events['push']['branches'] == ['main']
-        assert events['push']['paths-ignore'] == [
-            'README.md', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', 'LICENSE',
-            '.github/ci-thresholds.json', 'pyright-baseline.json',
-            '.github/comment-share.json']
-        assert events['pull_request'] == ''
+    events = _workflow('types.yml')['on']
+    assert events['push']['branches'] == ['main']
+    assert events['push']['paths-ignore'] == [
+        'README.md', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', 'LICENSE',
+        '.github/ci-thresholds.json', 'pyright-baseline.json',
+        '.github/comment-share.json']
+    assert events['pull_request'] == ''
+    # The coverage carrier runs unfiltered: a record-only push re-measures
+    # the same values and stages nothing, so its silence on a record-only
+    # push is the ratchet's, not a path filter (issue 131).
+    assert 'paths-ignore' not in _workflow('tests.yml')['on']['push']
 
 
 def test_type_staging_runs_after_gate_on_push_and_uses_shared_artifact(tmp):

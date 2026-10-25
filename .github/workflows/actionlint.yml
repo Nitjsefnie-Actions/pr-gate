@@ -37,11 +37,11 @@ on:
     # the `pull_request` event below, and an unfiltered `push` schedules
     # the same commit a second time under a different ref, which the
     # `concurrency` group cannot collapse.
-    # Deliberately unfiltered by path, unlike tests/lint/types: a
-    # documentation-only push to main runs no other workflow at all, so a
-    # conflict marker committed into README.md would reach main without any
-    # check reading it — the merge-marker step below exists so that push
-    # still gets checked.
+    # Deliberately unfiltered by path, unlike lint/types: a
+    # documentation-only push to main skips the path-filtered workflows, so
+    # a conflict marker committed into README.md would reach main without
+    # this job's tree-wide merge-marker scan — the step below keeps that
+    # push checked.
     branches: [main]
   pull_request:
   workflow_dispatch:
