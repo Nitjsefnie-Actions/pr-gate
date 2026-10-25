@@ -65,6 +65,7 @@ tests/*
 !tests/_prgate_race.py
 !tests/_prfootnotes.py
 !tests/_parser_guard.py
+!tests/_measuredcell.py
 !tests/test_pr_gate.py
 !tests/test_pr_transport.py
 !tests/test_pr_gate_claims.py
