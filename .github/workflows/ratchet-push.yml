@@ -79,6 +79,7 @@ jobs:
           export GIT_SSH_COMMAND="ssh -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/ratchet-known-hosts"
           base="$(cat "$RUNNER_TEMP/ratchet-data/base.txt")"
           git init -q "$RUNNER_TEMP/ratchet-repo"
+          git -C "$RUNNER_TEMP/ratchet-repo" config core.autocrlf false
           git -C "$RUNNER_TEMP/ratchet-repo" remote add origin "git@github.com:${PR_GATE_REPO}.git"
           git -C "$RUNNER_TEMP/ratchet-repo" fetch --quiet origin main
           git -C "$RUNNER_TEMP/ratchet-repo" checkout -B push FETCH_HEAD
