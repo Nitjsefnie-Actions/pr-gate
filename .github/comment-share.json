@@ -4,8 +4,8 @@
     1338
   ],
   ".github/workflows/actionlint.yml": [
-    5770,
-    9022
+    5761,
+    9013
   ],
   ".github/workflows/audit.yml": [
     3098,
@@ -72,8 +72,8 @@
     22606
   ],
   "scripts/ci/type_ratchet.py": [
-    1280,
-    4192
+    1279,
+    4191
   ],
   "tests/_parser_guard.py": [
     665,
