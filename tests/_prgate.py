@@ -31,7 +31,8 @@ PR_BODY_CLOSING = _util.load(
     'scripts.ci.pr_body_closing')
 # Preserve the contract accompanying the historical GitHub renderings below.
 # Overflow's distinct shipped contract is tested in test_pr_body_overflow.py;
-# CLI fixtures below include its required Footer because main reads that file.
+# CLI fixtures below include a Footer — the shipped template tags it optional —
+# so attribution checking stays exercised.
 TEMPLATE = '''## Summary
 <!-- required:
 explain the change

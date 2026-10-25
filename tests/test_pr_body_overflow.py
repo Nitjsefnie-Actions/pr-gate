@@ -8,6 +8,8 @@ import _util
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 PR_BODY = _util.load(ROOT / 'scripts/ci/pr_body.py', 'scripts.ci.pr_body')
+from test_pr_content import (  # noqa: E402
+    OPTIONAL_FOOTER_COMMENT, REQUIRED_FOOTER_COMMENT)
 
 
 TEMPLATE = (ROOT / '.github/PULL_REQUEST_TEMPLATE.md').read_text(encoding='utf-8')
@@ -35,7 +37,6 @@ def test_shipped_required_sections_are_enforced(tmp):
         'Required section "Summary" is missing.',
         'Required section "Changes" is missing.',
         'Required section "Testing" is missing.',
-        'Required section "Footer" is missing.',
     ]
 
 
@@ -67,18 +68,21 @@ def test_conditional_and_optional_tags_are_case_insensitive(tmp):
 def test_missing_footer_closes_and_corrective_edit_reopens(tmp):
     from _prgate import _api, _gate_module
     del tmp
+    required = TEMPLATE.replace(
+        OPTIONAL_FOOTER_COMMENT, REQUIRED_FOOTER_COMMENT)
+    assert required != TEMPLATE
     rendered = _required_html().replace(
         '<p dir="auto">Check pull request admission.</p>',
         '<p>Fixes <a href="https://github.com/owner/repo/issues/101">#101</a></p>')
     api = _api(rendered=rendered.split('<h2 dir="auto">Footer</h2>')[0])
     api.pull['body'] = _required_body().split('## Footer')[0]
     gate = _gate_module()
-    assert gate.run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 2
+    assert gate.run(api, 'owner/repo', '99', 'alice', required) == 2
     assert api.pull['state'] == 'closed'
     assert 'Required section "Footer" is missing.' in api.comments[0]['body']
     api.rendered = rendered
     api.pull['body'] = _required_body()
-    assert gate.run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 0
+    assert gate.run(api, 'owner/repo', '99', 'alice', required) == 0
     assert api.pull['state'] == 'open'
     assert len(api.comments) == 1
 
