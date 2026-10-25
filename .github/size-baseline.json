@@ -5,7 +5,7 @@
     "scripts/ci/pr_body.py": 501,
     "scripts/ci/pr_gate.py": 763,
     "tests/_prgate.py": 801,
-    "tests/test_gate_base_freshness.py": 686,
+    "tests/test_gate_base_freshness.py": 687,
     "tests/test_pr_attribution.py": 976,
     "tests/test_pr_body.py": 668,
     "tests/test_pr_body_closing.py": 657,
