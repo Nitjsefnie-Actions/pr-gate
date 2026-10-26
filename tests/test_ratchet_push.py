@@ -29,7 +29,7 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     del tmp
     workflow = _workflow('ratchet-push.yml')
     assert workflow['on'] == {'workflow_run': {
-        'workflows': ['tests', 'types', 'comment share', 'size baseline'],
+        'workflows': ['tests', 'types', 'comment share'],
         'types': ['completed']}}
     assert workflow['permissions'] == {}
     assert workflow['concurrency'] == {'group': 'ratchet-push', 'cancel-in-progress': 'false'}
@@ -227,11 +227,6 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         '{\n  "error_count": 3,\n  "schema_version": 1,\n  "checked_at": "base"\n}\n'
         if move in ('split', 'broken-json')
         else '{"error_count":3}\n', encoding='utf-8', newline='\n')
-    if move == 'size-record':
-        (repo / '.github/size-baseline.json').write_text(
-            '{\n  "baseline": {\n    "big.py": 700\n  }\n}\n',
-            encoding='utf-8', newline='\n')
-        _git(repo, 'add', '.github/size-baseline.json')
     if move == 'cs-record':
         (repo / '.github/comment-share.json').write_text(
             '{\n  "source.py": [\n    20,\n    100\n  ]\n}\n',
@@ -258,11 +253,6 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
                 '{\n  "error_count": 3,\n  "schema_version": 1,\n'
                 '  "checked_at": "moved"\n}\n', encoding='utf-8', newline='\n')
             _git(repo, 'add', 'pyright-baseline.json')
-        elif move == 'size-record':
-            (repo / '.github/size-baseline.json').write_text(
-                '{\n  "baseline": {\n    "big.py": 650\n  }\n}\n',
-                encoding='utf-8', newline='\n')
-            _git(repo, 'add', '.github/size-baseline.json')
         elif move == 'cs-record':
             (repo / '.github/comment-share.json').write_text(
                 '{\n  "source.py": [\n    19,\n    100\n  ]\n}\n',
@@ -420,18 +410,6 @@ def test_a_split_records_edit_on_a_moved_main_merges_clean(tmp):
     assert json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))[
         'coverage']['python']['floor'] == 93.7
     assert commands.count(['push', 'origin', 'HEAD:main']) == 1
-
-
-def test_a_size_record_edit_on_moved_main_lands_the_raise(tmp):
-    result, commands, summary = _push_run(tmp, move='size-record')
-    assert result.returncode == 0, (result.stdout, result.stderr)
-    assert json.loads(_git(tmp / 'ratchet-repo', 'show',
-                           'HEAD:.github/ci-thresholds.json'))[
-        'coverage']['python']['floor'] == 93.7
-    assert json.loads(_git(tmp / 'remote', 'show',
-                           'HEAD:.github/size-baseline.json'))['baseline']['big.py'] == 650
-    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
-    assert 'main moved' not in summary.lower()
 
 
 def test_a_comment_share_edit_on_moved_main_lands_the_raise(tmp):
@@ -680,7 +658,7 @@ def test_comment_share_name_matches_the_ratchet_push_subscription(tmp):
     assert _workflow('comment-share.yml')['name'] == 'comment share'
     assert _workflow('size-baseline.yml')['name'] == 'size baseline'
     assert _workflow('ratchet-push.yml')['on']['workflow_run']['workflows'] == [
-        'tests', 'types', 'comment share', 'size baseline']
+        'tests', 'types', 'comment share']
 
 
 def test_comment_share_stages_after_the_gate_and_uploads_the_shared_artifact(tmp):
