@@ -13,7 +13,7 @@ on:
     # sibling can stage its improvement again there. A record-only push
     # never loops: remeasuring stages nothing; the type carrier
     # path-filters it.
-    workflows: [tests, types, comment share, size baseline]
+    workflows: [tests, types, comment share]
     types: [completed]
 
 permissions: {}
@@ -99,7 +99,7 @@ jobs:
           # Only a records file may sit between the measured base and main.
           if [ -n "$(git -C "$RUNNER_TEMP/ratchet-repo" diff --name-only "$base" "$fetched" -- \
               ':!.github/ci-thresholds.json' ':!pyright-baseline.json' \
-              ':!.github/comment-share.json' ':!.github/size-baseline.json')" ]; then
+              ':!.github/comment-share.json')" ]; then
             drop "Non-records changes landed on main between the measured base and its tip."
           fi
           # Validate every destination before installing any record. NUL

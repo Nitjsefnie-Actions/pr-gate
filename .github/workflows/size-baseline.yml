@@ -2,7 +2,6 @@ name: size baseline
 on:
   pull_request:
   push:
-    branches: [main]
 permissions:
   contents: read
 concurrency:
@@ -10,6 +9,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   size-baseline:
+    if: github.event_name == 'pull_request' || (github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -18,37 +18,15 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: Nitjsefnie-Actions/size-ratchet@0c9790acfe6bec19f1310a6e17428332185ea3ec # v1.1.0
-      - name: Stage changed records for the ratchet push
-        id: stage
-        if: github.event_name == 'push'
-        env:
-          PR_GATE_BASE_SHA: ${{ github.sha }}
-        run: |
-          if [ "$(git rev-parse HEAD)" != "$PR_GATE_BASE_SHA" ]; then
-            echo 'Checkout does not match the measured run head' >&2
-            exit 1
-          fi
-          changed=0
-          git diff --quiet -- .github/size-baseline.json || changed=$?
-          if [ "$changed" -gt 1 ]; then
-            echo "git diff failed with $changed" >&2
-            exit "$changed"
-          fi
-          if [ "$changed" -eq 0 ]; then
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          mkdir -p "$RUNNER_TEMP/ratchet-data/.github"
-          cp .github/size-baseline.json "$RUNNER_TEMP/ratchet-data/.github/size-baseline.json"
-          printf '%s\n' "$(git rev-parse HEAD)" > "$RUNNER_TEMP/ratchet-data/base.txt"
-          echo 'changed=true' >> "$GITHUB_OUTPUT"
-      - name: Upload the changed records
-        if: success() && steps.stage.outputs.changed == 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: Nitjsefnie-Actions/size-ratchet@669f628e50522fc00b25c4e3d1623c20468829bf # v2.0.1
         with:
-          name: ratchet-push
-          path: ${{ runner.temp }}/ratchet-data
-          include-hidden-files: true
-          if-no-files-found: error
-          retention-days: 1
+          ceilings: ''
+          overrides: ''
+          exclude: ''
+          unclassified: 'ignore'
+          records: '.github/size-baseline.json'
+          member: ''
+          mode: 'auto'
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          stale: 'warn'
+          require-tight: 'true'
