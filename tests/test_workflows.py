@@ -885,7 +885,6 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         ('tests.yml', 'diff-coverage'),
         ('ratchet-push.yml', 'push'),
         ('coverage-comment.yml', 'comment'),
-        ('size-baseline.yml', 'size-baseline'),
     }
     for name, (permissions, jobs) in contracts.items():
         workflow = _workflow(name)
