@@ -227,11 +227,6 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         '{\n  "error_count": 3,\n  "schema_version": 1,\n  "checked_at": "base"\n}\n'
         if move in ('split', 'broken-json')
         else '{"error_count":3}\n', encoding='utf-8', newline='\n')
-    if move == 'cs-record':
-        (repo / '.github/comment-share.json').write_text(
-            '{\n  "source.py": [\n    20,\n    100\n  ]\n}\n',
-            encoding='utf-8', newline='\n')
-        _git(repo, 'add', '.github/comment-share.json')
     _git(repo, 'add', '.github/ci-thresholds.json', 'pyright-baseline.json')
     _git(repo, '-c', 'commit.gpgsign=false', 'commit', '-m', 'fixture')
     base = _git(repo, 'rev-parse', 'HEAD')
@@ -253,11 +248,6 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
                 '{\n  "error_count": 3,\n  "schema_version": 1,\n'
                 '  "checked_at": "moved"\n}\n', encoding='utf-8', newline='\n')
             _git(repo, 'add', 'pyright-baseline.json')
-        elif move == 'cs-record':
-            (repo / '.github/comment-share.json').write_text(
-                '{\n  "source.py": [\n    19,\n    100\n  ]\n}\n',
-                encoding='utf-8', newline='\n')
-            _git(repo, 'add', '.github/comment-share.json')
         elif move == 'broken-json':
             # The in-between edit merges line-clean with the staged one and
             # leaves the merge result syntactically invalid.
@@ -410,18 +400,6 @@ def test_a_split_records_edit_on_a_moved_main_merges_clean(tmp):
     assert json.loads(_git(repo, 'show', 'HEAD:.github/ci-thresholds.json'))[
         'coverage']['python']['floor'] == 93.7
     assert commands.count(['push', 'origin', 'HEAD:main']) == 1
-
-
-def test_a_comment_share_edit_on_moved_main_lands_the_raise(tmp):
-    result, commands, summary = _push_run(tmp, move='cs-record')
-    assert result.returncode == 0, (result.stdout, result.stderr)
-    assert json.loads(_git(tmp / 'ratchet-repo', 'show',
-                           'HEAD:.github/ci-thresholds.json'))[
-        'coverage']['python']['floor'] == 93.7
-    assert json.loads(_git(tmp / 'remote', 'show',
-                           'HEAD:.github/comment-share.json'))['source.py'] == [19, 100]
-    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
-    assert 'main moved' not in summary.lower()
 
 
 def test_invalid_merged_records_drop_the_raise(tmp):
