@@ -106,9 +106,8 @@ def test_required_jobs_name_the_two_required_contexts(tmp):
         assert name in jobs, f'{path} must define the required job {name!r}'
 
 
-# The exact derived set on this repository's HEAD: a required job naming a
-# new file forces this pin to change in the same commit, so the set can
-# neither shrink nor grow in silence.
+# The exact derived set on this repository's HEAD: a required job naming a new file forces this
+# pin to change in the same commit, so the set can neither shrink nor grow in silence.
 def test_gate_paths_on_this_repository(tmp):
     del tmp
     done = subprocess.run(
@@ -124,6 +123,7 @@ def test_gate_paths_on_this_repository(tmp):
         '.github/workflows/comment-share.yml',
         '.github/workflows/coverage-comment.yml',
         '.github/workflows/lint.yml',
+        '.github/workflows/pin-guard.yml',
         '.github/workflows/pr-gate.yml',
         '.github/workflows/ratchet-push.yml',
         '.github/workflows/release-dispatch.yml',

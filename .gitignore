@@ -42,6 +42,7 @@
 !.github/workflows/scorecard.yml
 !.github/workflows/audit.yml
 !.github/workflows/secrets.yml
+!.github/workflows/pin-guard.yml
 !scripts/
 scripts/*
 !scripts/ci/

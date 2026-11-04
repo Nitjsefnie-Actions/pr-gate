@@ -833,19 +833,18 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     # be a second place to drift; the jobs that hold LESS than the
     # workflow — or anything when the workflow holds none — say so here.
     #
-    # claim.yml, coverage-comment.yml and pr-gate.yml are the repository's
-    # no-checkout conversation writers — their tokens answer /claim
-    # commands, post the coverage comment and post the gate's refusal
-    # comment — so the pull-requests: write each holds is the class, not a
-    # one-off exception. The universal invariant stands: a job that checks
-    # out the tree never holds a conversation write; checkout and
-    # pull-requests: write are never held together. The grants sit where
-    # this table records them: claim.yml carries issues: write and
-    # pull-requests: write at JOB level under a workflow that declares
-    # none; coverage-comment.yml carries pull-requests: write, with
-    # actions: read, at WORKFLOW level, its comment job inheriting; and
-    # pr-gate.yml carries contents: read, issues: read and pull-requests:
-    # write at WORKFLOW level, its gate job inheriting.
+    # claim.yml, coverage-comment.yml, pin-guard.yml and pr-gate.yml are the
+    # repository's no-checkout conversation writers — their tokens answer
+    # /claim commands and post the coverage comment, the pin screen's comment
+    # and the gate's refusal comment — so the pull-requests: write each holds
+    # is the class, not a one-off exception. The universal invariant stands:
+    # a job that checks out the tree never holds a conversation write;
+    # checkout and pull-requests: write are never held together. The grants
+    # sit where this table records them: claim.yml carries issues: write and
+    # pull-requests: write at JOB level under a workflow that declares none;
+    # coverage-comment.yml (with actions: read), pin-guard.yml (with contents:
+    # read) and pr-gate.yml (with contents: read and issues: read) carry
+    # pull-requests: write at WORKFLOW level, each one's job inheriting.
     contracts = {
         'release-dispatch.yml': ({}, {
             'verify': ({'contents': 'read', 'actions': 'read', 'checks': 'read'}, '50'),
@@ -861,7 +860,8 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'audit.yml': ({'contents': 'read'}, {'pip-audit': (None, '15')}),
         'lint.yml': ({'contents': 'read'}, {'lint': (None, '15')}),
         'types.yml': ({'contents': 'read'}, {'types': (None, '15')}),
-
+        'pin-guard.yml': ({'contents': 'read', 'pull-requests': 'write'}, {
+            'pin-guard': (None, '5')}),
         'claim.yml': (None, {'claim': ({'issues': 'write',
                                         'pull-requests': 'write'}, '5')}),
         'pr-gate.yml': ({'contents': 'read', 'issues': 'read',
