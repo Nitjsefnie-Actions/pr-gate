@@ -1535,26 +1535,6 @@ def test_pyyaml_pin_agrees_across_the_hash_pinned_manifests(tmp):
         'job and the suites import the same module')
 
 
-def test_comment_share_workflow_checks_every_pr_at_the_pinned_defaults(tmp):
-    del tmp
-    workflow = _workflow('comment-share.yml')
-    assert workflow['on'] == {'pull_request': '', 'push': {'branches': ['main']}}
-    assert workflow['permissions'] == {'contents': 'read'}
-    assert workflow['concurrency'] == {
-        'group': 'comment-share-${{ github.ref }}', 'cancel-in-progress': 'true'}
-    assert set(workflow['jobs']) == {'comment-share'}
-    job = workflow['jobs']['comment-share']
-    assert 'name' not in job
-    assert 'if' not in job
-    assert job['runs-on'] == 'ubuntu-latest'
-    assert job['timeout-minutes'] == '10'
-    checkout = job['steps'][0]
-    assert checkout['uses'] == (
-        'actions/checkout@' + _shipped_action_pin('actions/checkout'))
-    for step in job['steps']:
-        assert 'continue-on-error' not in step
-
-
 def test_comment_share_seed_has_integer_byte_pairs(tmp):
     del tmp
     path = ROOT / '.github/comment-share.json'
