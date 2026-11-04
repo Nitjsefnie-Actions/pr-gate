@@ -98,8 +98,7 @@ jobs:
           }
           # Only a records file may sit between the measured base and main.
           if [ -n "$(git -C "$RUNNER_TEMP/ratchet-repo" diff --name-only "$base" "$fetched" -- \
-              ':!.github/ci-thresholds.json' ':!pyright-baseline.json' \
-              ':!.github/comment-share.json')" ]; then
+              ':!.github/ci-thresholds.json' ':!pyright-baseline.json')" ]; then
             drop "Non-records changes landed on main between the measured base and its tip."
           fi
           # Validate every destination before installing any record. NUL
