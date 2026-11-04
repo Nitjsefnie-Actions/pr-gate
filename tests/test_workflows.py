@@ -835,7 +835,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     #
     # claim.yml, coverage-comment.yml, pin-guard.yml and pr-gate.yml are the
     # repository's no-checkout conversation writers — their tokens answer
-    # /claim commands and post the coverage comment, the pin screen's comment
+    # /claim commands and post the coverage comment, the pin screen's comments
     # and the gate's refusal comment — so the pull-requests: write each holds
     # is the class, not a one-off exception. The universal invariant stands:
     # a job that checks out the tree never holds a conversation write;
