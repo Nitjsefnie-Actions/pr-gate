@@ -84,7 +84,7 @@ def test_names_derived_from_this_repository(tmp):
         'actionlint', 'types', 'tests', 'codeql', 'pr gate',
         'claim', 'scorecard', 'secrets', 'audit', 'lint',
         'coverage comment', 'ratchet push', 'comment share', 'size baseline',
-        'release dispatch'}
+        'release dispatch', 'pin test screen'}
 
 
 def test_violation_red_for_workflow_scope_with_non_ci_type(tmp):
