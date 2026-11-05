@@ -238,6 +238,10 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         elif move == 'other':
             (repo / 'note.txt').write_text('not a record\n', encoding='utf-8', newline='\n')
             _git(repo, 'add', 'note.txt')
+        elif move == 'sibling-records':
+            for name in ('comment-share.json', 'size-baseline.json'):
+                (repo / '.github' / name).write_text('{}\n', encoding='utf-8', newline='\n')
+                _git(repo, 'add', f'.github/{name}')
         elif move == 'conflict':
             thresholds.write_text(json.dumps({'coverage': {'python': {
                 'floor': 90.1, 'measured': 91.0, 'cell': 'keep'}}}) + '\n', encoding='utf-8',
@@ -373,6 +377,16 @@ def test_records_only_main_movement_lands_with_the_in_between_edit_preserved(tmp
     assert changed == {'.github/ci-thresholds.json'}
     assert commands.count(['push', 'origin', 'HEAD:main']) == 1
     assert 'main moved' not in summary.lower()
+
+
+def test_a_comment_share_or_size_commit_on_main_does_not_drop_the_raise(tmp):
+    result, commands, summary = _push_run(tmp, move='sibling-records')
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
+    assert 'main moved' not in summary.lower()
+    repo = tmp / 'ratchet-repo'
+    assert _git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD') == (
+        '.github/ci-thresholds.json')
 
 
 def test_conflicting_records_edits_drop_the_raise(tmp):
