@@ -28,8 +28,8 @@
     2285
   ],
   ".github/workflows/pr-gate.yml": [
-    496,
-    1152
+    427,
+    1095
   ],
   ".github/workflows/scorecard.yml": [
     202,
