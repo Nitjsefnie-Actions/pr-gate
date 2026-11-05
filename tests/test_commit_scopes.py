@@ -128,6 +128,8 @@ def test_scope_read_by_the_gates_own_rule(tmp):
     for subject, scope in (
             ('ci(pr gate): x', 'pr gate'),
             ('fix(pin test screen)!: x', 'pin test screen'),
+            ('ci(pr\tgate): x', 'pr\tgate'),
+            ('ci(a): x', 'a'),
             ('fix( pr gate): x', None),
             ('fix(pr gate ): x', None),
             ('fix(): x', None)):
