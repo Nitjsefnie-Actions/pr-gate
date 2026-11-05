@@ -15,6 +15,8 @@ from _measuredcell import measured_if, measured_python
 from test_type_ratchet import _document
 
 ROOT = Path(__file__).resolve().parents[1]
+_SPLIT_BASELINE = ('{\n  "error_count": 1,\n  "schema_version": 1,\n'
+                   '  "checked_at": "base"\n}\n')
 
 
 def _step(workflow, name):
@@ -234,14 +236,12 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         # The commit lands on the remote after the run measured `base`.
         if move == 'records':
             baseline.write_text('{"error_count":2}\n', encoding='utf-8')
-            _git(repo, 'add', 'pyright-baseline.json')
+            for name in ('comment-share', 'size-baseline'):
+                (repo / f'.github/{name}.json').write_text('{}\n', encoding='utf-8')
+            _git(repo, 'add', 'pyright-baseline.json', '.github')
         elif move == 'other':
             (repo / 'note.txt').write_text('not a record\n', encoding='utf-8', newline='\n')
             _git(repo, 'add', 'note.txt')
-        elif move == 'sibling-records':
-            for name in ('comment-share.json', 'size-baseline.json'):
-                (repo / '.github' / name).write_text('{}\n', encoding='utf-8', newline='\n')
-                _git(repo, 'add', f'.github/{name}')
         elif move == 'conflict':
             thresholds.write_text(json.dumps({'coverage': {'python': {
                 'floor': 90.1, 'measured': 91.0, 'cell': 'keep'}}}) + '\n', encoding='utf-8',
@@ -379,16 +379,6 @@ def test_records_only_main_movement_lands_with_the_in_between_edit_preserved(tmp
     assert 'main moved' not in summary.lower()
 
 
-def test_a_comment_share_or_size_commit_on_main_does_not_drop_the_raise(tmp):
-    result, commands, summary = _push_run(tmp, move='sibling-records')
-    assert result.returncode == 0, (result.stdout, result.stderr)
-    assert commands.count(['push', 'origin', 'HEAD:main']) == 1
-    assert 'main moved' not in summary.lower()
-    repo = tmp / 'ratchet-repo'
-    assert _git(repo, 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD') == (
-        '.github/ci-thresholds.json')
-
-
 def test_conflicting_records_edits_drop_the_raise(tmp):
     result, commands, summary = _push_run(tmp, move='conflict')
     assert result.returncode == 0, result.stderr
@@ -402,9 +392,7 @@ def test_conflicting_records_edits_drop_the_raise(tmp):
 def test_a_split_records_edit_on_a_moved_main_merges_clean(tmp):
     result, commands, _ = _push_run(
         tmp, records=('coverage',),
-        extra_records={'pyright-baseline.json':
-                       '{\n  "error_count": 1,\n  "schema_version": 1,\n'
-                       '  "checked_at": "base"\n}\n'},
+        extra_records={'pyright-baseline.json': _SPLIT_BASELINE},
         move='split')
     assert result.returncode == 0, (result.stdout, result.stderr)
     repo = tmp / 'ratchet-repo'
@@ -419,9 +407,7 @@ def test_a_split_records_edit_on_a_moved_main_merges_clean(tmp):
 def test_invalid_merged_records_drop_the_raise(tmp):
     result, commands, summary = _push_run(
         tmp, records=('coverage',),
-        extra_records={'pyright-baseline.json':
-                       '{\n  "error_count": 1,\n  "schema_version": 1,\n'
-                       '  "checked_at": "base"\n}\n'},
+        extra_records={'pyright-baseline.json': _SPLIT_BASELINE},
         move='broken-json')
     assert result.returncode == 0, result.stderr
     assert '::notice::' in result.stdout and 'main moved' in summary.lower()
