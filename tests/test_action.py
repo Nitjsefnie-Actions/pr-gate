@@ -149,6 +149,7 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
         'PR_GATE_ACTION_PATH': '${{ github.action_path }}',
         'PR_GATE_REPO': '${{ inputs.repository }}',
         'PR_GATE_REQUIRE_COMMIT_ATTRIBUTION': '${{ inputs.require-commit-attribution }}',
+        'PR_GATE_CONVENTIONAL_COMMITS': '${{ inputs.conventional-commits }}',
         'PR_GATE_TEMPLATE_PATH': '${{ inputs.template-path }}'}
     for index, (base, head) in enumerate(POLICY_REVISIONS):
         directory = Path(tmp) / str(index)
@@ -156,8 +157,8 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
         _run_packaged_action(directory, base, head)
 
 
-def _run_packaged_action(tmp, base, head, *,
-                         require_commit_attribution='false', commits=None):
+def _run_packaged_action(tmp, base, head, *, require_commit_attribution='false',
+                         conventional_commits=None, commits=None):
     metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
     assert metadata['runs']['using'] == 'composite'
     for name in ('github-token', 'repository', 'pull-request-number', 'pull-request-author'):
@@ -165,10 +166,13 @@ def _run_packaged_action(tmp, base, head, *,
     assert metadata['inputs']['template-path']['default'] == '.github/PULL_REQUEST_TEMPLATE.md'
     _, run_step = _action_steps(metadata)
     assert run_step['shell'] == 'bash'
+    if conventional_commits is None:
+        conventional_commits = metadata['inputs']['conventional-commits']['default']
     inputs = {'github-token': 'stub-token', 'repository': 'another-owner/project',
               'pull-request-number': '42', 'pull-request-author': 'sasha',
               'template-path': 'policy/PR template.md',
-              'require-commit-attribution': require_commit_attribution}
+              'require-commit-attribution': require_commit_attribution,
+              'conventional-commits': conventional_commits}
     directory, _command = _write_gh_stub(tmp)
     fixture = _script_fixtures()
     fixture.update(repository=inputs['repository'], pull_number='42', expected_token='stub-token',
@@ -202,7 +206,8 @@ def _run_packaged_action(tmp, base, head, *,
                for call in calls), calls
     assert any(call['input'] == {'text': _valid_body(), 'mode': 'gfm',
                                  'context': 'another-owner/project'} for call in calls)
-    if require_commit_attribution.strip().casefold() == 'true':
+    if (require_commit_attribution.strip().casefold() == 'true'
+            or conventional_commits.strip().casefold() != 'false'):
         assert any(call['argv'][4] ==
                    'repos/another-owner/project/pulls/42/commits'
                    for call in calls), calls
@@ -231,7 +236,7 @@ def test_commit_attribution_input_is_opt_in_and_reaches_main(tmp):
         'commit': {
             'author': {'name': 'Sasha', 'email': 'sasha@example.com'},
             'committer': {'name': 'Sasha', 'email': 'sasha@example.com'},
-            'message': 'Change implementation',
+            'message': 'fix: change implementation',
         },
     }
     calls = _run_packaged_action(
@@ -240,6 +245,18 @@ def test_commit_attribution_input_is_opt_in_and_reaches_main(tmp):
     assert any(call['argv'][4] ==
                'repos/another-owner/project/pulls/42/commits'
                for call in calls)
+
+
+def test_conventional_commits_input_defaults_on_and_reaches_main(tmp):
+    metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
+    input_definition = metadata['inputs'].get('conventional-commits')
+    assert input_definition is not None, 'the opt-out action input must exist'
+    assert input_definition['default'] == 'true'
+    for index, value in enumerate((None, ' FaLsE ')):
+        directory = Path(tmp) / str(index)
+        directory.mkdir()
+        _run_packaged_action(directory, *POLICY_REVISIONS[0],
+                             conventional_commits=value)
 
 
 if __name__ == '__main__':

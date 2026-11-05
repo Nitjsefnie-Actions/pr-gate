@@ -698,8 +698,8 @@ def test_main_optional_environment_defaults_and_empty_attribution(tmp):
         directory.mkdir()
         result, calls = _run_main(directory, {
             'PR_GATE_REPO': 'owner/repo', 'PR_GATE_PR': '99',
-            'PR_GATE_ACTOR': 'alice', **optional,
-        }, _script_fixtures())
+            'PR_GATE_ACTOR': 'alice', 'PR_GATE_CONVENTIONAL_COMMITS': 'false',
+            **optional}, _script_fixtures())
         assert result[0] == 0, (result, calls)
         endpoints = [call['argv'][4] for call in calls]
         assert any(endpoint.startswith(

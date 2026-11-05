@@ -19,6 +19,11 @@ inputs:
       Enable the commit-attribution check. Only 'true' (case-insensitive;
       surrounding whitespace ignored) enables it.
     default: 'false'
+  conventional-commits:
+    description: >-
+      Check every commit subject against Conventional Commits. Only 'false'
+      (case-insensitive; surrounding whitespace ignored) disables it.
+    default: 'true'
   template-path:
     description: Consumer template path, read at the pull request base SHA.
     default: .github/PULL_REQUEST_TEMPLATE.md
@@ -37,5 +42,6 @@ runs:
         PR_GATE_ACTION_PATH: ${{ github.action_path }}
         PR_GATE_REPO: ${{ inputs.repository }}
         PR_GATE_REQUIRE_COMMIT_ATTRIBUTION: ${{ inputs.require-commit-attribution }}
+        PR_GATE_CONVENTIONAL_COMMITS: ${{ inputs.conventional-commits }}
         PR_GATE_TEMPLATE_PATH: ${{ inputs.template-path }}
       run: python "$PR_GATE_ACTION_PATH/scripts/ci/pr_gate.py"

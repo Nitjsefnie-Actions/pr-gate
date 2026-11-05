@@ -3,7 +3,6 @@ import re
 from urllib.parse import quote, urlencode
 
 
-MAX_COMMITS = 250
 _PUSH_PERMISSIONS = frozenset(('write', 'maintain', 'admin'))
 _TRAILER_LINE = re.compile(
     r'^(?P<token>[A-Za-z0-9-]+):[ \t]*(?P<value>.*?)\s*$')
@@ -234,22 +233,3 @@ def _same_login(left, right):
 def check_commits(api, repository, actor, commits):
     """Return trailer and identity failures for the supplied commit records."""
     return _Checker(api, repository, actor).check(commits)
-
-
-def commit_attribution_reasons(api, repository, pull_number, actor, pull):
-    """Fetch and check commits, refusing requests above the 250-commit cap."""
-    count = pull.get('commits') or 0
-    if count > MAX_COMMITS:
-        return [
-            f'This pull request carries {count} commits; the commit-attribution '
-            'check can verify at most 250, so it cannot verify this pull request.']
-
-    endpoint = f'repos/{repository}/pulls/{pull_number}/commits'
-    try:
-        response = api.paginate(endpoint)
-    except RuntimeError as error:
-        raise AttributionError(str(error)) from error
-    if response.status != 200 or not isinstance(response.data, list):
-        raise AttributionError(
-            f'GitHub returned {response.status} for {endpoint}')
-    return check_commits(api, repository, actor, response.data)
