@@ -158,10 +158,10 @@ it makes no commit-list request either.
 The run's exit code states the outcome. Zero: the description passes and is
 covered by its claimed issue, or the PR is merged or not open. Exit 2: the gate
 found defects, such as a failing commit subject, and commented on them; it
-prints one stderr line with the same reasons the comment carries. Analysis and
-API failures exit 1 with `pr gate failed: ...` on stderr. Consumer repositories
-remain responsible for assigning issues and for a ruleset that requires the
-gate's check.
+prints one stderr line with the same reasons the comment carries, each
+unprintable character escaped. Analysis and API failures exit 1 with `pr gate
+failed: ...` on stderr. Consumer repositories remain responsible for assigning
+issues and for a ruleset that requires the gate's check.
 
 ## Development and community
 
