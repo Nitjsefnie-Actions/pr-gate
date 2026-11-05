@@ -48,8 +48,8 @@
     2974
   ],
   "scripts/ci/commit_scopes.py": [
-    6177,
-    11823
+    6058,
+    11724
   ],
   "scripts/ci/coverage_ratchet.py": [
     630,
