@@ -327,7 +327,7 @@ def test_raise_commits_exact_staged_data_and_pushes_only_main(tmp):
     assert ['config', 'user.name', 'github-actions[bot]'] in commands
     assert ['config', 'user.email',
             '41898282+github-actions[bot]@users.noreply.github.com'] in commands
-    subject = 'Ratchet CI records (automated)'
+    subject = 'chore(ratchet): Ratchet CI records (automated)'
     assert ['commit', '-m', subject] in commands
     assert commands[-1] == ['push', 'origin', 'HEAD:main']
     repo = tmp / 'ratchet-repo'
