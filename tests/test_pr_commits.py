@@ -101,6 +101,18 @@ def test_every_failing_commit_is_listed_once_with_the_format_last(tmp):
                             'Commit aaaaaaa has the subject'), error
 
 
+def test_the_stderr_line_carries_no_control_character(tmp):
+    del tmp
+    subject = 'Update\r::error::forged\x1b[31m\u2028x'
+    code, body, _fetches, error, _api = _gate([_commit(subject)])
+    assert code == 2
+    assert f'`{subject}`' in body, body
+    line = error.removesuffix('\n')
+    assert line.isprintable(), repr(error)
+    assert 'Commit 0123456 has the subject `Update\\r::error::forged\\x1b[31m\\u2028x`' in (
+        line), line
+
+
 def test_only_a_multi_parent_commit_is_skipped(tmp):
     del tmp
     for parents, expected in ((0, 2), (1, 2), (2, 0), (3, 0)):

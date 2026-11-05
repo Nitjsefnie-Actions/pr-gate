@@ -296,11 +296,14 @@ def _refused_exit(reasons):
     """Reports an inadmissible pull request and fails the gate's check.
 
     The stderr line states the observation, each reason whole, never a
-    diagnosis of cause.
+    diagnosis of cause. A reason can quote a commit subject, so every
+    unprintable character is escaped: no reason can start a log line.
     """
+    line = ''.join(character if character.isprintable() else repr(character)[1:-1]
+                   for character in '; '.join(reasons))
     print(
         'pr gate: the pull request is inadmissible '
-        f'(exit {INADMISSIBLE_EXIT}): {"; ".join(reasons)}',
+        f'(exit {INADMISSIBLE_EXIT}): {line}',
         file=sys.stderr)
     return INADMISSIBLE_EXIT
 
