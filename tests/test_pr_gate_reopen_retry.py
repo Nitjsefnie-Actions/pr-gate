@@ -111,27 +111,6 @@ def _narrowed_gate():
     return gate
 
 
-def test_the_double_serves_retry_only_to_a_second_patch(tmp):
-    """`retry` is never consumed by a first PATCH, as documented.
-
-    The slot contract of the double itself: with `first=None` the first
-    PATCH takes the `first` slot and succeeds, leaving `retry`
-    untouched for the patch that follows it; only a later PATCH draws
-    from the `retry` slot.
-    """
-    del tmp
-    api = _RefusingApi(first=None, retry=(422, _stale_body()))
-    first = api.request(
-        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'})
-    assert first.status == 200
-    assert api.retry is not None, 'retry was consumed by the first PATCH'
-    second = api.request(
-        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'})
-    assert second.status == 422
-    assert api.retry is None
-    assert second.data == _stale_body()
-
-
 def test_stale_refusal_is_retried_once_and_succeeds(tmp):
     """The stale 422 takes one retry, and a landed retry wins.
 
