@@ -14,7 +14,6 @@ else:
 MAX_COMMITS = 250
 TYPES = ('build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor',
          'revert', 'style', 'test')
-# ASCII letters only, so a Unicode case fold ('ſtyle') never reads as a type.
 _SUBJECT = re.compile(
     r'(?P<type>[A-Za-z]+)(?:\([^()\s]+\))?!?: (?P<description>.*)')
 FORMAT_REASON = (
