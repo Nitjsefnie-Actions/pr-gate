@@ -116,12 +116,19 @@ def test_both_checks_share_one_commit_list_fetch(tmp):
     assert (code, fetches) == (2, 1)
     assert 'is authored by mallory, who is not you' in body, body
     assert '- Commit 0123456 has the subject `Update stuff`' in body, body
-    for attribution, conventional, expected in (
-            (True, False, 1), (False, True, 1), (False, False, 0)):
-        _code, _body, fetches, _error, _api = _gate(
-            [_commit('feat: x')], attribution=attribution,
+    # Each check off must stay off: a subject or an author only it would refuse.
+    for attribution, conventional, login, message in (
+            (True, False, 'alice', 'Update stuff'),
+            (False, True, 'mallory', 'feat: x'),
+            (False, False, 'mallory', 'Update stuff')):
+        code, body, fetches, _error, api = _gate(
+            [_commit(message, login=login)], attribution=attribution,
             conventional=conventional)
-        assert fetches == expected, (attribution, conventional)
+        assert (code, body, fetches) == (
+            0, '', int(attribution or conventional)), (attribution, conventional)
+        assert not any(call[1].startswith((
+            'repos/owner/repo/collaborators/', 'users/', 'search/commits'))
+            for call in api.calls), api.calls
 
 
 def test_more_than_250_commits_name_every_check_that_cannot_verify(tmp):
