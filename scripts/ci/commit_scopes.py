@@ -38,11 +38,9 @@ WHAT IT CANNOT SEE, and says so rather than guessing:
     a defect under any scope, so no type is enumerated here: every type but
     `ci` violates when the scope names a workflow, and the scope rule is
     what fires.
-  - A workflow whose `name:` can never be a scope. `pr gate` — pr-gate.yml's
-    name — carries a space, and a scope is `[^()\\s]+`, so no subject can
-    ever match it. The repository name `pr-gate`, hyphenated, is not the
-    name of a workflow in this set and stays outside the rule; a scope is
-    read only when it exactly equals a derived `name:`.
+  - A scope spelled unlike every derived `name:`: the repository name
+    `pr-gate` names no workflow and stays outside the rule. Inner spaces
+    are kept, as pr_commits.py reads a scope, so `fix(pr gate)` is refused.
 
 Runs on the standard library alone, and reads blobs with
 `git cat-file blob HEAD:<path>` for the same reason gate_base_freshness
@@ -249,12 +247,13 @@ def fetch_base(root):
 
 # A Conventional-Commits-shaped subject: a lowercase type, an optional
 # breaking marker after the type and/or after the scope's closing paren, a
-# scope of non-parenthesis non-whitespace inside parens, and the colon
+# scope in parens as pr_commits.py reads it (no edge spaces), and the colon
 # CONTRIBUTING requires. A type outside CONTRIBUTING's convention is not this
 # regex's problem — the rule below flags any non-ci type on a workflow-name
 # scope, and a bad type is a defect under any scope.
 SUBJECT = re.compile(
-    r"^(?P<type>[a-z]+)!?\((?P<scope>[^()\s]+)\)!?:\s?(?P<summary>\S.*)?$")
+    r"^(?P<type>[a-z]+)!?\((?P<scope>[^()\s](?:[^()]*[^()\s])?)\)!?:"
+    r"\s?(?P<summary>\S.*)?$")
 
 
 def outgoing_commits(root, base):

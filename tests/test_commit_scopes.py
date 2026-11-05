@@ -14,6 +14,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+from scripts.ci import pr_commits
 
 
 def _load():
@@ -102,6 +104,37 @@ def test_ci_type_on_workflow_scope_passes(tmp):
     done = _run_gate(tmp, repo)
     assert done.returncode == 0, (done.stdout, done.stderr)
     assert 'No commit pairs a workflow-name scope' in done.stdout
+
+
+def test_spaced_workflow_scope_is_judged(tmp):
+    base = {'.github/workflows/pr-gate.yml':
+            'name: pr gate\non: push\njobs:\n  gate:\n'
+            '    steps:\n      - run: cat README.md\n'}
+    for index, (subject, code, printed) in enumerate((
+            ('fix(pr gate): x', 1, 'scope `pr gate` is the name of a workflow'),
+            ('ci(pr gate): x', 0, 'Examined 1 commit subject in'),
+            ('fix(pr gate ): x', 0, '; 1 not examined.'))):
+        root = Path(tmp) / str(index)
+        root.mkdir()
+        repo, _ = _fixture(root, head_subject=subject, base_files=base)
+        done = _run_gate(root, repo)
+        assert done.returncode == code, (subject, done.stdout, done.stderr)
+        assert printed in done.stdout, (subject, done.stdout)
+
+
+def test_scope_read_by_the_gates_own_rule(tmp):
+    del tmp
+    module = _load()
+    for subject, scope in (
+            ('ci(pr gate): x', 'pr gate'),
+            ('fix(pin test screen)!: x', 'pin test screen'),
+            ('fix( pr gate): x', None),
+            ('fix(pr gate ): x', None),
+            ('fix(): x', None)):
+        match = module.SUBJECT.match(subject)
+        assert (match and match['scope']) == scope, subject
+        reasons = pr_commits.subject_reasons([{'commit': {'message': subject}}])
+        assert (not reasons) == (scope is not None), subject
 
 
 def test_non_workflow_scope_with_any_type_passes(tmp):
