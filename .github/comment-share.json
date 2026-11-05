@@ -96,11 +96,11 @@
     3312
   ],
   "tests/test_pr_gate.py": [
-    6983,
-    35856
+    5530,
+    34680
   ],
   "tests/test_pr_gate_reopen_retry.py": [
-    5336,
-    16607
+    5101,
+    15951
   ]
 }
