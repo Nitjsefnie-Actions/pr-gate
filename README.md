@@ -132,7 +132,8 @@ Commit subjects follow [Conventional Commits 1.0.0](https://www.conventionalcomm
 unless `conventional-commits` is `false`. Each commit's first line must read
 `type(scope)!: description`, and a commit with more than one parent is not
 checked. The scope and `!` are optional, a scope is one or more characters
-other than parentheses and whitespace, the type is one of `build`, `chore`,
+other than parentheses, neither starting nor ending with whitespace (inner spaces
+are allowed), the type is one of `build`, `chore`,
 `ci`, `docs`, `feat`, `fix`, `perf`, `refactor`, `revert`, `style` or `test`
 in any letter case, a colon and one space follow, and the description holds a
 non-whitespace character. The gate's comment lists each failing commit's short

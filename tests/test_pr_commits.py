@@ -63,14 +63,14 @@ def test_conforming_subjects_pass(tmp):
                     'Docs(a.b/c-d_é): x', 'chore!: x', 'revert: "feat: x"',
                     'refactor:  description after a second space',
                     'test: x\n\nUpdate stuff', 'style: x\r\n\r\nbody',
-                    'build: x', 'ci: x', 'perf: x'):
+                    'build: x', 'ci: x', 'perf: x', 'ci(pr gate): x', 'ci(size baseline)!: x'):
         assert _verdict(message) == (0, ''), message
 
 
 def test_nonconforming_subjects_fail(tmp):
     del tmp
     for message in ('Update stuff', 'feature: x', 'feat:x', 'feat : x',
-                    'feat(): x', 'feat(a b): x', 'feat(a(b)): x',
+                    'feat(): x', 'feat( ): x', 'feat( a): x', 'feat(a ): x', 'feat(a(b)): x',
                     'feat(a)b: x', 'feat!(scope): x', 'feat(scope)!!: x',
                     'feat: ', 'feat: \t ', 'feat:\tx', ' feat: x',
                     'ſtyle: x', 'feat\n\nfeat: x', 'Update\nfeat: x', ''):
