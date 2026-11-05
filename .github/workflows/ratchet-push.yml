@@ -145,7 +145,7 @@ jobs:
             echo "No ratchet move is justified by this run: nothing to commit."
             exit 0
           fi
-          git -C "$RUNNER_TEMP/ratchet-repo" commit -m 'Ratchet CI records (automated)'
+          git -C "$RUNNER_TEMP/ratchet-repo" commit -m 'chore(ratchet): Ratchet CI records (automated)'
           if ! git -C "$RUNNER_TEMP/ratchet-repo" push origin HEAD:main; then
             git -C "$RUNNER_TEMP/ratchet-repo" fetch --quiet origin main
             if [ "$(git -C "$RUNNER_TEMP/ratchet-repo" rev-parse HEAD^)" = "$(git -C "$RUNNER_TEMP/ratchet-repo" rev-parse FETCH_HEAD)" ]; then
