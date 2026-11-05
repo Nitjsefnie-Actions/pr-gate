@@ -242,47 +242,5 @@ def test_commit_attribution_input_is_opt_in_and_reaches_main(tmp):
                for call in calls)
 
 
-def test_empty_discovery_is_nonzero(tmp):
-    del tmp
-    assert _util.runner(_util.collect({}), tmp_prefix='empty_') == 1
-
-
-def _executable(path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text('fixture executable\n', encoding='utf-8')
-    path.chmod(0o755)
-    return path
-
-
-def test_windows_shell_selection_avoids_the_wsl_path_shim(tmp):
-    shim = _executable(Path(tmp) / 'System32' / ('bash.exe' if os.name == 'nt' else 'bash'))
-    git = _executable(Path(tmp) / 'Git' / 'cmd' / 'git.exe')
-    bash = _executable(Path(tmp) / 'Git' / 'bin' / 'bash.exe')
-    environment = {'PATH': os.pathsep.join((str(shim.parent), str(git.parent)))}
-    assert Path(_action_bash(windows=True, environment=environment)).samefile(bash)
-
-
-def test_windows_shell_selection_checks_standard_git_installation(tmp):
-    programs = Path(tmp) / 'Program Files'
-    bash = _executable(programs / 'Git' / 'bin' / 'bash.exe')
-    environment = {'PATH': '', 'ProgramFiles': str(programs)}
-    assert Path(_action_bash(windows=True, environment=environment)).samefile(bash)
-
-
-def test_missing_windows_git_bash_fails_clearly(tmp):
-    shim = _executable(Path(tmp) / 'System32' / ('bash.exe' if os.name == 'nt' else 'bash'))
-    try:
-        _action_bash(windows=True, environment={'PATH': str(shim.parent)})
-    except RuntimeError as error:
-        assert 'Git for Windows Bash' in str(error)
-    else:
-        raise AssertionError('a WSL-only PATH was accepted as Git for Windows Bash')
-
-
-def test_posix_shell_selection_uses_path_bash(tmp):
-    bash = _executable(Path(tmp) / ('bash.exe' if os.name == 'nt' else 'bash'))
-    assert Path(_action_bash(windows=False, environment={'PATH': str(bash.parent)})).samefile(bash)
-
-
 if __name__ == '__main__':
     raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='praction_'))

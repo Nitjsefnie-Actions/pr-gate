@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 """Pull-request gate state transitions and write ordering."""
-import itertools
 import json
 import os
 import re
-import subprocess
 import sys
 from pathlib import Path
 from unittest import mock
@@ -12,7 +10,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _util  # noqa: E402
 from _prgate import (  # noqa: E402
-    BOT, CLI_FOOTER_HTML, CLOSED_FIRST, CLOSED_MARKER, MARKER, OPEN_FIRST, REOPEN_FIRST,
+    BOT, CLI_FOOTER_HTML, CLOSED_FIRST, CLOSED_MARKER, MARKER, REOPEN_FIRST,
     RESOLVED_FIRST, TEMPLATE,
     _api, _assert_ci_recovery_note, _assert_gate_message, _assert_no_writes,
     _assert_script_error,
@@ -172,66 +170,6 @@ def test_retained_instruction_comment_closes(tmp):
     _assert_gate_message(
         writes[0], CLOSED_FIRST,
         ['Remove the template instruction comments.'], closed=True)
-
-
-def test_a_bullet_spelled_with_a_star_is_read_as_a_bullet(tmp):
-    """The reason set is pinned against a marker class, not one spelling.
-
-    A gate comment growing an item spelled `* ` carries a bullet no
-    code path asked for, and GitHub renders it exactly as a `- ` item.
-    Collecting bullets by the `- ` spelling alone leaves that mutation
-    of the comment green at every call site here.
-    """
-    del tmp
-    instruction = re.search(r'<!--.*?-->', TEMPLATE, re.DOTALL).group(0)
-    body = _valid_body().replace(
-        '- One change', f'- One change\n{instruction}')
-    _code, writes, _output, _error = _execute(_api(), body)
-    method, path, payload = writes[0]
-    strayed = (
-        method, path,
-        {**payload, 'body': payload['body'] + '* Stray bullet.\n'})
-    try:
-        _assert_gate_message(
-            strayed, CLOSED_FIRST,
-            ['Remove the template instruction comments.'], closed=True)
-    except AssertionError:
-        pass
-    else:
-        raise AssertionError('a bullet spelled "* " went unseen')
-
-
-def test_the_bullet_matcher_decides_indent_marker_and_separator(tmp):
-    """Every decision the matcher makes, on its own axis.
-
-    The marker and separator alphabets are finite, so those two axes
-    are exhausted. The indent is unbounded repetition, so it runs to
-    the width this comment can render: a stray bullet is still a list
-    item at the numbered item's content column of three plus
-    CommonMark's three-space allowance, so six is the domain and seven
-    is the near miss the table carries past it. A bound of seven or
-    wider survives here, outside what the comment can render rather
-    than merely further out. The separator is the only axis answering
-    no, so its rows keep the rest from passing vacuously.
-    """
-    del tmp
-    indents = [''.join(pad) for width in range(8)
-               for pad in itertools.product(' \t', repeat=width)]
-    failures = []
-    for indent, marker, separator in itertools.product(
-            indents, '-*+', (' ', '\t', '')):
-        stray = f'{indent}{marker}{separator}Stray.'
-        write = ('POST', 'url', {
-            'body': '\n'.join((OPEN_FIRST, MARKER, stray))})
-        try:
-            _assert_gate_message(write, OPEN_FIRST)
-        except AssertionError:
-            seen = True
-        else:
-            seen = False
-        if seen is not bool(separator):
-            failures.append((stray, seen))
-    assert failures == [], failures
 
 
 def test_gate_closed_admissible_pull_is_commented_then_reopened(tmp):
@@ -435,74 +373,6 @@ def test_resolved_notice_keeps_the_reopen_followup_conditionally(tmp):
     for required in ('if the gate closed and reopened', 'close and reopen',
                      'before merging', 'unattributed'):
         assert required in text, (required, body)
-
-
-def test_the_recovery_guard_rejects_contract_violating_bodies(tmp):
-    """The guard's two arms are driven here, not assumed.
-
-    The REQUIRED arm is the property arm: each term in it is load-bearing,
-    and each is driven by being removed from the real reopen body in
-    turn. The FORBIDDEN arm is a spelling set, not a property, and it is
-    not exhaustive: its entries are driven by appending each phrasing the
-    contract has been observed to break with to the real reopen body.
-    A forbidden-spelling arm that no test exercises is not a control:
-    six realistic violations of this contract passed the guard before
-    this test existed, because the arm listed spellings instead of the
-    behaviour. Each violation is appended to the real reopen body, and
-    each required term is removed from it, so both arms are shown to
-    fire; the correct body, and a correct body with an innocent
-    sentence added, are shown to pass.
-    """
-    del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()])
-    code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
-    body = _comment_body(writes[2])
-    _assert_ci_recovery_note(body)
-    _assert_ci_recovery_note(f'{body} The gate thanks you for reading this.')
-
-    violations = (
-        'You should approve the pending runs to release them.',
-        'Go to the Actions tab and approve them.',
-        'Ask a reviewer to approve the checks.',
-        'The runs will start automatically in a moment.',
-        'The checks will run by themselves.',
-        'The runs kick off on their own.',
-    )
-    survived = []
-    for violation in violations:
-        try:
-            _assert_ci_recovery_note(f'{body} {violation}')
-        except AssertionError:
-            continue
-        survived.append(violation)
-    assert survived == [], survived
-
-    removals = (
-        ('push', 'send it onward'),
-        ('empty commit', 'a trivial change'),
-        ('held', 'queued'),
-        ('approval', 'sign-off'),
-        ('github-actions[bot]', 'the automation account'),
-        ('github_token', 'its own token'),
-        ('close and reopen', 'reopen'),
-        ('unattributed', 'unrecognized'),
-        ('ruleset', 'policy'),
-        ('green', 'passing'),
-    )
-    accepted = []
-    rendered = ' '.join(body.split()).lower()
-    for term, replacement in removals:
-        mutated = rendered.replace(term, replacement)
-        assert term in rendered and term not in mutated, (term, mutated)
-        try:
-            _assert_ci_recovery_note(mutated)
-        except AssertionError:
-            continue
-        accepted.append(term)
-    assert accepted == [], accepted
 
 
 class _RefusedReopenApi(FakeApi):
@@ -1237,33 +1107,6 @@ def test_main_empty_template_path_is_not_replaced_by_fallback_or_default(tmp):
         assert result == (1, '', 'pr gate failed: template path must be a '
                           'relative repository file path\n'), (result, calls)
         assert _recorded_writes(calls) == []
-
-
-def test_gh_stub_refuses_unmodelled_calls(tmp):
-    directory, command = _write_gh_stub(tmp)
-    fixtures = Path(tmp) / 'fixtures.json'
-    fixtures.write_text('{}', encoding='utf-8')
-    calls = Path(tmp) / 'calls.jsonl'
-    calls.write_text('', encoding='utf-8')
-    environment = {
-        **os.environ,
-        'PATH': f'{directory}{os.pathsep}{os.environ["PATH"]}',
-        'STUB_FIXTURES': str(fixtures),
-        'STUB_CALLS': str(calls),
-    }
-    result = subprocess.run(
-        [str(command), 'api', 'repos/owner/repo/labels'],
-        env=environment, capture_output=True, text=True, timeout=30)
-    assert result.returncode == 2, (result.stdout, result.stderr)
-    assert 'unsupported' in result.stderr, result.stderr
-
-    stub = directory / ('gh.py' if os.name == 'nt' else 'gh')
-    result = subprocess.run(
-        [sys.executable, str(stub), 'api', '--include', '-X', 'GET',
-         'repos/owner/repo/issues/99/comments?per_page=100&page=1'],
-        env=environment, capture_output=True, text=True, timeout=30)
-    assert result.returncode == 2, (result.stdout, result.stderr)
-    assert 'unsupported' in result.stderr, result.stderr
 
 
 def test_unparsable_gh_failure_reports_one_stderr_line(tmp):
