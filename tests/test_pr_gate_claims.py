@@ -8,6 +8,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _prgate import (  # noqa: E402
     GITHUB_HTML, OPEN_FIRST, RESOLVED_FIRST,
     _api, _assert_gate_message, _assert_no_writes, _comment_body, _execute,
+    _gate_comment,
     _issue, _issue_gets, _issue_html, _html_body, _layout_body,
     _markdown_code_spans, _text_html, _valid_body, _valid_html,
     _write_sequence,
@@ -405,6 +406,21 @@ def test_assigning_the_issue_resolves_the_refusal(tmp):
         ('PATCH', 'repos/owner/repo/issues/comments/100')]
     _assert_gate_message(writes[0], RESOLVED_FIRST)
     assert api.pull['state'] == 'open'
+
+
+def test_a_still_failing_rerun_updates_the_gate_comment(tmp):
+    """Every push re-runs the gate, so a refusal must rewrite the one
+    gate comment rather than post a new one per run.
+    """
+    del tmp
+    api = _api(issues={'101': _issue('bob')}, comments=[_gate_comment()])
+    code, writes, _output, _error = _execute(api, _valid_body())
+    assert code == 2
+    assert _write_sequence(writes) == [
+        ('PATCH', 'repos/owner/repo/issues/comments/7')]
+    _assert_gate_message(
+        writes[0], OPEN_FIRST, ['Issue `#101` is not assigned to you.'])
+    assert len(api.comments) == 1
 
 
 def main():
