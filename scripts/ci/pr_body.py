@@ -23,13 +23,8 @@ _NESTED_HEADING_NOTE = (
     'A heading is nested inside another heading; remove the raw HTML '
     'element from that heading line.')
 _BACKTICKS = re.compile(r'`+')
-_HEADING_LINE = re.compile(
-    r'^[ \t]{0,3}#{1,6}[ \t]+(?P<text>.+?)[ \t]*#*[ \t]*$',
-    re.MULTILINE)
 _HTML_DIMENSION = re.compile(
     r'[ \t\n\f\r]*(?P<integer>[0-9]+)(?:\.(?P<fraction>[0-9]*))?')
-_REFERENCE_SHAPE = re.compile(
-    r'#[0-9]|gh-[0-9]|issues/|pull/|://|%|&#|&num', re.IGNORECASE)
 _TEMPLATE_HEADING = re.compile(
     r'^##[ \t]+(?P<text>.+?)[ \t]*$', re.MULTILINE)
 _TEMPLATE_COMMENT = re.compile(r'<!--.*?-->', re.DOTALL)
@@ -465,37 +460,3 @@ def retains_instruction_comment(source, template):
     return any(
         match.group(0) in source
         for match in _TEMPLATE_COMMENT.finditer(template))
-
-
-def related_links(sections):
-    section = next(
-        (item for item in sections if item.key == RELATED), None)
-    return list(section.links) if section is not None else []
-
-
-def _heading_name(text):
-    return _heading_text(text.strip('*_~` ')).casefold()
-
-
-def _related_regions(source, names):
-    source = source.replace('\r\n', '\n').replace('\r', '\n')
-    headings = list(_HEADING_LINE.finditer(source))
-    regions = []
-    for index, heading in enumerate(headings):
-        if _heading_name(heading.group('text')) != RELATED:
-            continue
-        end = len(source)
-        for later in headings[index + 1:]:
-            if _heading_name(later.group('text')) in names:
-                end = later.start()
-                break
-        regions.append(source[heading.end():end])
-    return regions
-
-
-def related_may_reference(source, sections, template):
-    names = set(template_rules(template))
-    if any(_REFERENCE_SHAPE.search(region)
-           for region in _related_regions(source or '', names)):
-        return True
-    return bool(related_links(sections))

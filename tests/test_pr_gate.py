@@ -10,12 +10,12 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _util  # noqa: E402
 from _prgate import (  # noqa: E402
-    BOT, CLI_FOOTER_HTML, CLOSED_FIRST, CLOSED_MARKER, MARKER, REOPEN_FIRST,
+    BOT, CLI_FOOTER_HTML, OPEN_FIRST, MARKER,
     RESOLVED_FIRST, TEMPLATE,
-    _api, _assert_ci_recovery_note, _assert_gate_message, _assert_no_writes,
+    _api, _assert_gate_message, _assert_no_writes,
     _assert_script_error,
     _assert_script_runs_through_gh_on_path,
-    _capture, _closed_event, _comment_body, _comment_page_fields, _execute,
+    _capture, _comment_body, _comment_page_fields, _execute,
     _execute_without_runtime_escape, _gate_comment, _gate_module,
     _html_body, _inline_marker_comment, _issue, _issue_html, _layout_body,
     _markdown_code_spans,
@@ -25,16 +25,11 @@ from _prgate import (  # noqa: E402
 )
 from _prfootnotes import (  # noqa: E402
     NESTED_HEADING_HTML, NESTED_HEADING_NOTE)
-from _prgate_message import (  # noqa: E402
-    ATTEMPT_FIRST, REFUSED_FIRST)
 from _prgate_race import (  # noqa: E402
-    _assert_closed_admissible_reclose_aborts_state,
-    _assert_closed_inadmissible_reclose_aborts,
-    _assert_closer_race_aborts,
-    _assert_open_closable_human_close_aborts_state,
-    _assert_open_closable_merge_aborts_comment,
+    _assert_open_inadmissible_human_close_aborts_comment,
+    _assert_open_inadmissible_merge_aborts_comment,
     _assert_open_resolved_human_close_aborts_comment,
-    _assert_state_races_abort, _assert_two_run_replay,
+    _assert_two_run_replay,
 )
 
 
@@ -73,15 +68,18 @@ def test_admissible_open_resolves_a_prior_gate_comment(tmp):
     _assert_gate_message(writes[0], RESOLVED_FIRST)
 
 
-def test_inline_marker_mention_is_not_a_closed_gate_comment(tmp):
+def test_closed_pull_is_neither_analysed_nor_written(tmp):
+    """A closed pull request cannot merge, so the gate leaves it alone,
+    whoever closed it and whatever an earlier gate comment says.
+    """
     del tmp
-    api = _api(
-        state='closed', comments=[_inline_marker_comment()],
-        timeline=[_closed_event()])
-    code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
-    _assert_no_writes(writes)
-    assert api.pull['state'] == 'closed'
+    for comments in ([], [_gate_comment()], [_inline_marker_comment()]):
+        api = _api(state='closed', comments=comments,
+                   fail={'comments', 'markdown'})
+        code, writes, output, _error = _execute(api, _valid_body())
+        assert (code, output) == (0, 'nothing to do\n'), comments
+        _assert_no_writes(writes)
+        assert api.calls == [('GET', 'repos/owner/repo/pulls/99', None)]
 
 
 def test_inline_marker_mention_does_not_replace_a_new_comment(tmp):
@@ -92,11 +90,9 @@ def test_inline_marker_mention_does_not_replace_a_new_comment(tmp):
     code, writes, _output, _error = _execute(api, _valid_body())
     assert code == 2
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
     _assert_gate_message(
-        writes[0], CLOSED_FIRST, ['Issue `#101` is not assigned to you.'],
-        closed=True)
+        writes[0], OPEN_FIRST, ['Issue `#101` is not assigned to you.'])
 
 
 def test_contributor_marker_comment_is_not_selected(tmp):
@@ -126,22 +122,20 @@ def test_earliest_bot_marker_comment_is_selected(tmp):
         ('PATCH', 'repos/owner/repo/issues/comments/7')]
 
 
-def test_bodies_github_renders_away_are_reported_and_closed(tmp):
+def test_bodies_github_renders_away_are_reported(tmp):
     del tmp
     for body, rendered in RENDERS_TO_NOTHING:
         code, writes, _output, _error = _execute(
             _api(issues={}, rendered=rendered), body)
         assert code == 2, body
         assert _write_sequence(writes) == [
-            ('POST', 'repos/owner/repo/issues/99/comments'),
-            ('PATCH', 'repos/owner/repo/pulls/99')], body
+            ('POST', 'repos/owner/repo/issues/99/comments')], body
         _assert_gate_message(
-            writes[0], CLOSED_FIRST,
-            [*MISSING_SECTIONS, 'No checked issue is assigned to you.'],
-            closed=True)
+            writes[0], OPEN_FIRST,
+            [*MISSING_SECTIONS, 'No checked issue is assigned to you.'])
 
 
-def test_a_body_of_only_template_comments_is_reported_and_closed(tmp):
+def test_a_body_of_only_template_comments_is_reported(tmp):
     """Instruction comments render as padding after all headings are removed."""
     del tmp
     body = '\n\n'.join(re.findall(r'<!--.*?-->', TEMPLATE, re.DOTALL))
@@ -149,15 +143,14 @@ def test_a_body_of_only_template_comments_is_reported_and_closed(tmp):
         _api(issues={}, rendered='\n' * 9), body)
     assert code == 2
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
     _assert_gate_message(
-        writes[0], CLOSED_FIRST,
+        writes[0], OPEN_FIRST,
         [*MISSING_SECTIONS, 'Remove the template instruction comments.',
-         'No checked issue is assigned to you.'], closed=True)
+         'No checked issue is assigned to you.'])
 
 
-def test_retained_instruction_comment_closes(tmp):
+def test_retained_instruction_comment_is_reported(tmp):
     del tmp
     instruction = re.search(r'<!--.*?-->', TEMPLATE, re.DOTALL).group(0)
     body = _valid_body().replace(
@@ -165,136 +158,64 @@ def test_retained_instruction_comment_closes(tmp):
     code, writes, _output, _error = _execute(_api(), body)
     assert code == 2
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
     _assert_gate_message(
-        writes[0], CLOSED_FIRST,
-        ['Remove the template instruction comments.'], closed=True)
+        writes[0], OPEN_FIRST,
+        ['Remove the template instruction comments.'])
 
 
-def test_gate_closed_admissible_pull_is_commented_then_reopened(tmp):
-    del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()])
-    code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7'),
-        ('PATCH', 'repos/owner/repo/pulls/99'),
-        ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
-    _assert_gate_message(writes[2], REOPEN_FIRST)
-    assert writes[1][2] == {'state': 'open'}
+def test_refusal_exits_two_and_names_the_reasons_on_stderr(tmp):
+    """An inadmissible pull request fails the gate's own check.
 
-
-def test_reopen_notice_names_the_push_that_releases_ci(tmp):
-    """The reopen strands the CI it triggers, so it carries the recovery.
-
-    A bot-authored reopen makes GitHub create the runs in an
-    approval-required state instead of starting them, and the gate
-    cannot release them. The reopen notice is the only comment the
-    author meets at the stranded head, so it must name the push that
-    releases the checks, and must not send the author to approve them.
+    Exit 2 is what a ruleset requiring the check reads as a failure, and
+    it stays distinct from the 1 an analysis or API failure returns. The
+    stderr line states the observation, with the same defect reasons the
+    gate comment carries, verbatim; the pull request stays open.
     """
     del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()])
-    code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7'),
-        ('PATCH', 'repos/owner/repo/pulls/99'),
-        ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    for write, first in (
-            (writes[0], ATTEMPT_FIRST), (writes[2], REOPEN_FIRST)):
-        _assert_gate_message(write, first, closed=(write is writes[0]))
-        _assert_ci_recovery_note(_comment_body(write))
-
-
-def test_gate_closed_inadmissible_pull_updates_comment_and_stays_closed(tmp):
-    del tmp
-    body = _valid_body('none')
-    rendered = _valid_html(references=_text_html('none'))
-    api = _api(
-        state='closed', issues={}, comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()], rendered=rendered)
-    code, writes, _output, _error = _execute(api, body)
+    api = _api(issues={})
+    code, writes, output, error = _execute(api, _valid_body())
     assert code == 2
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    _assert_gate_message(
-        writes[0], CLOSED_FIRST,
-        ['No checked issue is assigned to you.'], closed=True)
-
-
-def test_closing_notice_names_the_push_needed_after_the_reopen(tmp):
-    """Fixing the body is not the end of it, and the close says so.
-
-    The closing comment is where the author learns that a fix will bring
-    a reopen, so it is where the reopen's cost is stated: the reopen is
-    bot-authored, its CI is held, one more push is what releases the
-    checks, and the merge can still demand the author's own close and
-    reopen before it — the same recovery the reopen notice carries, read
-    here while the pull request is still closed.
-    """
-    del tmp
-    body = _valid_body('none')
-    api = _api(
-        state='closed', issues={}, comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()],
-        rendered=_valid_html(references=_text_html('none')))
-    code, writes, _output, _error = _execute(api, body)
-    assert code == 2
-    _assert_gate_message(
-        writes[0], CLOSED_FIRST,
-        ['No checked issue is assigned to you.'], closed=True)
-    _assert_ci_recovery_note(_comment_body(writes[0]))
-
-
-def test_gate_close_exits_two_and_names_the_reasons_on_stderr(tmp):
-    """A run that closes the pull request must not read green (issue 57).
-
-    Required-check readers, `gh run watch --exit-status` and merge gating
-    bind the workflow run's conclusion to the pull request the gate just
-    closed, so exit 0 there read as a pass. Exit 2 distinguishes an
-    enforced closure from the 1 an analysis or API failure returns, and
-    the stderr line states the observation — the closure — and the same
-    defect reasons the gate comment carries, verbatim.
-    """
-    del tmp
-    code, writes, output, error = _execute(_api(issues={}), _valid_body())
-    assert code == 2
-    assert output == 'closed\n'
+    assert output == 'commented\n'
     assert error == (
-        'pr gate closed the pull request (exit 2): '
+        'pr gate: the pull request is inadmissible (exit 2): '
         'No checked issue is assigned to you.\n')
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
-    assert writes[1][2] == {'state': 'closed'}
+        ('POST', 'repos/owner/repo/issues/99/comments')]
+    assert api.pull['state'] == 'open'
 
 
-def test_gate_close_joins_every_reason_on_one_stderr_line(tmp):
+def test_refusal_comment_names_the_failing_check_and_no_close(tmp):
+    del tmp
+    code, writes, _output, _error = _execute(_api(issues={}), _valid_body())
+    assert code == 2
+    text = ' '.join(_comment_body(writes[0]).split())
+    assert ("Until then this gate's check fails, and a ruleset that "
+            'requires the check holds the merge. The gate re-checks every '
+            'edit and push; there is no need to open a second pull '
+            'request.') in text, text
+    for phrase in ('reopen', 'closing this', 'stays closed'):
+        assert phrase not in text.lower(), (phrase, text)
+
+
+def test_refusal_joins_every_reason_on_one_stderr_line(tmp):
     del tmp
     rendered = NESTED_HEADING_HTML['footnote_section_in_heading']
     code, writes, output, error = _execute(
         _api(rendered=rendered), _valid_body())
     assert code == 2
-    assert output == 'closed\n'
+    assert output == 'commented\n'
     expected = '; '.join([
         'Section "Testing" is empty.', NESTED_HEADING_NOTE,
         'No checked issue is assigned to you.'])
     assert error == (
-        'pr gate closed the pull request (exit 2): ' + expected + '\n')
+        'pr gate: the pull request is inadmissible (exit 2): ' + expected + '\n')
     assert error.count('\n') == 1
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
 
 
-def test_gate_close_carries_the_overflow_reason_verbatim(tmp):
+def test_refusal_carries_the_overflow_reason_verbatim(tmp):
     """A reason is long by design; the stderr line must not rewrap it.
 
     The joined line is the run-log copy of the gate comment's reasons
@@ -318,48 +239,17 @@ def test_gate_close_carries_the_overflow_reason_verbatim(tmp):
         _api(issues=issues, rendered=rendered), body)
     assert code == 2
     assert error == (
-        'pr gate closed the pull request (exit 2): '
+        'pr gate: the pull request is inadmissible (exit 2): '
         'Required section "Summary" is missing.; '
         'This body names more than 20 issue references, so only the '
         'first 20 were checked.\n')
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
 
 
-def test_gate_closed_recheck_exits_two_and_names_the_reasons_on_stderr(tmp):
-    """The re-check of a gate-owned closed pull request ends closed too.
-
-    The gate's comment says the pull request stays closed, so a green
-    run beside it is the same lie issue 57 names. The stderr line names
-    that the closure stands after the re-check, with the same verbatim
-    reasons.
-    """
-    del tmp
-    api = _api(
-        state='closed', issues={}, comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()],
-        rendered=_valid_html(references=_text_html('none')))
-    code, writes, output, error = _execute(api, _valid_body('none'))
-    assert code == 2
-    assert output == 'commented\n'
-    assert error == (
-        'pr gate: the pull request remains closed after re-check '
-        '(exit 2): No checked issue is assigned to you.\n')
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7')]
-
-
-def test_resolved_notice_keeps_the_reopen_followup_conditionally(tmp):
-    """The resolved notice replaces the reopen notice, so it re-states it.
-
-    When the author edits the body of the now-open pull request, the
-    gate patches its marker comment to the resolved notice, erasing the
-    close-and-reopen guidance the reopen notice carried. The resolved
-    notice therefore carries it too — conditionally, because the gate
-    reaches this notice without knowing whether it closed and reopened
-    this pull request earlier, and the phrasing must stay truthful when
-    it never did.
+def test_resolved_notice_is_the_first_line_and_marker_only(tmp):
+    """With no close there is no reopen follow-up for the resolved notice
+    to carry: it says the pull request passes, and nothing more.
     """
     del tmp
     api = _api(comments=[_gate_comment()])
@@ -367,35 +257,26 @@ def test_resolved_notice_keeps_the_reopen_followup_conditionally(tmp):
     assert code == 0
     assert _write_sequence(writes) == [
         ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    _assert_gate_message(writes[0], RESOLVED_FIRST)
-    body = _comment_body(writes[0])
-    text = ' '.join(body.split()).lower()
-    for required in ('if the gate closed and reopened', 'close and reopen',
-                     'before merging', 'unattributed'):
-        assert required in text, (required, body)
+    assert _comment_body(writes[0]) == f'{RESOLVED_FIRST}\n{MARKER}\n'
 
 
-class _RefusedReopenApi(FakeApi):
-    """The reopen PATCH answers with GitHub's validation refusal."""
+class _RefusedCommentApi(FakeApi):
+    """The comment POST answers with the given refusal."""
 
     _DEFAULT_DATA = object()
 
     def __init__(self, status=422, data=_DEFAULT_DATA):
-        super().__init__(
-            pull=_pull('closed'), issues={'101': _issue('alice')},
-            comments=[_gate_comment(closed=True)],
-            timeline=[_closed_event()])
+        super().__init__(pull=_pull(), issues={})
         self.refusal_status = status
         self.refusal_data = ({
             'message': 'Validation Failed',
-            'errors': [{'resource': 'PullRequest', 'field': 'head',
+            'errors': [{'resource': 'IssueComment', 'field': 'body',
                         'code': 'invalid'}]}
-            if data is _RefusedReopenApi._DEFAULT_DATA else data)
+            if data is _RefusedCommentApi._DEFAULT_DATA else data)
 
     def request(self, method, endpoint, payload=None):
-        if method == 'PATCH' and endpoint == 'repos/owner/repo/pulls/99':
-            # Recorded like FakeApi records any write, but the refusal
-            # applies none of the state change a 2xx PATCH would.
+        if (method == 'POST'
+                and endpoint == 'repos/owner/repo/issues/99/comments'):
             self.calls.append((method, endpoint, payload))
             self.writes.append((method, endpoint, payload))
             return _Response(self.refusal_status, self.refusal_data)
@@ -405,17 +286,15 @@ class _RefusedReopenApi(FakeApi):
 def test_write_failure_message_carries_the_response_body(tmp):
     """A refusal reason discarded from the error is a refusal unread.
 
-    GitHub refuses a reopen with 422 and its reason travels only in the
-    response body; the old message dropped it, so the stderr line and
-    the refusal comment quoted the status alone. The body's `message`
-    and `errors` are rendered into the error string (compact JSON,
-    sorted keys, cut at a bound), and the status rides the error as
-    data so the reopen path can split a 4xx refusal from a 5xx failure
-    without parsing the message. A body with no content leaves the
-    status-only message byte-identical.
+    GitHub's reason for refusing a write travels only in the response
+    body, so the body's `message` and `errors` are rendered into the
+    error string (compact JSON, sorted keys, cut at a bound). A body
+    with no content leaves the status-only message byte-identical, and
+    the run that hits the refusal exits 1 with that line on stderr.
     """
     del tmp
     gate = _gate_module()
+    endpoint = 'repos/owner/repo/issues/99/comments'
 
     def raised(call):
         try:
@@ -425,300 +304,42 @@ def test_write_failure_message_carries_the_response_body(tmp):
         raise AssertionError('_GateError was not raised')
 
     error = raised(lambda: gate._write(
-        _RefusedReopenApi(data={'message': 'y' * 500}),
-        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'}))
-    prefix = 'GitHub returned 422 for repos/owner/repo/pulls/99: '
+        _RefusedCommentApi(data={'message': 'y' * 500}),
+        'POST', endpoint, {'body': 'x'}))
+    prefix = f'GitHub returned 422 for {endpoint}: '
     assert str(error).startswith(prefix), error
     detail = str(error)[len(prefix):]
     assert detail.startswith('yyy'), detail
     assert len(detail) == gate._BODY_DETAIL_LIMIT, detail
     assert detail.endswith('...'), detail
-    assert error.status == 422
 
+    expected = (
+        f'GitHub returned 422 for {endpoint}: Validation Failed; '
+        '{"code":"invalid","field":"body","resource":"IssueComment"}')
     refused = raised(lambda: gate._write(
-        _RefusedReopenApi(), 'PATCH', 'repos/owner/repo/pulls/99',
-        {'state': 'open'}))
-    assert str(refused) == (
-        'GitHub returned 422 for repos/owner/repo/pulls/99: '
-        'Validation Failed; '
-        '{"code":"invalid","field":"head","resource":"PullRequest"}')
-    assert refused.status == 422
+        _RefusedCommentApi(), 'POST', endpoint, {'body': 'x'}))
+    assert str(refused) == expected
 
     bare = raised(lambda: gate._write(
-        _RefusedReopenApi(status=500, data=None),
-        'PATCH', 'repos/owner/repo/pulls/99', {'state': 'open'}))
-    assert str(bare) == (
-        'GitHub returned 500 for repos/owner/repo/pulls/99')
-    assert bare.status == 500
+        _RefusedCommentApi(status=500, data=None),
+        'POST', endpoint, {'body': 'x'}))
+    assert str(bare) == f'GitHub returned 500 for {endpoint}'
 
-
-def test_reopen_refusal_reports_githubs_reason_and_recovery(tmp):
-    """A refused reopen leaves an author-facing comment, not a status.
-
-    GitHub refuses the reopen PATCH of a force-pushed, closed pull
-    request with 422, and `gh pr reopen` by hand refuses the same way,
-    so this comment is the only place the reason and the way out can
-    reach the author. The gate writes the attempt comment first, still
-    gate-owned, then rewrites the same comment with the refusal: it
-    quotes GitHub's reason, names the force-push cause, gives both
-    recovery paths, and keeps the marker pair, so a later edit still
-    retries. The run still exits 1, and the refusal is prose — a
-    bullet would read as a reasons list.
-    """
-    del tmp
-    api = _RefusedReopenApi()
-    code, writes, _output, error = _execute(api, _valid_body())
-    assert code == 1
-    assert error == (
-        'pr gate failed: GitHub returned 422 for '
-        'repos/owner/repo/pulls/99: Validation Failed; '
-        '{"code":"invalid","field":"head","resource":"PullRequest"}\n')
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7'),
-        ('PATCH', 'repos/owner/repo/pulls/99'),
-        ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
-    _assert_ci_recovery_note(_comment_body(writes[0]))
-    refusal = _assert_gate_message(writes[2], REFUSED_FIRST, closed=True)
-    assert 'Validation Failed' in refusal, refusal
-    assert 'force-pushed' in refusal, refusal
-    assert 'maintainer' in refusal and 'reopen' in refusal, refusal
-    assert 'fresh pull request' in refusal, refusal
-    assert 'Editing the body again' in refusal, refusal
-    assert api.pull['state'] == 'closed'
-
-
-def test_reopen_500_failure_stays_commentless(tmp):
-    """The refusal comment belongs to the 4xx arm only.
-
-    A 5xx on the reopen PATCH is an interrupted retry, not a refusal:
-    the gate exits 1 with the attempt comment still carrying the closed
-    marker and posts nothing further. The recovery suite drives 500s
-    but cannot tell a refusal write from a retry write, so this pins
-    the write count the split must preserve.
-    """
-    del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()],
-        fail={'PATCH repos/owner/repo/pulls/99'})
-    code, writes, _output, error = _execute(api, _valid_body())
-    assert code == 1
-    assert error == (
-        'pr gate failed: GitHub returned 500 for '
-        'repos/owner/repo/pulls/99\n')
-    # The double records the failed PATCH itself, so the refusal control
-    # is the comment writes: one attempt rewrite, and no refusal rewrite.
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
-    assert _write_sequence(
-        [item for item in writes if item[1].endswith('/comments/7')]) == [
-            ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    assert api.pull['state'] == 'closed'
-    assert CLOSED_MARKER in api.comments[0]['body'].splitlines()
-
-
-class _TransportFailureApi(FakeApi):
-    """The reopen PATCH never reaches GitHub: the transport dies.
-
-    FakeApi never raises, so the transport arm of the reopen split is
-    modelled here: a RuntimeError out of request() is what `_response`
-    wraps into a `_GateError` whose `status` is None.
-    """
-
-    def __init__(self):
-        super().__init__(
-            pull=_pull('closed'), issues={'101': _issue('alice')},
-            comments=[_gate_comment(closed=True)],
-            timeline=[_closed_event()])
-
-    def request(self, method, endpoint, payload=None):
-        if method == 'PATCH' and endpoint == 'repos/owner/repo/pulls/99':
-            raise RuntimeError('transport unavailable')
-        return super().request(method, endpoint, payload)
-
-
-def test_transport_failure_at_the_reopen_patch_stays_commentless(tmp):
-    """A transport failure is not a refusal, and the error says so.
-
-    `_response` turns a RuntimeError out of the API into a `_GateError`
-    with `status` None, and the reopen's except arm must send that arm
-    straight to the re-raise: exit 1, the attempt comment still gate-
-    owned with the closed marker, no refusal rewrite, pull still closed.
-    This is also the witness for `_GateError.status` being None on a
-    transport failure, pinned directly below.
-    """
-    del tmp
-    gate = _gate_module()
-    try:
-        gate._write(
-            _TransportFailureApi(), 'PATCH', 'repos/owner/repo/pulls/99',
-            {'state': 'open'})
-    except gate._GateError as error:
-        assert error.status is None, error.status
-        assert str(error) == 'transport unavailable', error
-    else:
-        raise AssertionError('_GateError was not raised')
-
-    api = _TransportFailureApi()
-    code, writes, _output, error = _execute(api, _valid_body())
-    assert code == 1
-    assert error == 'pr gate failed: transport unavailable\n'
-    # The failing PATCH never reaches the double, so the sequence is
-    # the single attempt rewrite and nothing else.
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
-    assert api.pull['state'] == 'closed'
-
-
-def test_a_403_refusal_gets_the_same_refusal_comment(tmp):
-    """The below-500 arm is not a 422 special case.
-
-    GitHub refuses writes a closed pull request's integration may hit
-    with other 4xx statuses too, and the author needs the same refusal
-    comment whatever the number: attempt comment, failing reopen PATCH,
-    refusal rewrite with the marker pair and GitHub's quoted reason,
-    exit 1.
-    """
-    del tmp
-    api = _RefusedReopenApi(
-        status=403, data={'message': 'Resource not accessible by '
-                                     'integration'})
-    code, writes, _output, error = _execute(api, _valid_body())
-    assert code == 1
-    assert error == (
-        'pr gate failed: GitHub returned 403 for '
-        'repos/owner/repo/pulls/99: Resource not accessible by '
-        'integration\n')
-    assert _write_sequence(writes) == [
-        ('PATCH', 'repos/owner/repo/issues/comments/7'),
-        ('PATCH', 'repos/owner/repo/pulls/99'),
-        ('PATCH', 'repos/owner/repo/issues/comments/7')]
-    _assert_gate_message(writes[0], ATTEMPT_FIRST, closed=True)
-    refusal = _assert_gate_message(writes[2], REFUSED_FIRST, closed=True)
-    assert ('Resource not accessible by integration' in refusal), refusal
-    assert api.pull['state'] == 'closed'
-
-
-def test_attempt_and_success_reopen_texts_split_the_claim(tmp):
-    """Only the post-PATCH text may say the reopen has landed.
-
-    While the patch is still untried the comment must not claim it,
-    because GitHub can refuse it and the last comment on the PR would
-    then promise a reopen that never happened. The attempt text and
-    the success text are driven through the real flow here: both carry
-    the CI recovery contract, the success text states the reopen as
-    accomplished, and the attempt text never carries that wording —
-    the positive half is what makes that absence assertable.
-    """
-    del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()])
-    code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
-    attempt, success = (_comment_body(writes[0]), _comment_body(writes[2]))
-    for body in (attempt, success):
-        _assert_ci_recovery_note(body)
-    rendered_attempt = ' '.join(attempt.split())
-    rendered_success = ' '.join(success.split())
-    assert 'has been reopened' in rendered_success, rendered_success
-    assert 'has been reopened' not in rendered_attempt, rendered_attempt
-
-    refused = _RefusedReopenApi()
-    code, writes, _output, _error = _execute(refused, _valid_body())
-    assert code == 1
-    refused_attempt = ' '.join(_comment_body(writes[0]).split())
-    _assert_ci_recovery_note(_comment_body(writes[0]))
-    assert 'has been reopened' not in refused_attempt, refused_attempt
-
-
-def test_closing_notice_names_the_refusal_possibility(tmp):
-    """The close may promise only what GitHub grants.
-
-    The closing comment tells the author a correction reopens the PR,
-    and the reopen is refused exactly when the branch moved under the
-    close. A close that cannot mention that refusal sends the author
-    back to edit the body with no hint that the strand has another
-    way out, so the closed text carries the refusal possibility and
-    the recovery comment it leads to.
-    """
-    del tmp
-    body = _valid_body('none')
-    api = _api(
-        state='closed', issues={}, comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()],
-        rendered=_valid_html(references=_text_html('none')))
-    code, writes, _output, _error = _execute(api, body)
-    assert code == 2
-    text = ' '.join(_comment_body(writes[0]).split()).lower()
-    for term in ('refuses the reopen', 'how to recover'):
-        assert term in text, (term, text)
-
-
-def test_human_closed_pull_is_not_written(tmp):
-    del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event('alice')])
-    code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
-    _assert_no_writes(writes)
-
-
-def test_bot_timeline_without_closed_marker_is_not_gate_owned(tmp):
-    del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment()],
-        timeline=[_closed_event()])
-    code, writes, _output, _error = _execute(api, _valid_body())
-    assert code == 0
-    _assert_no_writes(writes)
-
-
-def test_unreadable_closed_timeline_fails_without_writes(tmp):
-    del tmp
-    api = _api(
-        state='closed', comments=[_gate_comment(closed=True)],
-        timeline=[_closed_event()], fail={'timeline'})
-    code, writes, _output, error = _execute(api, _valid_body())
-    assert code == 1
-    _assert_no_writes(writes)
-    assert error == (
-        'pr gate failed: GitHub returned 500 for '
-        'repos/owner/repo/issues/99/timeline\n')
-
-
-def test_state_changes_during_analysis_abort_writes(tmp):
-    del tmp
-    _assert_state_races_abort()
-
-
-def test_latest_closer_change_during_analysis_aborts_reopen(tmp):
-    del tmp
-    _assert_closer_race_aborts()
-
-
-def test_closed_inadmissible_human_reclose_aborts_comment_patch(_tmp):
-    _assert_closed_inadmissible_reclose_aborts()
-
-
-def test_closed_admissible_reclose_after_comment_aborts_reopen(_tmp):
-    _assert_closed_admissible_reclose_aborts_state()
+    code, _writes, _output, run_error = _execute(
+        _RefusedCommentApi(), _valid_body())
+    assert (code, run_error) == (1, f'pr gate failed: {expected}\n')
 
 
 def test_open_admissible_human_close_aborts_resolved_comment_patch(_tmp):
     _assert_open_resolved_human_close_aborts_comment()
 
 
-def test_open_closable_human_close_after_comment_landed_aborts_state(_tmp):
-    _assert_open_closable_human_close_aborts_state()
+def test_open_inadmissible_human_close_aborts_the_comment(_tmp):
+    _assert_open_inadmissible_human_close_aborts_comment()
 
 
-def test_open_closable_merge_aborts_before_comment(_tmp):
-    _assert_open_closable_merge_aborts_comment()
+def test_open_inadmissible_merge_aborts_before_comment(_tmp):
+    _assert_open_inadmissible_merge_aborts_comment()
 
 
 def test_merged_pull_returns_before_comments_or_render(tmp):
@@ -751,7 +372,7 @@ def test_unusable_render_fails_without_writes(tmp):
         assert error == expected
 
 
-def test_failed_comment_write_prevents_state_change(tmp):
+def test_failed_comment_write_fails_the_run(tmp):
     del tmp
     body = _valid_body('none')
     rendered = _valid_html(references=_text_html('none'))
@@ -762,13 +383,12 @@ def test_failed_comment_write_prevents_state_change(tmp):
     assert code == 1
     assert _write_sequence(writes) == [
         ('POST', 'repos/owner/repo/issues/99/comments')]
-    assert api.pull['state'] == 'open'
     assert error == (
         'pr gate failed: GitHub returned 500 for '
         'repos/owner/repo/issues/99/comments\n')
 
 
-def test_one_edit_self_heals_gate_closed_state(tmp):
+def test_one_fixing_edit_resolves_the_refusal(tmp):
     del tmp
     _assert_two_run_replay()
 
@@ -782,45 +402,41 @@ def test_unknown_section_name_cannot_inject_a_live_reference(tmp):
         _api(rendered=rendered), body)
     assert code == 2
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
     comment = _assert_gate_message(
-        writes[0], CLOSED_FIRST,
-        ['Section ``x`#1`` is not defined by the template.'], closed=True)
+        writes[0], OPEN_FIRST,
+        ['Section ``x`#1`` is not defined by the template.'])
     spans = _markdown_code_spans(comment)
     for match in re.finditer(r'#1', comment):
         assert any(start <= match.start() < end for start, end in spans), (
             match.start(), spans, comment)
 
 
-def test_a_nested_heading_comments_and_closes(tmp):
+def test_a_nested_heading_is_reported(tmp):
     del tmp
     rendered = NESTED_HEADING_HTML['footnote_section_in_heading']
     code, writes, _output, _error = _execute(
         _api(rendered=rendered), _valid_body())
     assert code == 2
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
     _assert_gate_message(
-        writes[0], CLOSED_FIRST,
+        writes[0], OPEN_FIRST,
         ['Section "Testing" is empty.', NESTED_HEADING_NOTE,
-         'No checked issue is assigned to you.'], closed=True)
+         'No checked issue is assigned to you.'])
 
 
-def test_a_nested_heading_alone_closes(tmp):
+def test_a_nested_heading_alone_is_reported(tmp):
     del tmp
     rendered = NESTED_HEADING_HTML['empty_heading_in_div']
     code, writes, _output, _error = _execute(
         _api(rendered=rendered), _valid_body())
     assert code == 2
     assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
     _assert_gate_message(
-        writes[0], CLOSED_FIRST,
-        [NESTED_HEADING_NOTE, 'No checked issue is assigned to you.'],
-        closed=True)
+        writes[0], OPEN_FIRST,
+        [NESTED_HEADING_NOTE, 'No checked issue is assigned to you.'])
 
 
 def test_script_runs_through_gh_on_path(tmp):

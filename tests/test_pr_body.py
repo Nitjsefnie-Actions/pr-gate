@@ -14,7 +14,7 @@ from _prfootnotes import (  # noqa: E402
     NESTED_HEADING_NOTE, RELATED)
 from _prgate import (  # noqa: E402
     GITHUB_FOOTNOTE_HTML, GITHUB_HTML, PR_BODY,
-    TEMPLATE, _html_body, _issue_html, _layout_body, _text_html,
+    TEMPLATE, _html_body, _issue_html, _text_html,
     _valid_body, _valid_html,
 )
 
@@ -278,15 +278,11 @@ def test_parser_state_names_do_not_collide_with_the_base(tmp):
         f'{sorted(collisions)}')
 
 
-def test_related_helpers_return_empty_without_related_section(tmp):
+def test_referenced_issues_is_empty_without_related_section(tmp):
     del tmp
     sections = PR_BODY.parse_rendered(
         _html_body(('Summary', '<p>text</p>')), 'owner/repo').sections
-    actual = (
-        PR_BODY.referenced_issues(sections),
-        PR_BODY.related_links(sections),
-    )
-    assert actual == ([], []), actual
+    assert PR_BODY.referenced_issues(sections) == []
 
 
 def test_issue_number_language(tmp):
@@ -544,119 +540,6 @@ def test_retains_instruction_comment(tmp):
     assert not PR_BODY.retains_instruction_comment(_valid_body(), TEMPLATE)
     prose = comment.removeprefix('<!--').removesuffix('-->')
     assert not PR_BODY.retains_instruction_comment(prose, TEMPLATE)
-
-
-def _may_reference(source, related_html):
-    sections = PR_BODY.parse_rendered(
-        _valid_html(references=related_html), 'owner/repo').sections
-    return PR_BODY.related_may_reference(source, sections, TEMPLATE)
-
-
-def test_related_may_reference_accepts_reference_shapes(tmp):
-    del tmp
-    anchor = '<p dir="auto"><a href="#101">reference</a></p>'
-    www_host = 'www.' + 'github.com'
-    enterprise_host = 'ghe.' + 'example'
-    cases = (
-        ('hash', '#101', anchor),
-        ('uppercase-gh', 'GH-101', anchor),
-        ('lowercase-gh', 'gh-7', anchor),
-        ('repository-hash', 'owner/repo#101', anchor),
-        ('absolute-issue',
-         'https://github.com/owner/repo/issues/101', anchor),
-        ('default-port',
-         'https://github.com:443/owner/repo/issues/101', anchor),
-        ('www-http',
-         f'http://{www_host}/owner/repo/issues/101', anchor),
-        ('root-relative', '/owner/repo/issues/101', anchor),
-        ('markdown-link', '[x](/owner/repo/issues/101)', anchor),
-        ('reference-definition',
-         '[x]: https://github.com/owner/repo/issues/101', anchor),
-        ('angle-autolink',
-         '<https://github.com/owner/repo/pull/5>', anchor),
-        ('enterprise-host',
-         f'https://{enterprise_host}/o/r/issues/5', anchor),
-        ('percent-encoding',
-         'https://github.com/owner/repo/%69ssues/101', anchor),
-        ('numeric-entity', '&#35;101', _text_html('#101')),
-        ('named-entity', '&num;101', _text_html('#101')),
-        ('code-span', '`#101`', GITHUB_HTML['inline_code']),
-        ('fenced-code', '```\n#101\n```', GITHUB_HTML['fenced_code']),
-    )
-    failures = []
-    for name, spelling, rendered in cases:
-        source = _valid_body(references=spelling)
-        sections = PR_BODY.parse_rendered(
-            _valid_html(references=rendered), 'owner/repo').sections
-        full = PR_BODY.related_may_reference(source, sections, TEMPLATE)
-        raw = PR_BODY.related_may_reference(source, [], TEMPLATE)
-        if not full or not raw:
-            failures.append((name, full, raw))
-    assert failures == [], failures
-
-
-def test_related_may_reference_accepts_decorated_related_heading(tmp):
-    del tmp
-    source = _valid_body().replace(
-        '## Related Issues and Pull Requests',
-        '### **Related Issues and Pull Requests:**')
-    assert PR_BODY.related_may_reference(source, [], TEMPLATE)
-
-
-def test_related_may_reference_rejects_missing_related_reference(tmp):
-    del tmp
-    cases = (
-        ('prose', _valid_body('see the tracker'),
-         _text_html('see the tracker')),
-        ('summary-only', _layout_body(
-            ('Summary', 'Mentions #101.'),
-            ('Related Issues and Pull Requests', 'see the tracker'),
-            ('Changes', '- One change'),
-            ('Testing', 'Ran the suite.')),
-         _text_html('see the tracker')),
-        ('empty', '', _text_html('see the tracker')),
-    )
-    failures = []
-    for name, source, rendered in cases:
-        found = _may_reference(source, rendered)
-        if found:
-            failures.append(name)
-    source = _layout_body(
-        ('Summary', 'Mentions #101.'),
-        ('Changes', '- One change'),
-        ('Testing', 'Ran the suite.'))
-    if _may_reference(source, _text_html('see the tracker')):
-        failures.append('no-related-heading')
-    assert failures == [], failures
-
-
-def test_related_may_reference_stops_at_template_heading(tmp):
-    del tmp
-    source = _layout_body(
-        ('Summary', 'One sentence.'),
-        ('Related Issues and Pull Requests', 'see the tracker'),
-        ('Changes', '#101'),
-        ('Testing', 'Ran the suite.'))
-    assert not _may_reference(source, _text_html('see the tracker'))
-
-
-def test_related_may_reference_keeps_non_template_heading_in_region(tmp):
-    del tmp
-    source = _layout_body(
-        ('Summary', 'One sentence.'),
-        ('Related Issues and Pull Requests', 'see the tracker'),
-        ('Notes', '#101'),
-        ('Changes', '- One change'),
-        ('Testing', 'Ran the suite.'))
-    assert PR_BODY.related_may_reference(source, [], TEMPLATE)
-
-
-def test_related_may_reference_accepts_rendered_link_alone(tmp):
-    del tmp
-    rendered = _valid_html(
-        references='<p dir="auto"><a href="#101">reference</a></p>')
-    sections = PR_BODY.parse_rendered(rendered, 'owner/repo').sections
-    assert PR_BODY.related_may_reference('nothing', sections, TEMPLATE)
 
 
 def main():

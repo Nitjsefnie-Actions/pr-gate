@@ -73,7 +73,7 @@ before changing structured parser outputs.
 ## Security boundaries
 
 Consumer workflows use `pull_request_target` only for opened, edited,
-reopened, and ready_for_review events, skip Bot authors and draft pull
+reopened, synchronize, and ready_for_review events, skip Bot authors and draft pull
 requests, grant only the permissions documented in README, and never cancel an
 in-progress run for the same PR. Their action reference must be a reviewed full
 SHA.
@@ -81,8 +81,8 @@ SHA.
 The action executes only code under its immutable `github.action_path`.
 Never add a PR-head checkout, execute consumer scripts, interpolate PR text
 into shell source, or read policy from a moving branch/head revision. Consumer
-templates are fetched at the PR snapshot's base SHA. Keep state/closer
-revalidation, the bounded issue lookup cache, and retryable close ownership.
+templates are fetched at the PR snapshot's base SHA. Keep the state
+revalidation before every write and the bounded issue lookup cache.
 
 Use pinned action references and explicit least-privilege permissions in this
 repository's own CI. Add new code paths to the deny-by-default `.gitignore` and

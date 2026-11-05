@@ -5,74 +5,17 @@ import re
 
 BOT = 'github-actions[bot]'
 MARKER = '<!-- pr-gate -->'
-CLOSED_MARKER = '<!-- pr-gate: closed -->'
 OPEN_FIRST = (
     '@alice — this pull request needs changes before it can be reviewed.')
-CLOSED_FIRST = (
-    '@alice — closing this automatically; it is recoverable, read on.')
 RESOLVED_FIRST = (
     '@alice — every condition now passes; nothing further is needed '
     'from you.')
-REOPEN_FIRST = (
-    '@alice — every condition now passes; the pull request has been '
-    'reopened automatically.')
-ATTEMPT_FIRST = (
-    '@alice — every condition now passes; the gate is attempting the '
-    'automatic reopen.')
-REFUSED_FIRST = (
-    '@alice — the automatic reopen was refused; this pull request is '
-    'still closed.')
 REASONS_END = (
     'Fix every item above, including these two repository requirements:')
 
 
 def _comment_body(write):
     return write[2]['body']
-
-
-def _assert_ci_recovery_note(body):
-    """The reopen is bot-authored, so its CI runs are held; say so, and
-    name the push that releases them and the author close-and-reopen
-    that unattributed-change rulesets can demand before merging.
-
-    Two arms, and only the first is a property. The REQUIRED arm is
-    load-bearing: whatever else the notice says, it must tell the author
-    to push, must say an empty commit is acceptable, must name the bot,
-    its token and the held-for-approval reason, and must carry the
-    close-and-reopen instruction together with the unattributed-change
-    reason — GitHub can count the bot reopen as an unattributed change,
-    and a ruleset requiring extra approval for unattributed changes can
-    hold the merge even with every check green. Dropping any one of
-    those from the message fails here, which
-    test_the_recovery_guard_rejects_contract_violating_bodies drives
-    term by term.
-
-    The FORBIDDEN arm is a spelling set, not a property, and it is NOT
-    exhaustive. It lists the phrasings this contract has been observed to
-    break with — instructions to approve the held runs, and promises
-    that the runs start on their own — and a violation phrased outside
-    this set passes. Read it as a cheap net whose coverage is the
-    evidenced set, never as the control that proves the text honest.
-
-    The comparison is over rendered text, so single newlines count as
-    the spaces GitHub renders them as; only an unrendered break, a hard
-    paragraph edge, would change a word.
-    """
-    text = ' '.join(body.split()).lower()
-    for required in ('push', 'empty commit', 'held', 'approval',
-                     'github-actions[bot]', 'github_token',
-                     'close and reopen', 'unattributed', 'ruleset', 'green'):
-        assert required in text, (required, body)
-    # Not exhaustive by construction: a new spelling is a new entry.
-    for forbidden in ('approve the run', 'approve the workflow',
-                      'approve these runs', 'approve it', 'please approve',
-                      'click approve', 'you should approve', 'actions tab',
-                      'ask a maintainer to approve',
-                      'ask a reviewer to approve', 'runs automatically',
-                      'start automatically', 'will run automatically',
-                      'by themselves', 'on their own',
-                      'will run on its own', 'runs on its own'):
-        assert forbidden not in text, (forbidden, body)
 
 
 def _gate_reasons(body):
@@ -87,22 +30,19 @@ def _gate_reasons(body):
     if REASONS_END not in lines:
         return None
     end = lines.index(REASONS_END)
-    markers = [index for index, line in enumerate(lines)
-               if line in (MARKER, CLOSED_MARKER)]
-    assert markers, body
-    start = markers[-1] + 1
+    assert MARKER in lines, body
+    start = lines.index(MARKER) + 1
     assert lines[start] == '' and lines[end - 1] == '', body
     block = lines[start + 1:end - 1]
     assert block and all(line.startswith('- ') for line in block), body
     return [line[2:] for line in block]
 
 
-def _assert_gate_message(write, first, reasons=(), closed=False):
+def _assert_gate_message(write, first, reasons=()):
     body = _comment_body(write)
     lines = body.splitlines()
     assert lines[0] == first, body
     assert MARKER in lines, body
-    assert (CLOSED_MARKER in lines) is closed, body
     found = _gate_reasons(body)
     # GitHub renders '-', '*' and '+' as the same list marker, so a
     # bullet the reasons do not name is caught however it is spelled.

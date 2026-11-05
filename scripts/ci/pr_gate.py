@@ -20,8 +20,7 @@ if __package__:
     # pylint: disable-next=relative-beyond-top-level
     from .pr_body import (
         closing_issues, code_span, layout_errors, parse_rendered,
-        referenced_issues, related_may_reference,
-        retains_instruction_comment,
+        referenced_issues, retains_instruction_comment,
     )
 else:
     from pr_policy import base_template
@@ -29,29 +28,22 @@ else:
     from pr_attribution import AttributionError, commit_attribution_reasons
     from pr_body import (
         closing_issues, code_span, layout_errors, parse_rendered,
-        referenced_issues, related_may_reference,
-        retains_instruction_comment,
+        referenced_issues, retains_instruction_comment,
     )
 
 
 BOT = 'github-actions[bot]'
 MARKER = '<!-- pr-gate -->'
-CLOSED_MARKER = '<!-- pr-gate: closed -->'
 OVERFLOW_REASON = (
     'This body names more than 20 issue references, so only the first 20 '
     'were checked.')
 UNCLAIMED_REASON = 'No checked issue is assigned to you.'
 INSTRUCTION_REASON = 'Remove the template instruction comments.'
-# Every completed decision that leaves the pull request closed and
-# gate-owned at run end — the close of an inadmissible pull request, and
-# a re-check of one the gate closed that still fails — returns this code,
-# so a workflow run never concludes success while the gate itself just
-# closed the pull request. An aborted run can also end with the pull
-# request closed and gate-owned and returns 1 through `_GateError`
-# instead; both are nonzero.
-GATE_CLOSED_EXIT = 2
+# An inadmissible pull request fails the gate's own check with this code,
+# distinct from the 1 an aborted run returns, so a ruleset that requires
+# the check holds the merge until the body is fixed.
+INADMISSIBLE_EXIT = 2
 _STATUS_LINE = re.compile(r'^HTTP/\S+ ([0-9]{3})(?: |$)')
-_NO_CLOSER = object()
 
 
 class Response(NamedTuple):
@@ -156,16 +148,7 @@ class GhApi:
 
 
 class _GateError(RuntimeError):
-    """A gate-level API failure. `status` is the HTTP status GitHub
-    returned when there is one, and None on a transport failure. `data`
-    is the parsed response body when a body was read, so a caller can
-    classify the refusal without parsing a rendered message string.
-    """
-
-    def __init__(self, message, status=None, data=None):
-        super().__init__(message)
-        self.status = status
-        self.data = data
+    """A gate-level API failure: GitHub's refusal or a failed transport."""
 
 
 _BODY_DETAIL_LIMIT = 300
@@ -176,7 +159,7 @@ def _body_detail(data):
 
     GitHub's refusal reason travels in the body a 422 returns, so the
     error string must carry the body's `message` and `errors` beside
-    the status: without them the refusal comment quotes a status code
+    the status: without them the run's error line quotes a status code
     and nothing else. Rendering is compact JSON with sorted keys, so
     the same body always renders identically, collapsed to one line and
     cut at `_BODY_DETAIL_LIMIT` characters. An absent or empty body
@@ -235,38 +218,7 @@ def _write(api, method, endpoint, payload):
         detail = _body_detail(response.data)
         suffix = f': {detail}' if detail else ''
         raise _GateError(
-            f'GitHub returned {response.status} for {endpoint}{suffix}',
-            status=response.status, data=response.data)
-
-
-def _stale_state_refusal(data):
-    """Tells GitHub's stale-object reopen refusal from its other 422s.
-
-    GitHub answers the reopen PATCH of a pull request whose branch was
-    force-pushed or recreated while closed with a validation failure
-    whose `errors` entry names the PullRequest resource, the `state`
-    field and the force-push in its message (captured live; the
-    verbatim bodies live in tests/test_pr_gate_reopen_retry.py). The
-    shape is read off the parsed body only — never the rendered
-    `_body_detail` line, which is display text — and everything else a
-    refusal below 500 can carry (an invalid base, a 403, an absent or
-    unparsable body) is not stale and takes no retry.
-    """
-    if not isinstance(data, dict):
-        return False
-    if data.get('message') != 'Validation Failed':
-        return False
-    errors = data.get('errors')
-    if not isinstance(errors, list):
-        return False
-    return any(
-        isinstance(error, dict)
-        and error.get('resource') == 'PullRequest'
-        and error.get('code') == 'custom'
-        and error.get('field') == 'state'
-        and isinstance(error.get('message'), str)
-        and 'was force-pushed or recreated' in error['message']
-        for error in errors)
+            f'GitHub returned {response.status} for {endpoint}{suffix}')
 
 
 def _gate_comment(comments):
@@ -279,35 +231,14 @@ def _gate_comment(comments):
     return None
 
 
-def _closed_by_gate(timeline, comment):
-    actor = _latest_closer(timeline)
-    body = (comment or {}).get('body') or ''
-    lines = (line.rstrip('\r') for line in body.splitlines())
-    return actor == BOT and CLOSED_MARKER in lines
-
-
-def _latest_closer(timeline):
-    closed = [event for event in timeline if event.get('event') == 'closed']
-    return ((closed[-1].get('actor') or {}).get('login')
-            if closed else None)
-
-
-def _revalidate(api, pull_endpoint, state, timeline_endpoint=None,
-                closer=_NO_CLOSER):
+def _revalidate(api, pull_endpoint):
     pull = _read(api, 'GET', pull_endpoint)
     if not isinstance(pull, dict):
         raise _GateError('pull request response is not an object')
-    current_closer = _NO_CLOSER
-    if timeline_endpoint is not None:
-        timeline = _page(api, timeline_endpoint)
-        current_closer = _latest_closer(timeline)
     if pull.get('merged'):
         raise _GateError('pull request was merged during analysis')
-    if pull.get('state') != state:
+    if pull.get('state') != 'open':
         raise _GateError('pull request state changed during analysis')
-    if closer is not _NO_CLOSER and current_closer != closer:
-        raise _GateError('pull request closer changed during analysis')
-    return current_closer
 
 
 def _issue_records(api, repo, numbers):
@@ -358,51 +289,22 @@ def _reasons_block(reasons):
     return '\n'.join(f'- {reason}' for reason in reasons)
 
 
-def _closed_exit(description, reasons):
-    """Reports a run that ends with the pull request closed by the gate.
+def _refused_exit(reasons):
+    """Reports an inadmissible pull request and fails the gate's check.
 
-    The message states the observation — the closure named, the defects
-    the gate comment carries beside it, each reason whole — never a
-    diagnosis of cause, and the returned code fails the workflow run so
-    required-check readers do not bind success to a closed pull request.
+    The stderr line states the observation, each reason whole, never a
+    diagnosis of cause.
     """
     print(
-        f'{description} (exit {GATE_CLOSED_EXIT}): {"; ".join(reasons)}',
+        'pr gate: the pull request is inadmissible '
+        f'(exit {INADMISSIBLE_EXIT}): {"; ".join(reasons)}',
         file=sys.stderr)
-    return GATE_CLOSED_EXIT
+    return INADMISSIBLE_EXIT
 
 
-def _inadmissible_text(actor, reasons, closed):
-    if closed:
-        opening = (
-            f'@{actor} — closing this automatically; it is recoverable, '
-            'read on.\n'
-            f'{MARKER}\n{CLOSED_MARKER}')
-        ending = (
-            'The gate re-checks every edit of this closed pull request and '
-            'reopens it\nautomatically once every condition passes. If '
-            'GitHub refuses the reopen,\nthe gate comments here with what '
-            'happened and how to recover. Fixing\nthe body is not the end '
-            'of it, though: that reopen is '
-            f'authored by `{BOT}`\nwith the workflow\'s own `GITHUB_TOKEN`, '
-            'so the CI runs it triggers\nare created with no jobs and held '
-            'for approval. Push to the\nbranch once the reopen lands — an '
-            'empty commit is enough — and the\nruns your own push triggers '
-            'run normally. The merge itself can still be blocked\n'
-            'after that: GitHub can count the bot reopen as an unattributed\n'
-            'change, and a ruleset that requires extra approval for\n'
-            'unattributed changes can hold the merge even with every check\n'
-            'green. If the merge stays blocked that way once the gate has\n'
-            'reopened it, close and reopen the pull request yourself once\n'
-            'before merging.')
-    else:
-        opening = (
-            f'@{actor} — this pull request needs changes before it can be '
-            f'reviewed.\n{MARKER}')
-        ending = (
-            'The gate re-checks every edit; there is no need to open a second '
-            'pull\nrequest.')
-    return f"""{opening}
+def _inadmissible_text(actor, reasons):
+    return f"""@{actor} — this pull request needs changes before it can be reviewed.
+{MARKER}
 
 {_reasons_block(reasons)}
 
@@ -416,110 +318,16 @@ Fix every item above, including these two repository requirements:
    `Fixes #<issue>` when merging this should close the issue and
    `References #<issue>` when it should not.
 
-{ending}
+Until then this gate's check fails, and a ruleset that requires the check
+holds the merge. The gate re-checks every edit and push; there is no need
+to open a second pull request.
 """
-
-
-def _attempt_text(actor):
-    """The comment written before the reopen PATCH runs.
-
-    Nothing here claims the reopen landed: GitHub can refuse it, and
-    when it does, this same comment is rewritten with the refusal and
-    the way out. The CI paragraphs describe what the author must do
-    once the reopen does land; they are the recovery for the success
-    case the attempt is reaching for.
-    """
-    return (
-        f'@{actor} — every condition now passes; the gate is attempting '
-        'the automatic reopen.\n'
-        'If GitHub refuses it, this comment is replaced with the refusal '
-        'and the way out.\n'
-        '\n'
-        'One step is still yours. This reopen is authored by '
-        f'`{BOT}` with\nthe workflow\'s own `GITHUB_TOKEN`, and GitHub '
-        'creates the CI runs a\n`reopened` event from that token triggers '
-        'without jobs and held for\napproval: it does not refuse them, and '
-        'it does not start them. This\ngate cannot release them, so the '
-        'head this reopen leaves behind has no CI\nverdict yet.\n'
-        '\n'
-        'Push to the branch once more to get one; any push does it, and an '
-        'empty\ncommit is enough: `git commit --allow-empty -m "rerun the '
-        'checks"` then `git\npush`. That push is yours, so the runs it '
-        'triggers run as your own event.\n'
-        '\n'
-        'Merging can stay blocked even so: GitHub can count this bot '
-        'reopen\nas an unattributed change, and a ruleset that requires '
-        'extra\napproval for unattributed changes can hold the merge even '
-        'with every\ncheck green. If that happens, close and reopen this '
-        'pull request\nyourself once before merging.\n'
-        f'{MARKER}\n')
-
-
-def _reopen_text(actor):
-    """The comment the attempt is rewritten with once the reopen PATCH
-    has landed: the reopen is stated as accomplished.
-    """
-    return (
-        f'@{actor} — every condition now passes; the pull request has '
-        'been reopened automatically.\n'
-        '\n'
-        'One step is still yours. This reopen is authored by '
-        f'`{BOT}` with\nthe workflow\'s own `GITHUB_TOKEN`, and GitHub '
-        'creates the CI runs a\n`reopened` event from that token triggers '
-        'without jobs and held for\napproval: it does not refuse them, and '
-        'it does not start them. This\ngate cannot release them, so the '
-        'head this reopen leaves behind has no CI\nverdict yet.\n'
-        '\n'
-        'Push to the branch once more to get one; any push does it, and an '
-        'empty\ncommit is enough: `git commit --allow-empty -m "rerun the '
-        'checks"` then `git\npush`. That push is yours, so the runs it '
-        'triggers run as your own event.\n'
-        '\n'
-        'Merging can stay blocked even so: GitHub can count this bot '
-        'reopen\nas an unattributed change, and a ruleset that requires '
-        'extra\napproval for unattributed changes can hold the merge even '
-        'with every\ncheck green. If that happens, close and reopen this '
-        'pull request\nyourself once before merging.\n'
-        f'{MARKER}\n')
-
-
-def _refusal_text(actor, error):
-    """The comment the attempt is rewritten with when GitHub refuses
-    the reopen PATCH.
-
-    Prose only: `_assert_gate_message` reads any rendered bullet as a
-    reasons list, and this comment carries no reasons. The marker pair
-    stays, so the gate still owns the close and a later edit of the
-    body still retries the gate.
-    """
-    return (
-        f'@{actor} — the automatic reopen was refused; this pull request '
-        'is still closed.\n'
-        '\n'
-        f'GitHub\'s reason: {error}\n'
-        '\n'
-        'That usually means the branch was force-pushed while the pull '
-        'request was\nclosed, so the head GitHub recorded for it no longer '
-        'matches the branch.\n'
-        '\n'
-        'Editing the body again cannot clear this state. Two ways out: ask '
-        'a\nmaintainer to reopen this pull request, or open a fresh pull '
-        'request from\nthe same branch with the same body. The commits are '
-        'still on the branch,\nand a fresh pull request passes this gate '
-        'outright on `opened`.\n'
-        f'{MARKER}\n')
 
 
 def _resolved_text(actor):
     return (
         f'@{actor} — every condition now passes; nothing further is needed '
         'from you.\n'
-        '\n'
-        'If the gate closed and reopened this pull request earlier, close\n'
-        'and reopen it once yourself before merging: GitHub can count a\n'
-        f'reopen by `{BOT}` as an unattributed change, and a merge ruleset\n'
-        'that requires extra approval for unattributed changes can hold\n'
-        'the merge even with every check green.\n'
         f'{MARKER}\n')
 
 
@@ -539,22 +347,13 @@ def _run(api, repo, pr, actor, template, template_path,
     if not isinstance(pull, dict):
         raise _GateError('pull request response is not an object')
     body = pull.get('body') or ''
-    state = pull.get('state')
-    if pull.get('merged'):
+    if pull.get('merged') or pull.get('state') != 'open':
         print('nothing to do')
         return 0
 
     comments = _page(
         api, f'repos/{repo}/issues/{pr}/comments')
     comment = _gate_comment(comments)
-    timeline_endpoint = f'repos/{repo}/issues/{pr}/timeline'
-    closer = None
-    if state == 'closed':
-        timeline = _page(api, timeline_endpoint)
-        closer = _latest_closer(timeline)
-        if not _closed_by_gate(timeline, comment):
-            print(f'pull request {pr} was not closed by the gate')
-            return 0
 
     if template is None:
         try:
@@ -605,109 +404,19 @@ def _run(api, repo, pr, actor, template, template_path,
         reasons.append(_unassigned_reason(unassigned))
     elif claimed is None:
         reasons.append(UNCLAIMED_REASON)
-    # A claim failure closes only what was actually checked: past the
-    # 20-reference bound just the first 20 were checked, and a body with
-    # no checked reference has nothing to recover by closing.
-    closable = bool(layout) or (
-        len(all_references) <= 20 and bool(all_references)
-        and (bool(unassigned) or claimed is None)
-    ) or not related_may_reference(body, sections, template)
 
     if not reasons:
-        if state == 'closed':
-            _revalidate(
-                api, pull_endpoint, state, timeline_endpoint, closer)
-            # Keep close ownership through every fallible reopen boundary.
-            # A retry can finish the transition or reconcile an already-open PR.
-            _write_comment(
-                api, repo, pr, comment,
-                _attempt_text(actor) + f'{CLOSED_MARKER}\n')
-            _revalidate(
-                api, pull_endpoint, state, timeline_endpoint, closer)
-            try:
-                _write(api, 'PATCH', pull_endpoint, {'state': 'open'})
-            except _GateError as error:
-                if error.status is None or error.status >= 500:
-                    raise
-                # A status below 500 is GitHub refusing the write, not a
-                # failed transport: the pull request stays closed and
-                # gate-owned, and the author needs the reason and the way
-                # out. A concurrent modification still aborts without a
-                # refusal comment.
-                if not _stale_state_refusal(error.data):
-                    _revalidate(
-                        api, pull_endpoint, state, timeline_endpoint, closer)
-                    _write_comment(
-                        api, repo, pr, comment,
-                        _refusal_text(actor, str(error))
-                        + f'{CLOSED_MARKER}\n')
-                    raise
-                # The stale-object refusal names a branch that was
-                # force-pushed or recreated while the pull request was
-                # closed: editing the body cannot restore the recorded
-                # head, but the pull request's fresh object version may
-                # accept the reopen. Re-read it — the ownership check
-                # aborts on a maintainer close or merge in the window —
-                # and retry the reopen exactly once. The retry is best
-                # effort: GitHub has kept answering this 422 for every
-                # reopen PATCH after a force-push while closed, so a
-                # retry refused again is final and lands in the refusal
-                # comment below. A transport failure or a 5xx on the
-                # retry is not a refusal: like the first attempt's
-                # split above, it re-raises commentless.
-                _revalidate(
-                    api, pull_endpoint, state, timeline_endpoint, closer)
-                try:
-                    _write(api, 'PATCH', pull_endpoint, {'state': 'open'})
-                except _GateError as retry_error:
-                    if retry_error.status is None or retry_error.status >= 500:
-                        raise
-                    _revalidate(
-                        api, pull_endpoint, state, timeline_endpoint, closer)
-                    _write_comment(
-                        api, repo, pr, comment,
-                        _refusal_text(actor, str(retry_error))
-                        + f'{CLOSED_MARKER}\n')
-                    raise
-            _revalidate(
-                api, pull_endpoint, 'open', timeline_endpoint, closer)
-            _write_comment(api, repo, pr, comment, _reopen_text(actor))
-            print('reopened')
-        elif comment is not None:
-            _revalidate(api, pull_endpoint, state)
+        if comment is not None:
+            _revalidate(api, pull_endpoint)
             _write_comment(api, repo, pr, comment, _resolved_text(actor))
-            print(f'covered by claimed issue {claimed}')
-        else:
-            print(f'covered by claimed issue {claimed}')
+        print(f'covered by claimed issue {claimed}')
         return 0
 
-    if state == 'closed':
-        _revalidate(
-            api, pull_endpoint, state, timeline_endpoint, closer)
-        _write_comment(
-            api, repo, pr, comment,
-            _inadmissible_text(actor, reasons, True))
-        print('commented')
-        return _closed_exit(
-            'pr gate: the pull request remains closed after re-check',
-            reasons)
-
-    if closable:
-        closer = _revalidate(
-            api, pull_endpoint, state, timeline_endpoint)
-    else:
-        _revalidate(api, pull_endpoint, state)
+    _revalidate(api, pull_endpoint)
     _write_comment(
-        api, repo, pr, comment,
-        _inadmissible_text(actor, reasons, closable))
-    if closable:
-        _revalidate(
-            api, pull_endpoint, state, timeline_endpoint, closer)
-        _write(api, 'PATCH', pull_endpoint, {'state': 'closed'})
-        print('closed')
-        return _closed_exit('pr gate closed the pull request', reasons)
+        api, repo, pr, comment, _inadmissible_text(actor, reasons))
     print('commented')
-    return 0
+    return _refused_exit(reasons)
 
 
 def run(api, repo: str, pr: str, actor: str, template: str | None = None,
@@ -715,13 +424,10 @@ def run(api, repo: str, pr: str, actor: str, template: str | None = None,
         require_commit_attribution: bool = False) -> int:
     """Runs one gate pass and returns the process exit code.
 
-    Zero when the run ends with the pull request not gate-owned-closed:
-    merged, closed by someone else, reopened, covered by a claimed issue,
-    or commented on while open. `GATE_CLOSED_EXIT` when the gate itself
-    leaves the pull request closed — it closed the pull request, or its
-    re-check of a gate-owned closed pull request still found defects —
-    with one stderr line naming the closure and the observed defects. One
-    when the analysis or an API call failed.
+    Zero when the pull request is admissible, merged or not open.
+    `INADMISSIBLE_EXIT` when the gate found defects and commented on
+    them, with one stderr line naming the observed defects. One when the
+    analysis or an API call failed.
     """
     try:
         return _run(

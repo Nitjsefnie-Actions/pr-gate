@@ -65,7 +65,7 @@ def test_conditional_and_optional_tags_are_case_insensitive(tmp):
             'Section "Details" is empty.']
 
 
-def test_missing_footer_closes_and_corrective_edit_reopens(tmp):
+def test_missing_footer_fails_and_corrective_edit_resolves(tmp):
     from _prgate import _api, _gate_module
     del tmp
     required = TEMPLATE.replace(
@@ -78,7 +78,7 @@ def test_missing_footer_closes_and_corrective_edit_reopens(tmp):
     api.pull['body'] = _required_body().split('## Footer')[0]
     gate = _gate_module()
     assert gate.run(api, 'owner/repo', '99', 'alice', required) == 2
-    assert api.pull['state'] == 'closed'
+    assert api.pull['state'] == 'open'
     assert 'Required section "Footer" is missing.' in api.comments[0]['body']
     api.rendered = rendered
     api.pull['body'] = _required_body()
@@ -93,7 +93,7 @@ def test_a_layout_valid_body_still_needs_an_assigned_issue(tmp):
     api = _api(rendered=_required_html(), issues={})
     api.pull['body'] = _required_body().replace('Fixes #101', 'No related work.')
     assert _gate_module().run(api, 'owner/repo', '99', 'alice', TEMPLATE) == 2
-    assert api.pull['state'] == 'closed'
+    assert api.pull['state'] == 'open'
     assert 'No checked issue is assigned to you.' in api.comments[0]['body']
 
 

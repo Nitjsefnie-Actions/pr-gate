@@ -16,8 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _util  # noqa: E402
 # pylint: disable-next=unused-import
 from _prgate_message import (  # noqa: E402
-    BOT, CLOSED_FIRST, CLOSED_MARKER, MARKER, OPEN_FIRST, REOPEN_FIRST,
-    RESOLVED_FIRST, _assert_ci_recovery_note, _assert_gate_message,
+    BOT, MARKER, OPEN_FIRST, RESOLVED_FIRST, _assert_gate_message,
     _assert_no_writes, _comment_body,
 )
 ROOT = Path(__file__).resolve().parents[1]
@@ -335,11 +334,8 @@ base = fixtures.get('pull', {}).get('base', {}).get('sha', '')
 if method == 'GET' and endpoint == f'repos/owner/repo/contents/{template_path}?ref={base}':
     finish(200, {'type': 'file', 'encoding': 'base64',
                  'content': base64.b64encode(fixtures['template'].encode()).decode()})
-if endpoint == 'repos/owner/repo/pulls/99':
-    if method == 'GET':
-        finish(200, fixtures['pull'])
-    if method == 'PATCH':
-        finish(200, {**fixtures['pull'], **payload})
+if endpoint == 'repos/owner/repo/pulls/99' and method == 'GET':
+    finish(200, fixtures['pull'])
 if endpoint == 'markdown' and method == 'POST':
     finish(200, fixtures['rendered'])
 if endpoint.startswith('users/') and method == 'GET':
@@ -356,13 +352,12 @@ if permission and method == 'GET':
     if payload is None:
         finish(403, {'message': 'Must have push access to view collaborator permission.'})
     finish(200, payload)
-page = re.fullmatch(
-    r'repos/owner/repo/issues/99/(comments|timeline)', endpoint)
-if (page and method == 'GET' and fields.get('per_page') == '100'
+if (endpoint == 'repos/owner/repo/issues/99/comments' and method == 'GET'
+        and fields.get('per_page') == '100'
         and fields.get('page', '').isdigit() and len(fields) == 2):
     if int(fields['page']) == fixtures.get('fail_page'):
         finish(500, {'message': 'fixture page failure'})
-    values = fixtures[page.group(1)]
+    values = fixtures['comments']
     offset = (int(fields['page']) - 1) * 100
     finish(200, values[offset:offset + 100])
 commits_page = re.fullmatch(r'repos/owner/repo/pulls/99/commits', endpoint)
@@ -398,15 +393,14 @@ def _issue(*assignees, pull_request=False):
 
 
 class FakeApi:
-    def __init__(self, *, pull, issues=None, comments=(), timeline=(),
-                 rendered=None, fail=(), paginate_error=None, commits=(),
+    def __init__(self, *, pull, issues=None, comments=(), rendered=None,
+                 fail=(), paginate_error=None, commits=(),
                  permissions=None, users=None, commit_search=None):
         self.pull = pull
         self.issues = issues or {}
         self.comments = list(comments)
         self.next_comment_id = max(
             [99, *(item['id'] for item in self.comments)]) + 1
-        self.timeline = list(timeline)
         self.commits = list(commits)
         self.permissions = {} if permissions is None else permissions
         self.users = {} if users is None else users
@@ -428,16 +422,8 @@ class FakeApi:
             self.writes.append(call)
         if self._failed(method, endpoint):
             return _Response(500, None)
-        if endpoint == 'repos/owner/repo/pulls/99':
-            if method == 'GET':
-                return _Response(200, self.pull)
-            if method == 'PATCH':
-                self.pull['state'] = payload['state']
-                event = ('closed' if payload['state'] == 'closed'
-                         else 'reopened')
-                self.timeline.append({
-                    'event': event, 'actor': {'login': BOT}})
-                return _Response(200, self.pull)
+        if endpoint == 'repos/owner/repo/pulls/99' and method == 'GET':
+            return _Response(200, self.pull)
         if endpoint == 'markdown' and method == 'POST':
             return _Response(200, self.rendered)
         if endpoint.startswith('search/commits?') and method == 'GET':
@@ -496,56 +482,29 @@ class FakeApi:
             return _Response(500, None)
         if endpoint == 'repos/owner/repo/issues/99/comments':
             return _Response(200, self.comments)
-        if endpoint == 'repos/owner/repo/issues/99/timeline':
-            return _Response(200, self.timeline)
         if endpoint == 'repos/owner/repo/pulls/99/commits':
             return _Response(200, self.commits)
         raise AssertionError(f'unmodelled: GET {endpoint}')
 
 
 class _RaceApi(FakeApi):
-    def __init__(self, *, transition, trigger='markdown', number=1,
-                 **kwargs):
+    """Merges or closes the pull request at its `number`th read."""
+
+    def __init__(self, *, transition, number=1, **kwargs):
         super().__init__(**kwargs)
         self.transition = transition
-        self.trigger = trigger
         self.number = number
         self.pull_reads = 0
 
-    def _transition(self):
-        event = self.transition
-        self.transition = None
-        if event == 'merged':
-            self.pull['merged'] = True
-            return
-        if event == 'reclosed':
-            self.pull['state'] = 'closed'
-            self.timeline.extend([
-                {'event': 'reopened', 'actor': {'login': 'maintainer'}},
-                _closed_event('maintainer'),
-            ])
-            return
-        self.pull['state'] = 'closed' if event == 'closed' else 'open'
-        self.timeline.append({
-            'event': event, 'actor': {'login': 'maintainer'}})
-
     def request(self, method, endpoint, payload=None):
-        if method == 'POST' and endpoint == 'markdown':
-            if self.trigger == 'markdown' and self.transition is not None:
-                self._transition()
         if method == 'GET' and endpoint.endswith('/pulls/99'):
             self.pull_reads += 1
-            if (self.transition is not None
-                    and self.trigger == 'pull-read'
-                    and self.pull_reads == self.number):
-                self._transition()
-        response = super().request(method, endpoint, payload)
-        if (self.transition is not None
-                and self.trigger == 'after-write'
-                and len(self.writes) == self.number
-                and 200 <= response.status < 300):
-            self._transition()
-        return response
+            if self.pull_reads == self.number:
+                if self.transition == 'merged':
+                    self.pull['merged'] = True
+                else:
+                    self.pull['state'] = 'closed'
+        return super().request(method, endpoint, payload)
 
 
 def _gate_module():
@@ -576,11 +535,9 @@ def _api(*, state='open', merged=False, issues=None, **kwargs):
         pull=_pull(state, merged), issues=issues, **kwargs)
 
 
-def _gate_comment(closed=False):
-    lines = ['old gate message', MARKER]
-    if closed:
-        lines.append(CLOSED_MARKER)
-    return {'id': 7, 'user': {'login': BOT}, 'body': '\n'.join(lines)}
+def _gate_comment():
+    return {'id': 7, 'user': {'login': BOT},
+            'body': '\n'.join(['old gate message', MARKER])}
 
 
 def _inline_marker_comment():
@@ -588,12 +545,8 @@ def _inline_marker_comment():
         'id': 71,
         'user': {'login': BOT},
         'body': ('unrelated automation documentation\n'
-                 '`<!-- pr-gate --> <!-- pr-gate: closed -->`'),
+                 '`<!-- pr-gate -->`'),
     }
-
-
-def _closed_event(actor=BOT):
-    return {'event': 'closed', 'actor': {'login': actor}}
 
 
 def _execute(api, body):
@@ -736,7 +689,6 @@ def _script_fixtures(**extra):
                  'base': {'sha': '1234567890abcdef1234567890abcdef12345678'}},
         'template': (ROOT / '.github/PULL_REQUEST_TEMPLATE.md').read_text(encoding='utf-8'),
         'comments': [],
-        'timeline': [],
         'rendered': _valid_html() + CLI_FOOTER_HTML,
         'issues': {'101': _issue('alice')},
         **extra,
@@ -760,24 +712,20 @@ def _assert_script_runs_through_gh_on_path(tmp):
         'rendered': _valid_html(references=_text_html('none')) + CLI_FOOTER_HTML,
         'issues': {},
     }
-    other = Path(tmp) / 'closable'
+    other = Path(tmp) / 'refused'
     other.mkdir()
     result, calls = _run_script(other, fixtures)
-    # The close ends the script nonzero (issue 57), with the closure
-    # observation on stderr beside the usual stdout marker.
     assert result.returncode == 2, (result.stdout, result.stderr, calls)
     assert result.stderr == (
-        'pr gate closed the pull request (exit 2): '
+        'pr gate: the pull request is inadmissible (exit 2): '
         'No checked issue is assigned to you.\n'), result.stderr
     assert all(
         forbidden.isdisjoint(argument) for call in calls
         for argument in call['argv']), calls
     writes = _recorded_writes(calls)
     assert [(method, endpoint) for method, endpoint, _payload in writes] == [
-        ('POST', 'repos/owner/repo/issues/99/comments'),
-        ('PATCH', 'repos/owner/repo/pulls/99')]
+        ('POST', 'repos/owner/repo/issues/99/comments')]
     comment = writes[0][2]['body']
-    assert writes[1][2] == {'state': 'closed'}
     assert any(
         call['input'] == {
             'text': body, 'mode': 'gfm', 'context': 'owner/repo'}
