@@ -15,7 +15,7 @@ MAX_COMMITS = 250
 TYPES = ('build', 'chore', 'ci', 'docs', 'feat', 'fix', 'perf', 'refactor',
          'revert', 'style', 'test')
 _SUBJECT = re.compile(
-    r'(?P<type>[A-Za-z]+)(?:\([^()\s]+\))?!?: (?P<description>.*)')
+    r'(?P<type>[A-Za-z]+)(?:\([^()\s](?:[^()]*[^()\s])?\))?!?: (?P<description>.*)')
 FORMAT_REASON = (
     'A commit subject follows Conventional Commits as '
     '`type(scope)!: description`, where the scope and `!` are optional and '
