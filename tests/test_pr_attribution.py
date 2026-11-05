@@ -11,14 +11,14 @@ from _prgate import (
     ROOT, _valid_body, run_gate,
 )
 sys.path.insert(0, str(ROOT))
-from scripts.ci import pr_attribution
+from scripts.ci import pr_attribution, pr_commits
 
 
 def _commit(*, sha='0123456789abcdef0123456789abcdef01234567',
             author_login: str | None = 'Pleng',
             committer_login: str | None = 'alice',
             author_email='pleng@example.com', committer_email='alice@example.com',
-            message='Change the implementation'):
+            message='fix: change the implementation'):
     return {
         'sha': sha,
         'author': {'login': author_login, 'id': 10} if author_login else None,
@@ -784,7 +784,7 @@ def test_script_search_resolution_transmits_accept_header_and_parses_query(tmp):
     fixture['pull']['commits'] = 1
     fixture['commits'] = [_commit(
         author_login='alice', committer_login='alice',
-        message=f'Change\n\nCo-Authored-By: Peter <{email}>')]
+        message=f'fix: change\n\nCo-Authored-By: Peter <{email}>')]
     fixture['commit_search'] = {email: [{'author': {'login': 'alice'}}]}
 
     result, calls = _run_script(
@@ -963,8 +963,8 @@ def test_commit_list_transport_failure_is_an_attribution_error(tmp=None):
         paginate_error='gh pagination exceeded 3 commit pages')
 
     try:
-        pr_attribution.commit_attribution_reasons(
-            api, 'owner/repo', 99, 'alice', api.pull)
+        pr_commits.commit_reasons(api, 'owner/repo', 99, 'alice', api.pull,
+                                  attribution=True, conventional=False)
     except pr_attribution.AttributionError as error:
         assert str(error) == 'gh pagination exceeded 3 commit pages'
     else:

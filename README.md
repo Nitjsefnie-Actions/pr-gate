@@ -68,6 +68,7 @@ standard library. For a self-hosted runner, install the tools before this step.
 | `pull-request-number` | Required PR number. |
 | `pull-request-author` | Required author login. |
 | `require-commit-attribution` | Optional; defaults to `false`. Only `true` (case-insensitive, surrounding whitespace ignored) enables the commit check. |
+| `conventional-commits` | Optional; defaults to `true`. Only `false` (case-insensitive, surrounding whitespace ignored) disables the commit-subject check. |
 | `template-path` | Optional consumer path; defaults to `.github/PULL_REQUEST_TEMPLATE.md`. |
 
 ## Admission rules
@@ -103,9 +104,9 @@ lookup cache between assignment and bug-title validation. Larger sets receive
 a corrective comment.
 
 The gate maintains one bot-owned marker comment. Any failing check (layout,
-content, claim or commit attribution, including more than twenty references or
-no checked reference at all) writes the reasons into that comment and fails the
-gate's own check; the PR stays open. Require the gate's job check in a ruleset
+content, claim, commit attribution or commit subject, including more than
+twenty references or no checked reference at all) writes the reasons into that
+comment and fails the gate's own check; the PR stays open. Require the gate's job check in a ruleset
 to hold the merge until every check passes. Every edit of or push to a
 non-draft PR by a human author re-runs the gate, and once all conditions pass
 it rewrites its comment to say so and its check passes. A closed or merged PR
@@ -127,6 +128,20 @@ local part is exactly `noreply` (case-insensitive), such as
 `noreply@anthropic.com`, `noreply@z.ai`, or `noreply@openai.com`, is treated as
 a model/vendor trailer and is outside this rule.
 
+Commit subjects follow [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
+unless `conventional-commits` is `false`. Each commit's first line must read
+`type(scope)!: description`, and a commit with more than one parent is not
+checked. The scope and `!` are optional, a scope is one or more characters other than parentheses
+and whitespace, the type is one of `build`, `chore`, `ci`, `docs`, `feat`,
+`fix`, `perf`, `refactor`, `revert`, `style` or `test` in any letter case, a
+colon and one space follow, and the description holds a non-whitespace
+character. The gate's comment lists each failing commit's short SHA and
+subject and names this format. The check reads only the subject: whether the
+type and `!` fit the change stays with review. It shares the commit list with
+the commit-attribution check, fetched once when both are on, and a PR with
+more than 250 commits is refused with a reason naming each check that cannot
+verify it.
+
 The email lookup searches GitHub's public commit index; an email used only in
 private repositories remains unresolvable, so a human coauthor trailer using
 it is refused. GitHub's collaborator-permission endpoint returns 403 when the
@@ -136,12 +151,14 @@ consumer's token can read collaborator permissions. The example token is
 read-only for repository contents and issues (with pull-request write access
 for the gate's comment), so this exemption may fail closed for
 maintainers unless the consumer grants the needed access. With the input off,
-the gate makes no commit-list, collaborator, user, or commit-search requests.
+the gate makes no collaborator, user, or commit-search requests, and it reads
+the commit list only for the commit-subject check; with both checks off, it
+makes no commit-list request either.
 
 The run's exit code states the outcome. Zero: the description passes and is
 covered by its claimed issue, or the PR is merged or not open. Exit 2: the gate
-found defects and commented on them; it prints one stderr line with the same
-reasons the comment carries. Analysis and API failures exit 1 with
+found defects, such as a failing commit subject, and commented on them; it
+prints one stderr line with the same reasons the comment carries. Analysis and API failures exit 1 with
 `pr gate failed: ...` on stderr. Consumer repositories remain responsible for
 assigning issues and for a ruleset that requires the gate's check.
 

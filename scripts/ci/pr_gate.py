@@ -16,7 +16,9 @@ if __package__:
     # pylint: disable-next=relative-beyond-top-level
     from .pr_content import bug_issue_errors, section_content
     # pylint: disable-next=relative-beyond-top-level
-    from .pr_attribution import AttributionError, commit_attribution_reasons
+    from .pr_attribution import AttributionError
+    # pylint: disable-next=relative-beyond-top-level
+    from .pr_commits import commit_reasons
     # pylint: disable-next=relative-beyond-top-level
     from .pr_body import (
         closing_issues, code_span, layout_errors, parse_rendered,
@@ -25,7 +27,8 @@ if __package__:
 else:
     from pr_policy import base_template
     from pr_content import bug_issue_errors, section_content
-    from pr_attribution import AttributionError, commit_attribution_reasons
+    from pr_attribution import AttributionError
+    from pr_commits import commit_reasons
     from pr_body import (
         closing_issues, code_span, layout_errors, parse_rendered,
         referenced_issues, retains_instruction_comment,
@@ -341,7 +344,7 @@ def _write_comment(api, repo, pr, comment, body):
 
 
 def _run(api, repo, pr, actor, template, template_path,
-         require_commit_attribution=False):
+         require_commit_attribution=False, conventional_commits=False):
     pull_endpoint = f'repos/{repo}/pulls/{pr}'
     pull = _read(api, 'GET', pull_endpoint)
     if not isinstance(pull, dict):
@@ -391,10 +394,12 @@ def _run(api, repo, pr, actor, template, template_path,
     records = _issue_records(api, repo, all_references)
     claimed, unassigned = _claim(references, set(closing), actor, records)
     layout.extend(bug_issue_errors(bug_pointers, records))
-    if require_commit_attribution:
+    if require_commit_attribution or conventional_commits:
         try:
-            layout.extend(commit_attribution_reasons(
-                api, repo, pr, actor, pull))
+            layout.extend(commit_reasons(
+                api, repo, pr, actor, pull,
+                attribution=require_commit_attribution,
+                conventional=conventional_commits))
         except AttributionError as error:
             raise _GateError(str(error)) from error
     reasons = list(layout)
@@ -421,7 +426,8 @@ def _run(api, repo, pr, actor, template, template_path,
 
 def run(api, repo: str, pr: str, actor: str, template: str | None = None,
         template_path: str = '.github/PULL_REQUEST_TEMPLATE.md',
-        require_commit_attribution: bool = False) -> int:
+        require_commit_attribution: bool = False,
+        conventional_commits: bool = False) -> int:
     """Runs one gate pass and returns the process exit code.
 
     Zero when the pull request is admissible, merged or not open.
@@ -432,7 +438,8 @@ def run(api, repo: str, pr: str, actor: str, template: str | None = None,
     try:
         return _run(
             api, repo, pr, actor, template, template_path,
-            require_commit_attribution=require_commit_attribution)
+            require_commit_attribution=require_commit_attribution,
+            conventional_commits=conventional_commits)
     except _GateError as error:
         print(f'pr gate failed: {error}', file=sys.stderr)
         return 1
@@ -458,11 +465,15 @@ def main() -> int:
     require_commit_attribution = (
         _environment('REQUIRE_COMMIT_ATTRIBUTION', 'false')
         .strip().casefold() == 'true')
+    # Only 'false' opts out; the input has no unprefixed legacy name.
+    conventional_commits = os.environ.get(
+        'PR_GATE_CONVENTIONAL_COMMITS', 'true').strip().casefold() != 'false'
     return run(
         GhApi(), repo, pr, actor,
         template_path=_environment(
             'TEMPLATE_PATH', '.github/PULL_REQUEST_TEMPLATE.md'),
-        require_commit_attribution=require_commit_attribution)
+        require_commit_attribution=require_commit_attribution,
+        conventional_commits=conventional_commits)
 
 
 if __name__ == '__main__':
