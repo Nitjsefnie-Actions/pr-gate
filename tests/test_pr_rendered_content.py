@@ -28,7 +28,8 @@ def test_captured_code_whitespace_preserves_visible_line_breaks(tmp):
     del tmp
     capture = json.loads((Path(__file__).parent / 'pr_code_whitespace.json').read_text(
         encoding='utf-8'))
-    expected = {'plain_paragraph_lf': 'open', 'single_line_code': 'open', 'code_lf': 'closed'}
+    expected = {'plain_paragraph_lf': 'admitted', 'single_line_code': 'admitted',
+                'code_lf': 'refused'}
     assert {case['name'] for case in capture['cases']} == set(expected)
     for case in capture['cases']:
         parsed = PR_BODY.parse_rendered(case['rendered'], 'owner/repo')
@@ -39,9 +40,9 @@ def test_captured_code_whitespace_preserves_visible_line_breaks(tmp):
         api.rendered = case['rendered']
         assert _gate_module().run(
             api, 'owner/repo', '99', 'alice', TEMPLATE) == (
-            0 if expected[case['name']] == 'open' else 2)
-        assert api.pull['state'] == expected[case['name']], case['name']
-        if expected[case['name']] == 'open':
+            0 if expected[case['name']] == 'admitted' else 2)
+        assert api.pull['state'] == 'open', case['name']
+        if expected[case['name']] == 'admitted':
             assert api.writes == [], case['name']
         else:
             assert 'Footer' in api.comments[0]['body']

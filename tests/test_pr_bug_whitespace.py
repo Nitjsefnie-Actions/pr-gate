@@ -16,7 +16,7 @@ CASES = {case['name']: case for case in CAPTURE['cases']}
 TEMPLATE = (ROOT / '.github/PULL_REQUEST_TEMPLATE.md').read_text(encoding='utf-8')
 
 
-def _decision(case, api_title, state, reason=None):
+def _decision(case, api_title, verdict, reason=None):
     repository = CAPTURE['repository']
     parsed = PR_BODY.parse_rendered(case['rendered'], repository)
     assert PR_BODY.layout_errors(parsed.sections, TEMPLATE) == []
@@ -25,12 +25,11 @@ def _decision(case, api_title, state, reason=None):
     api.pull['body'] = case['source']
     api.rendered = case['rendered']
     api.issues = {'55': {'assignees': [{'login': 'alice'}], 'title': api_title}}
-    # A closure ends the run nonzero (issue 57); an open outcome stays 0.
     assert _gate_module().run(
         api, repository, '99', 'alice', TEMPLATE) == (
-        0 if state == 'open' else 2)
-    assert api.pull['state'] == state, (case['name'], api_title, api.writes)
-    if state == 'open':
+        0 if verdict == 'admitted' else 2)
+    assert api.pull['state'] == 'open', (case['name'], api_title, api.writes)
+    if verdict == 'admitted':
         assert api.writes == []
     else:
         assert reason in api.comments[0]['body'], api.comments
@@ -38,22 +37,22 @@ def _decision(case, api_title, state, reason=None):
 
 def test_captured_one_space_code_title_matches(tmp):
     del tmp
-    _decision(CASES['code_one_space'], 'The bug', 'open')
+    _decision(CASES['code_one_space'], 'The bug', 'admitted')
 
 
 def test_captured_two_space_code_title_does_not_match_one_space_api_title(tmp):
     del tmp
-    _decision(CASES['code_two_spaces'], 'The bug', 'closed', 'copy its visible title exactly')
+    _decision(CASES['code_two_spaces'], 'The bug', 'refused', 'copy its visible title exactly')
 
 
 def test_captured_code_newline_is_not_a_single_line_bug_pointer(tmp):
     del tmp
-    _decision(CASES['code_newline'], 'The bug', 'closed', 'only unordered list items')
+    _decision(CASES['code_newline'], 'The bug', 'refused', 'only unordered list items')
 
 
 def test_code_spaces_are_compared_exactly_not_blanket_rejected(tmp):
     del tmp
-    _decision(CASES['code_two_spaces'], 'The  bug', 'open')
+    _decision(CASES['code_two_spaces'], 'The  bug', 'admitted')
 
 
 def test_bug_normal_flow_whitespace_still_collapses(tmp):
@@ -61,7 +60,7 @@ def test_bug_normal_flow_whitespace_still_collapses(tmp):
     case = CASES['code_two_spaces']
     for title in ('The  bug', 'The\nbug', 'The <em> \n</em>bug', '<code>The</code> \nbug'):
         rendered = case['rendered'].replace('<code class="notranslate">The  bug</code>', title)
-        _decision({**case, 'rendered': rendered}, 'The bug', 'open')
+        _decision({**case, 'rendered': rendered}, 'The bug', 'admitted')
 
 
 def test_code_whitespace_survives_inline_nesting_and_list_containers(tmp):
@@ -71,8 +70,9 @@ def test_code_whitespace_survives_inline_nesting_and_list_containers(tmp):
         '<code class="notranslate">The  bug</code>', '<code>The<em>  </em>bug</code>')
     rendered = rendered.replace('<ul dir="auto"><li>', '<div><ul dir="auto"><li>')
     rendered = rendered.replace('</li></ul>', '</li></ul></div>')
-    _decision({**case, 'rendered': rendered}, 'The bug', 'closed', 'copy its visible title exactly')
-    _decision({**case, 'rendered': rendered}, 'The  bug', 'open')
+    _decision({**case, 'rendered': rendered}, 'The bug', 'refused',
+              'copy its visible title exactly')
+    _decision({**case, 'rendered': rendered}, 'The  bug', 'admitted')
 
 
 def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
@@ -87,7 +87,7 @@ def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
                 ('code_two_spaces', 'The bug', True),
                 ('code_newline', 'The bug', True),
                 ('code_two_spaces', 'The  bug', False))
-    for index, (name, title, closed) in enumerate(outcomes):
+    for index, (name, title, refused) in enumerate(outcomes):
         directory = Path(tmp) / str(index)
         directory.mkdir()
         binary, _ = _write_gh_stub(directory)
@@ -108,15 +108,14 @@ def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
                                 env=environment, capture_output=True, text=True,
                                 encoding='utf-8', errors='strict', timeout=30)
         calls = [json.loads(line) for line in calls_path.read_text(encoding='utf-8').splitlines()]
-        assert result.returncode == (2 if closed else 0), (
+        assert result.returncode == (2 if refused else 0), (
             result.stdout, result.stderr, calls)
         assert any(call['argv'][4] == 'repos/Nitjsefnie/Overflow/issues/55' for call in calls)
         writes = _recorded_writes(calls)
-        states = [payload['state'] for method, endpoint, payload in writes
-                  if method == 'PATCH' and endpoint == 'repos/Nitjsefnie/Overflow/pulls/233']
-        assert states == (['closed'] if closed else []), (name, title, writes)
-        if closed:
-            assert any('Bugs Discovered' in payload.get('body', '') for _, _, payload in writes)
+        if refused:
+            assert [(method, endpoint) for method, endpoint, _ in writes] == [
+                ('POST', 'repos/Nitjsefnie/Overflow/issues/233/comments')], (name, title, writes)
+            assert 'Bugs Discovered' in writes[0][2]['body']
         else:
             assert writes == []
 

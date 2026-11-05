@@ -913,9 +913,9 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
         'pr gate must not add workflow execution overrides')
     assert workflow['on'] == {
         'pull_request_target': {'types': [
-            'opened', 'edited', 'reopened', 'ready_for_review']}}, (
-        'pr gate must handle opened, edited, reopened and ready-for-review '
-        'PR targets so a draft gates when marked ready for review')
+            'opened', 'edited', 'reopened', 'synchronize', 'ready_for_review']}}, (
+        'pr gate must run on synchronize so its check attaches to every new '
+        'head, and on ready_for_review so a draft gates when marked ready')
     assert workflow.get('concurrency') == {
         'group': 'pr-gate-${{ github.event.pull_request.number }}',
         'cancel-in-progress': 'false'}, 'pr gate must serialize each PR without cancellation'

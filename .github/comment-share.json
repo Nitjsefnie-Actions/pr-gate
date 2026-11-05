@@ -67,10 +67,6 @@
     1499,
     2033
   ],
-  "scripts/ci/pr_gate.py": [
-    4605,
-    22606
-  ],
   "scripts/ci/type_ratchet.py": [
     1279,
     4191
@@ -84,8 +80,8 @@
     19452
   ],
   "tests/_prgate_message.py": [
-    1696,
-    3933
+    453,
+    1582
   ],
   "tests/test_pr_body_closing.py": [
     4821,
@@ -94,13 +90,5 @@
   "tests/test_pr_body_elements.py": [
     1313,
     3312
-  ],
-  "tests/test_pr_gate.py": [
-    5530,
-    34680
-  ],
-  "tests/test_pr_gate_reopen_retry.py": [
-    5101,
-    15951
   ]
 }

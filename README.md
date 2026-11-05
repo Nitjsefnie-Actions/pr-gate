@@ -1,8 +1,9 @@
 # Pull request admission gate
 
 A SHA-pinnable GitHub composite action that checks pull-request descriptions
-against the consumer repository's template and assigned issues. It can comment,
-close, and automatically reopen a corrected PR that it closed itself.
+against the consumer repository's template and assigned issues. When a
+description fails, it comments with the reasons and fails its own check until
+an edit fixes it; it never closes or reopens a PR.
 
 ## Usage
 
@@ -17,11 +18,12 @@ to the same reviewed SHA under the same version comment.
 ```yaml
 name: pr gate
 # pull_request_target: a fork's pull_request token is read-only, so its
-# comment and close would silently do nothing. The pinned action reads the
-# template at the PR's base SHA and runs no pull-request code.
+# comment would silently do nothing. The pinned action reads the template at
+# the PR's base SHA and runs no pull-request code. synchronize re-runs the
+# gate on every push, so its check attaches to each new head.
 on:
   pull_request_target:
-    types: [opened, edited, reopened, ready_for_review]
+    types: [opened, edited, reopened, synchronize, ready_for_review]
 permissions:
   contents: read
   issues: read
@@ -31,9 +33,9 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gate:
-    # A reopen is authored by github-actions[bot] with this workflow's own
-    # github.token, and GitHub's no-recursion exception holds such an event's
-    # pull_request runs for approval: a draft closed and reopened loses its CI.
+    # Bot-authored pull requests are not gated, and a draft is checked when
+    # it is marked ready for review. GitHub reports a skipped job's check as
+    # success, so neither blocks a merge.
     if: >-
       github.event.pull_request.user.type != 'Bot'
       && github.event.pull_request.draft == false
@@ -100,25 +102,16 @@ assignment requirement. At most 20 distinct references are checked, sharing one
 lookup cache between assignment and bug-title validation. Larger sets receive
 a corrective comment.
 
-The gate maintains one bot-owned marker comment. Layout/content failures can
-close the PR, as can a claim failure with at least one checked issue reference;
-more than twenty references, or no checked reference at all, leave the PR open
-with a corrective comment unless a layout or content failure closes it first.
-A corrective edit retries the same PR, and a gate-owned close reopens once all
-conditions pass. When GitHub refuses that reopen — a force-push while the
-pull request was closed is the usual cause — the gate says so in its comment,
-with the two ways out: a maintainer reopen, or a fresh pull request from the
-same branch. That reopen is authored by the bot with the workflow's own
-`GITHUB_TOKEN`, so GitHub creates the CI runs it triggers without jobs and
-held for approval; the author pushes once more afterwards — an empty commit
-is enough — to get a verdict, and the reopen comment says so. The bot reopen
-can also be counted by GitHub as an unattributed change, and a merge ruleset
-that requires extra approval for unattributed changes can hold the merge
-even with every check green; the reopen comment tells the author to close
-and reopen the PR themselves once before merging when that happens.
-Ownership survives interrupted reopen operations; maintainer closures and
-changes in state/closer prevent unsafe writes. Assignment changes alone do
-not trigger the workflow: edit or reopen the PR to request another check.
+The gate maintains one bot-owned marker comment. Any failing check (layout,
+content, claim or commit attribution, including more than twenty references or
+no checked reference at all) writes the reasons into that comment and fails the
+gate's own check; the PR stays open. Require the gate's job check in a ruleset
+to hold the merge until the description is fixed. Every edit or push re-runs
+the gate, and once all conditions pass it rewrites its comment to say so and
+its check passes. A closed or merged PR is left alone. The gate re-reads the PR
+before each comment write and aborts when it was closed or merged meanwhile.
+Assignment changes alone do not trigger the workflow: edit the PR to request
+another check.
 
 Commit attribution is an opt-in admission rule. When enabled, the gate checks
 every commit when the PR carries at most 250; a PR with more commits is refused
@@ -139,23 +132,16 @@ action token cannot view that account's permission. The gate treats 403 and
 404 as no push access, so the push-access exemption is available only when the
 consumer's token can read collaborator permissions. The example token is
 read-only for repository contents and issues (with pull-request write access
-for the gate's comment/close actions), so this exemption may fail closed for
+for the gate's comment), so this exemption may fail closed for
 maintainers unless the consumer grants the needed access. With the input off,
 the gate makes no commit-list, collaborator, user, or commit-search requests.
 
-The run's exit code states the outcome. Zero covers every termination that
-leaves the pull request open, merged, or closed by someone else: a merged
-PR needs nothing; a corrective comment leaves the PR open (including the
-more-than-twenty-references report); a body whose conditions already pass
-is covered by its claimed issue; a gate-owned close is reopened; and a PR
-closed by someone else is left alone. Exit 2 covers the two terminations
-that leave the PR closed and gate-owned: the gate closes an inadmissible
-PR, or its re-check of one it closed still finds defects — each prints one
-stderr line naming the closure and the same reasons the gate comment
-carries. Analysis and API failures exit 1 with `pr gate failed: ...` on
-stderr. This is an admission mechanic, not a red status-check policy or a
-standalone issue-event workflow. Consumer repositories remain responsible
-for assigning issues and their own merge policy.
+The run's exit code states the outcome. Zero: the description passes and is
+covered by its claimed issue, or the PR is merged or not open. Exit 2: the gate
+found defects and commented on them; it prints one stderr line with the same
+reasons the comment carries. Analysis and API failures exit 1 with
+`pr gate failed: ...` on stderr. Consumer repositories remain responsible for
+assigning issues and for a ruleset that requires the gate's check.
 
 ## Development and community
 

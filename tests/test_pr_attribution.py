@@ -82,7 +82,7 @@ class _TransportFailureApi(_ScriptedApi):
         return super().request(method, endpoint, payload)
 
 
-def test_unrelated_author_without_exemption_is_refused_and_closed(tmp):
+def test_unrelated_author_without_exemption_is_refused_and_commented(tmp):
     del tmp
     commit = _commit()
     api = _attribution_api([commit])
@@ -90,10 +90,9 @@ def test_unrelated_author_without_exemption_is_refused_and_closed(tmp):
         api, _valid_body(), require_commit_attribution=True)
 
     assert code == 2
-    assert api.pull['state'] == 'closed'
-    assert len(writes) == 2
-    assert writes[-1] == ('PATCH', 'repos/owner/repo/pulls/99',
-                          {'state': 'closed'})
+    assert api.pull['state'] == 'open'
+    assert len(writes) == 1
+    assert writes[-1][0] == 'POST', writes
     reason = ('Commit 0123456 is authored by Pleng, who is not you (@alice), '
               'has no Co-Authored-By trailer naming you, and has no push '
               'access to this repository.')
@@ -146,8 +145,8 @@ def test_unlinked_author_and_committer_are_refused_independently(tmp):
         api, _valid_body(), require_commit_attribution=True)
 
     assert code == 2
-    assert api.pull['state'] == 'closed'
-    assert len(writes) == 2
+    assert api.pull['state'] == 'open'
+    assert len(writes) == 1
     body = api.comments[-1]['body']
     assert ('Commit 0123456 is authored by Unlinked author '
             '<pleng@users.noreply.github.com>, which does not resolve to a '
@@ -172,8 +171,8 @@ def test_web_flow_is_exempt_but_a_similar_committer_login_is_not(tmp):
     refused_code, refused_writes = run_gate(
         refused_api, _valid_body(), require_commit_attribution=True)
     assert refused_code == 2
-    assert refused_api.pull['state'] == 'closed'
-    assert len(refused_writes) == 2
+    assert refused_api.pull['state'] == 'open'
+    assert len(refused_writes) == 1
     assert 'Commit 0123456 is committed by web-flow-bot' in (
         refused_api.comments[-1]['body'])
 
@@ -308,8 +307,8 @@ def test_unresolvable_human_coauthor_trailer_is_refused(tmp):
         api, _valid_body(), require_commit_attribution=True)
 
     assert code == 2
-    assert api.pull['state'] == 'closed'
-    assert len(writes) == 2
+    assert api.pull['state'] == 'open'
+    assert len(writes) == 1
     assert ('Commit 0123456 carries the Co-Authored-By trailer Peter '
             '<peter@example.com>, which does not resolve to a GitHub account.') in (
                 api.comments[-1]['body'])
@@ -335,8 +334,8 @@ def test_unresolvable_no_space_coauthor_trailer_is_refused(tmp):
         api, _valid_body(), require_commit_attribution=True)
 
     assert code == 2
-    assert api.pull['state'] == 'closed'
-    assert len(writes) == 2
+    assert api.pull['state'] == 'open'
+    assert len(writes) == 1
     assert ('carries the Co-Authored-By trailer Ghost '
             f'<{email}>, which does not resolve to a GitHub account.') in (
                 api.comments[-1]['body'])
@@ -367,8 +366,8 @@ def test_unresolvable_folded_coauthor_trailer_is_refused(tmp):
         api, _valid_body(), require_commit_attribution=True)
 
     assert code == 2
-    assert api.pull['state'] == 'closed'
-    assert len(writes) == 2
+    assert api.pull['state'] == 'open'
+    assert len(writes) == 1
     assert ('carries the Co-Authored-By trailer Ghost '
             f'<{email}>, which does not resolve to a GitHub account.') in (
                 api.comments[-1]['body'])
@@ -573,8 +572,8 @@ def test_old_style_noreply_without_a_matching_user_is_not_trusted(tmp=None):
         api, _valid_body(), require_commit_attribution=True)
 
     assert code == 2
-    assert api.pull['state'] == 'closed'
-    assert len(writes) == 2
+    assert api.pull['state'] == 'open'
+    assert len(writes) == 1
     body = api.comments[-1]['body']
     assert 'Commit 0123456 is authored by Pleng' in body
     assert ('carries the Co-Authored-By trailer Alice '
@@ -672,8 +671,8 @@ def test_more_than_250_commits_refuses_without_fetching_commit_list(tmp):
         api, _valid_body(), require_commit_attribution=True)
 
     assert code == 2
-    assert api.pull['state'] == 'closed'
-    assert len(writes) == 2
+    assert api.pull['state'] == 'open'
+    assert len(writes) == 1
     assert ('This pull request carries 251 commits; the commit-attribution '
             'check can verify at most 250, so it cannot verify this pull '
             'request.') in api.comments[-1]['body']
@@ -681,7 +680,7 @@ def test_more_than_250_commits_refuses_without_fetching_commit_list(tmp):
                    for call in api.calls)
 
 
-def test_issue_72_shape_emits_one_reason_per_commit_and_closes(tmp):
+def test_issue_72_shape_emits_one_reason_per_commit(tmp):
     del tmp
     commits = [
         _commit(sha=f'{index:040x}', author_login='Pleng',
@@ -697,9 +696,9 @@ def test_issue_72_shape_emits_one_reason_per_commit_and_closes(tmp):
     body = api.comments[-1]['body']
     refusal_count = len(re.findall(r'Commit [0-9a-f]{7} is authored by Pleng', body))
     assert code == 2
-    assert api.pull['state'] == 'closed'
+    assert api.pull['state'] == 'open'
     assert refusal_count == 8
-    assert len(writes) == 2
+    assert len(writes) == 1
     assert sum('/collaborators/Pleng/permission' in call[1]
                for call in api.calls) == 1
 
