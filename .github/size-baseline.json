@@ -9,6 +9,6 @@
     "tests/test_pr_body_closing.py": 657,
     "tests/test_pr_gate.py": 743,
     "tests/test_ratchet_push.py": 635,
-    "tests/test_workflows.py": 1550
+    "tests/test_workflows.py": 1539
   }
 }
