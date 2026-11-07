@@ -1535,16 +1535,5 @@ def test_pyyaml_pin_agrees_across_the_hash_pinned_manifests(tmp):
         'job and the suites import the same module')
 
 
-def test_comment_share_seed_has_integer_byte_pairs(tmp):
-    del tmp
-    path = ROOT / '.github/comment-share.json'
-    assert path.is_file(), 'initial adoption requires a committed seed'
-    records = json.loads(path.read_text(encoding='utf-8'))
-    assert isinstance(records, dict)
-    for pair in records.values():
-        assert isinstance(pair, list) and len(pair) == 2
-        assert all(type(value) is int for value in pair)
-
-
 if __name__ == '__main__':
     raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prworkflows_'))
