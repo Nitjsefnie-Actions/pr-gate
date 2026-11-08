@@ -269,7 +269,7 @@ def test_api_errors_and_malformed_json_refuse_without_sleep(tmp):
     _refuses(module, lambda: _wait(module, lambda _argv: 'not JSON'), 'cannot read')
 
 
-def _verify_api(sha):
+def _verify_api(sha, contexts=('gitleaks',)):
     api = _gate_api([{'workflow_runs': [_run(sha=sha)]}],
                     [{'check_runs': [_check(sha=sha)]}])
     api.responses = {key.replace(SHA, sha): value for key, value in api.responses.items()}
@@ -277,7 +277,7 @@ def _verify_api(sha):
         f'repos/{REPO}/branches/main': {'commit': {'sha': sha}},
         f'repos/{REPO}/tags': [[{'name': 'v2.10.0'}]],
         f'repos/{REPO}/rulesets': [[_rules()]],
-        f'repos/{REPO}/rulesets/7': _rules(('gitleaks',))})
+        f'repos/{REPO}/rulesets/7': _rules(contexts)})
     return api
 
 
@@ -302,6 +302,33 @@ def test_verify_refuses_a_checkout_that_main_has_overtaken_before_waiting(tmp):
     api = API({f'repos/{REPO}/branches/main': {'commit': {'sha': 'f' * 40}}})
     _refuses(module, lambda: module.verify(api, REPO, '2.10.1'), 'main moved')
     assert len(api.calls) == 1
+
+
+def _clocked_verify(module, contexts):
+    printed, clock = io.StringIO(), Clock()
+    with patch.object(module.time, 'monotonic', clock.now), \
+            patch.object(module.time, 'sleep', clock.sleep), \
+            contextlib.redirect_stdout(printed):
+        module.verify(_verify_api(_head(), contexts), REPO, '2.10.1')
+    return printed.getvalue()
+
+
+def test_verify_skips_only_the_pull_request_gate_and_names_it(tmp):
+    del tmp
+    module = _load()
+    assert module.PULL_REQUEST_ONLY == {'gate'}
+    printed = _clocked_verify(module, ('gitleaks', 'gate'))
+    assert 'skipping pull-request-only required context: gate' in printed
+    assert 'skipping' not in _clocked_verify(module, ('gitleaks',))
+
+
+def test_verify_still_refuses_a_missing_push_context_beside_the_gate(tmp):
+    del tmp
+    module = _load()
+    suites = 'suites (ubuntu-latest, 3.14)'
+    _refuses(module, partial(_clocked_verify, module, ('gitleaks', 'gate', suites)),
+             f"registration grace: ['{suites}']")
+    _refuses(module, partial(_clocked_verify, module, ('gate',)), 'no push-checked contexts')
 
 
 class Writer:
