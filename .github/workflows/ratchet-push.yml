@@ -60,7 +60,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.15.1'
+          python-version: '3.15'
       - name: Push the ratchet commit to main
         if: steps.list.outputs.ratchet == 'true'
         env:
