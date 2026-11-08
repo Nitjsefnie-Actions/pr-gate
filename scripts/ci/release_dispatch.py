@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Refuse releases outside the next semver successors or without successful
-required push checks on a pinned main SHA. Read required contexts at runtime.
+required push checks on a pinned main SHA. Read required contexts at runtime;
+only the reviewed pull-request-only set below is skipped, and named when it is.
 
 GitHub evidence is a snapshot: this cannot lock main, rulesets or other tag
 writers. Publishing can leave an annotated object or tag if a later API write
@@ -13,6 +14,10 @@ import re
 import subprocess
 import sys
 import time
+
+
+# Required contexts no push run produces; they passed on the pull request before its merge.
+PULL_REQUEST_ONLY = frozenset({'gate'})
 
 
 class ReleaseError(Exception):
@@ -134,7 +139,12 @@ def verify(read, repository, version):
         raise ReleaseError(f'refusing release {version}: main moved to {sha}, checkout is {head}; '
                            're-dispatch on main')
     validate_version(read, repository, version)
-    wait(read, repository, sha, required_contexts(read, repository))
+    required = required_contexts(read, repository)
+    for name in sorted(required & PULL_REQUEST_ONLY):
+        print(f'skipping pull-request-only required context: {name}', flush=True)
+    if not required - PULL_REQUEST_ONLY:
+        raise ReleaseError('require-ci-aggregate has no push-checked contexts')
+    wait(read, repository, sha, required - PULL_REQUEST_ONLY)
     return sha
 
 
