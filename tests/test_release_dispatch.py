@@ -325,9 +325,9 @@ def test_verify_skips_only_the_pull_request_gate_and_names_it(tmp):
 def test_verify_still_refuses_a_missing_push_context_beside_the_gate(tmp):
     del tmp
     module = _load()
-    suites = 'suites (ubuntu-latest, 3.14)'
-    _refuses(module, partial(_clocked_verify, module, ('gitleaks', 'gate', suites)),
-             f"registration grace: ['{suites}']")
+    suites, near_miss = 'suites (ubuntu-latest, 3.14)', 'gate (extra)'
+    _refuses(module, partial(_clocked_verify, module, ('gitleaks', 'gate', suites, near_miss)),
+             f"registration grace: ['{near_miss}', '{suites}']")
     _refuses(module, partial(_clocked_verify, module, ('gate',)), 'no push-checked contexts')
 
 
