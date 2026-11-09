@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import _util
@@ -306,8 +307,8 @@ def test_verify_refuses_a_checkout_that_main_has_overtaken_before_waiting(tmp):
 
 def _clocked_verify(module, contexts):
     printed, clock = io.StringIO(), Clock()
-    with patch.object(module.time, 'monotonic', clock.now), \
-            patch.object(module.time, 'sleep', clock.sleep), \
+    # Only the module's binding: a global patch would also drive subprocess's own wait loop.
+    with patch.object(module, 'time', SimpleNamespace(monotonic=clock.now, sleep=clock.sleep)), \
             contextlib.redirect_stdout(printed):
         module.verify(_verify_api(_head(), contexts), REPO, '2.10.1')
     return printed.getvalue()
