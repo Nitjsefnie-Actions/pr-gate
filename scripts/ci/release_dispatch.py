@@ -16,7 +16,7 @@ import sys
 import time
 
 
-# Required contexts no push run produces; they passed on the pull request before its merge.
+# Required contexts no push run produces; the ruleset requires them on the pull request.
 PULL_REQUEST_ONLY = frozenset({'gate'})
 
 
