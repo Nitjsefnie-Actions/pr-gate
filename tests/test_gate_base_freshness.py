@@ -17,6 +17,10 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
+# The fixture's actionlint.yml as a commit on main changes it: a gate file the head lacks.
+MOVED_GATE = ('name: actionlint\non: push\njobs:\n  actionlint:\n    runs-on: changed\n'
+              '    steps:\n      - run: ./actionlint -color .github/workflows/*.yml\n')
+
 
 def _load():
     path = ROOT / 'scripts/ci/gate_base_freshness.py'
@@ -94,6 +98,15 @@ def _advance_main(tmp, origin, subject, files):
     _git(other, 'push', 'origin', 'main')
 
 
+def _freshness(*arguments, event='pull_request', script=None, cwd=None):
+    """Run the script with the event pinned: this suite's own push run would
+    otherwise reach every stale state below as a push, and pass it."""
+    script = script or ROOT / 'scripts/ci/gate_base_freshness.py'
+    return subprocess.run(
+        [sys.executable, str(script), *arguments], cwd=cwd, check=False,
+        capture_output=True, text=True, env={**os.environ, 'GITHUB_EVENT_NAME': event})
+
+
 def test_required_jobs_name_the_two_required_contexts(tmp):
     del tmp
     module = _load()
@@ -110,10 +123,8 @@ def test_required_jobs_name_the_two_required_contexts(tmp):
 # pin to change in the same commit, so the set can neither shrink nor grow in silence.
 def test_gate_paths_on_this_repository(tmp):
     del tmp
-    done = subprocess.run(
-        [sys.executable, str(ROOT / 'scripts/ci/gate_base_freshness.py'),
-         '--print-paths'], cwd=str(ROOT), check=True, capture_output=True,
-        text=True)
+    done = _freshness('--print-paths', cwd=str(ROOT))
+    assert done.returncode == 0, done.stderr
     assert done.stdout.splitlines() == sorted([
         '.github/ci-thresholds.json',
         '.github/workflows/actionlint.yml',
@@ -155,9 +166,7 @@ def test_gate_paths_on_this_repository(tmp):
 
 def test_green_when_the_head_carries_every_gate_commit(tmp):
     repo, _ = _fixture(tmp)
-    done = subprocess.run(
-        [sys.executable, str(ROOT / 'scripts/ci/gate_base_freshness.py'),
-         '--root', str(repo)], check=False, capture_output=True, text=True)
+    done = _freshness('--root', str(repo))
     assert done.returncode == 0, (done.stdout, done.stderr)
     assert 'carries every commit on main' in done.stdout
     assert 'BY NAME' in done.stdout
@@ -166,23 +175,31 @@ def test_green_when_the_head_carries_every_gate_commit(tmp):
 def test_red_when_main_advances_a_gate_file(tmp):
     repo, origin = _fixture(tmp)
     _advance_main(tmp, origin, 'ci: move the gate the head already read', {
-        '.github/workflows/actionlint.yml':
-            'name: actionlint\n'
-            'on: push\n'
-            'jobs:\n'
-            '  actionlint:\n'
-            '    runs-on: changed\n'
-            '    steps:\n'
-            '      - run: ./actionlint -color .github/workflows/*.yml\n',
-    })
-    done = subprocess.run(
-        [sys.executable, str(ROOT / 'scripts/ci/gate_base_freshness.py'),
-         '--root', str(repo)], check=False, capture_output=True, text=True)
+        '.github/workflows/actionlint.yml': MOVED_GATE})
+    done = _freshness('--root', str(repo))
     assert done.returncode == 1, (done.stdout, done.stderr)
     assert 'main holds 1 commit this head does not' in done.stdout
     assert 'ci: move the gate the head already read' in done.stdout
     assert '.github/workflows/actionlint.yml' in done.stdout
     assert 'Rebase onto main' in done.stdout
+
+
+# A push run's head was main's tip when pushed, so once main moves past it no rebase answers a red.
+# Only that state passes: the same head dispatched, and a pushed head main lacks, stay red.
+def test_a_push_passes_only_a_head_main_already_holds(tmp):
+    repo, origin = _fixture(tmp)
+    done = _freshness('--root', str(repo), event='push')
+    assert done.returncode == 0 and 'carries every commit' in done.stdout, done.stdout
+    _advance_main(tmp, origin, 'ci: main moves past the pushed head', {
+        '.github/workflows/actionlint.yml': MOVED_GATE})
+    done = _freshness('--root', str(repo), event='push')
+    assert done.returncode == 0, (done.stdout, done.stderr)
+    assert 'This pushed head is already on main, which has moved past it.' in done.stdout
+    done = _freshness('--root', str(repo), event='workflow_dispatch')
+    assert done.returncode == 1 and 'Rebase onto main' in done.stdout, done.stdout
+    _commit(repo, 'work main does not hold', {'BRANCH.md': 'branch work\n'})
+    done = _freshness('--root', str(repo), event='push')
+    assert done.returncode == 1 and 'Rebase onto main' in done.stdout, done.stdout
 
 
 # The workflow step runs the script from the checkout root with no --root,
@@ -195,23 +212,13 @@ def test_red_when_main_advances_a_gate_file(tmp):
 def test_runs_without_root_at_scripts_ci_depth_reds_a_stale_head(tmp):
     repo, origin = _fixture(tmp)
     _advance_main(tmp, origin, 'ci: main moves a gate file the head has not read', {
-        '.github/workflows/actionlint.yml':
-            'name: actionlint\n'
-            'on: push\n'
-            'jobs:\n'
-            '  actionlint:\n'
-            '    runs-on: changed\n'
-            '    steps:\n'
-            '      - run: ./actionlint -color .github/workflows/*.yml\n',
-    })
+        '.github/workflows/actionlint.yml': MOVED_GATE})
     script = repo / 'scripts/ci/gate_base_freshness.py'
     script.parent.mkdir(parents=True)
     script.write_text(
         (ROOT / 'scripts/ci/gate_base_freshness.py').read_text(encoding='utf-8'),
         encoding='utf-8', newline='\n')
-    done = subprocess.run(
-        [sys.executable, str(script)], cwd=str(repo), check=False,
-        capture_output=True, text=True)
+    done = _freshness(script=script, cwd=str(repo))
     assert done.returncode == 1, (done.stdout, done.stderr)
     assert 'main holds 1 commit this head does not' in done.stdout
     assert 'ci: main moves a gate file the head has not read' in done.stdout
@@ -224,9 +231,7 @@ def test_green_when_main_advances_a_non_gate_file(tmp):
     _advance_main(tmp, origin, 'fix: a file no required check reads by name', {
         '.pylintrc': '[MESSAGES CONTROL]\ndisable=\n',
     })
-    done = subprocess.run(
-        [sys.executable, str(ROOT / 'scripts/ci/gate_base_freshness.py'),
-         '--root', str(repo)], check=False, capture_output=True, text=True)
+    done = _freshness('--root', str(repo))
     assert done.returncode == 0, (done.stdout, done.stderr)
     assert 'carries every commit on main' in done.stdout
 
@@ -259,9 +264,7 @@ def test_red_names_a_merge_commit(tmp):
     _git(side, 'push', 'origin', 'main')
     _git(adv, 'pull', '--no-rebase', 'origin', 'main')
     _git(adv, 'push', 'origin', 'main')
-    done = subprocess.run(
-        [sys.executable, str(ROOT / 'scripts/ci/gate_base_freshness.py'),
-         '--root', str(behind)], check=False, capture_output=True, text=True)
+    done = _freshness('--root', str(behind))
     assert done.returncode == 1, (done.stdout, done.stderr)
     assert '(a merge commit, which git names no file for' in done.stdout
     assert 'ci: the side parent' in done.stdout
@@ -364,11 +367,7 @@ def test_whole_tree_spelling_adds_no_paths(tmp):
 def test_a_shallow_clone_is_unshallowed_before_comparing(tmp):
     _, origin = _fixture(tmp)
     _advance_main(tmp, origin, 'ci: main moved while the head was shallow', {
-        '.github/workflows/actionlint.yml':
-            'name: actionlint\non: push\njobs:\n  actionlint:\n'
-            '    runs-on: changed\n    steps:\n'
-            '      - run: ./actionlint -color .github/workflows/*.yml\n',
-    })
+        '.github/workflows/actionlint.yml': MOVED_GATE})
     behind = Path(tmp) / 'behind'
     # --depth is ignored for plain-path clones, so the fixture clones over
     # file:// and stays a separate repository from this one throughout.
@@ -383,15 +382,10 @@ def test_a_shallow_clone_is_unshallowed_before_comparing(tmp):
 
 def test_exit_codes_and_argv(tmp):
     repo, _ = _fixture(tmp)
-    script = ROOT / 'scripts/ci/gate_base_freshness.py'
-    unknown = subprocess.run(
-        [sys.executable, str(script), '--root', str(repo), '--nonsense'],
-        check=False, capture_output=True, text=True)
+    unknown = _freshness('--root', str(repo), '--nonsense')
     assert unknown.returncode == 2
     assert 'usage' in unknown.stderr
-    missing_value = subprocess.run(
-        [sys.executable, str(script), '--root'], check=False,
-        capture_output=True, text=True)
+    missing_value = _freshness('--root')
     assert missing_value.returncode == 2
     assert 'usage' in missing_value.stderr
 
@@ -401,7 +395,7 @@ def test_the_green_line_names_its_reach_limit(tmp):
     module = _load()
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
-        code = module.check(repo)
+        code = module.check(repo, 'pull_request')
     assert code == 0
     out = buffer.getvalue()
     assert 'reading every tracked file' in out, out
@@ -529,7 +523,7 @@ def test_check_reports_stale_commits_in_process(tmp):
     module = _load()
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
-        code = module.check(repo)
+        code = module.check(repo, 'pull_request')
     assert code == 1
     out = buffer.getvalue()
     assert 'main holds 1 commit this head does not:' in out
@@ -657,7 +651,7 @@ def test_check_reports_a_merge_commit_in_process(tmp):
     module = _load()
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
-        code = module.check(behind)
+        code = module.check(behind, 'pull_request')
     assert code == 1
     assert ('(a merge commit, which git names no file for' in buffer.getvalue())
 

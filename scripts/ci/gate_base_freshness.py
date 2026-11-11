@@ -54,6 +54,7 @@ is better than a silent misreading.
 pins the derivation.
 """
 
+import os
 import re
 import subprocess
 import sys
@@ -512,7 +513,7 @@ def stale_commits(root, head, base, paths):
     return stale
 
 
-def check(root):
+def check(root, event):
     head = git(root, "rev-parse", "--verify", "HEAD^{commit}",
                what="resolve the checked-out head").strip()
     fetch_base(root)
@@ -520,14 +521,15 @@ def check(root):
                what=f"resolve origin/{BASE_BRANCH}").strip()
     paths = gate_paths(root)
     stale = stale_commits(root, head, base, paths)
+    # A push run's head was main's tip when pushed; once main moves past a head
+    # it holds, no rebase can answer a refusal. Every other event is compared.
+    if stale and event == "push" and git(
+            root, "merge-base", head, base, what="find the merge base").strip() == head:
+        print(f"This pushed head is already on {BASE_BRANCH}, which has moved past it.")
+        return 0
     if not stale:
-        # "reads", not "reads" with no limit attached. The merge-marker step
-        # reads EVERY tracked file through the `.` spelling, and this derivation
-        # resolves that to nothing, so the count below is the files a required
-        # check names — not every file one touches. A green line is the one
-        # sentence a maintainer reads on this check, and a sentence that
-        # over-claims here is the same defect as an over-claiming report: it
-        # looks like the set is complete.
+        # "BY NAME": the `.` spelling's whole-tree read is a named reach limit
+        # (module docstring), and a green line claiming the whole set over-claims.
         print(f"This head carries every commit on {BASE_BRANCH} that touches "
               f"the {len(paths)} file(s) a required check reads BY NAME.")
         print("  A step reading every tracked file — the `.` spelling, which the "
@@ -570,11 +572,7 @@ def main(argv):
         argument = rest.pop(0)
         if argument == "--print-paths":
             print_paths = True
-        elif argument == "--root":
-            if not rest:
-                print("usage: gate_base_freshness.py [--root DIR] [--print-paths]",
-                      file=sys.stderr)
-                return 2
+        elif argument == "--root" and rest:
             root = Path(rest.pop(0))
         else:
             print("usage: gate_base_freshness.py [--root DIR] [--print-paths]",
@@ -585,7 +583,7 @@ def main(argv):
             for path in gate_paths(root):
                 print(path)
             return 0
-        return check(root)
+        return check(root, os.environ.get("GITHUB_EVENT_NAME", ""))
     except GateError as refusal:
         print(f"head freshness: {refusal}", file=sys.stderr)
         return 1
