@@ -98,13 +98,14 @@ def _advance_main(tmp, origin, subject, files):
     _git(other, 'push', 'origin', 'main')
 
 
-def _freshness(*arguments, event='pull_request', script=None, cwd=None):
-    """Run the script with the event pinned: this suite's own push run would
-    otherwise reach every stale state below as a push, and pass it."""
+def _freshness(*arguments, event: str | None = 'pull_request', script=None, cwd=None):
+    """Run the script with the event pinned (None: unset, as a local run): this
+    suite's own push run would otherwise reach every stale state as a push."""
     script = script or ROOT / 'scripts/ci/gate_base_freshness.py'
-    return subprocess.run(
-        [sys.executable, str(script), *arguments], cwd=cwd, check=False,
-        capture_output=True, text=True, env={**os.environ, 'GITHUB_EVENT_NAME': event})
+    env = {k: v for k, v in os.environ.items() if k != 'GITHUB_EVENT_NAME'}
+    env.update({} if event is None else {'GITHUB_EVENT_NAME': event})
+    return subprocess.run([sys.executable, str(script), *arguments], cwd=cwd, check=False,
+                          capture_output=True, text=True, env=env)
 
 
 def test_required_jobs_name_the_two_required_contexts(tmp):
@@ -185,7 +186,8 @@ def test_red_when_main_advances_a_gate_file(tmp):
 
 
 # A push run's head was main's tip when pushed, so once main moves past it no rebase answers a red.
-# Only that state passes: the same head dispatched, and a pushed head main lacks, stay red.
+# Only that state passes: the same head dispatched or run locally, and a pushed head main
+# lacks, stay red.
 def test_a_push_passes_only_a_head_main_already_holds(tmp):
     repo, origin = _fixture(tmp)
     done = _freshness('--root', str(repo), event='push')
@@ -195,8 +197,9 @@ def test_a_push_passes_only_a_head_main_already_holds(tmp):
     done = _freshness('--root', str(repo), event='push')
     assert done.returncode == 0, (done.stdout, done.stderr)
     assert 'This pushed head is already on main, which has moved past it.' in done.stdout
-    done = _freshness('--root', str(repo), event='workflow_dispatch')
-    assert done.returncode == 1 and 'Rebase onto main' in done.stdout, done.stdout
+    for event in ('workflow_dispatch', None):
+        done = _freshness('--root', str(repo), event=event)
+        assert done.returncode == 1 and 'Rebase onto main' in done.stdout, (event, done.stdout)
     _commit(repo, 'work main does not hold', {'BRANCH.md': 'branch work\n'})
     done = _freshness('--root', str(repo), event='push')
     assert done.returncode == 1 and 'Rebase onto main' in done.stdout, done.stdout

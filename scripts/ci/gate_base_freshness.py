@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Require the head being checked out to carry every commit main holds that
-touches a file the REQUIRED status checks read as a parameter.
+touches a file the REQUIRED status checks read as a parameter. A `push` run
+passes a head main already holds: main moved past it, and no rebase answers.
 
 The merge ruleset sets strict_required_status_checks_policy to false, so a
 pull request merges on a green head whose checks ran against a main that had
@@ -521,8 +522,7 @@ def check(root, event):
                what=f"resolve origin/{BASE_BRANCH}").strip()
     paths = gate_paths(root)
     stale = stale_commits(root, head, base, paths)
-    # A push run's head was main's tip when pushed; once main moves past a head
-    # it holds, no rebase can answer a refusal. Every other event is compared.
+    # The push exemption the module docstring names; every other event is compared.
     if stale and event == "push" and git(
             root, "merge-base", head, base, what="find the merge base").strip() == head:
         print(f"This pushed head is already on {BASE_BRANCH}, which has moved past it.")
