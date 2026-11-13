@@ -1,4 +1,7 @@
 {
+  "trees": {
+    "tests/": 10913
+  },
   "schema_version": 1,
   "baseline": {
     "scripts/ci/gate_base_freshness.py": 600,
