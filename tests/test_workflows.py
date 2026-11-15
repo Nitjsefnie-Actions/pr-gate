@@ -797,26 +797,16 @@ def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_action
         events = _workflow(name)['on']
         assert set(events) == {'push', 'pull_request', 'workflow_dispatch'}, name
         assert not (events['pull_request'] or {}), f'{name}: filtered PR trigger'
-        if name == 'tests.yml':
-            # Unfiltered, like claim, comment-ratchet and size-ratchet: a
-            # ratchet-only commit re-measures the same values, so the
-            # coverage ratchet stages nothing and ratchet-push commits
-            # nothing — no loop (issue 131).
-            assert events['push'] == {'branches': ['main']}, name
-            assert _workflow(name)['concurrency'] == {
-                'group': "tests-${{ github.event_name == 'push' && github.sha || github.ref }}",
-                'cancel-in-progress': 'true'}, name
-        else:
-            assert events['push'] == {
-                'branches': ['main'],
-                'paths-ignore': ['README.md', 'CONTRIBUTING.md',
-                                 'CODE_OF_CONDUCT.md', 'LICENSE']
-                + (['.github/ci-thresholds.json', 'pyright-baseline.json',
-                    '.github/comment-share.json']
-                   if name == 'types.yml' else [])}, name
-    # actionlint is unfiltered like tests.yml: a documentation-only push to
-    # main skips the path-filtered workflows, so the merge-marker check it
-    # hosts must not be path-gated — the gap issue 41 closes.
+        # Unfiltered, like claim, comment-ratchet and size-ratchet: a
+        # ratchet-only commit re-measures the same values, so neither ratchet
+        # stages anything and ratchet-push commits nothing — no loop (issue
+        # 131); and every required context runs on every main push tip.
+        assert events['push'] == {'branches': ['main']}, name
+    assert _workflow('tests.yml')['concurrency'] == {
+        'group': "tests-${{ github.event_name == 'push' && github.sha || github.ref }}",
+        'cancel-in-progress': 'true'}
+    # actionlint is unfiltered too, so the merge-marker check it hosts is
+    # never path-gated — the gap issue 41 closes.
     events = _workflow('actionlint.yml')['on']
     assert set(events) == {'push', 'pull_request', 'workflow_dispatch'}
     assert not (events['pull_request'] or {}), 'filtered PR trigger'
