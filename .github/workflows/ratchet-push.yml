@@ -11,8 +11,7 @@ on:
     # Both carriers remeasure on the next eligible main push; if one
     # carrier's ratchet commit makes its sibling's measurement stale, that
     # sibling can stage its improvement again there. A record-only push
-    # never loops: remeasuring stages nothing; the type carrier
-    # path-filters it.
+    # never loops: remeasuring stages nothing.
     workflows: [tests, types]
     types: [completed]
 

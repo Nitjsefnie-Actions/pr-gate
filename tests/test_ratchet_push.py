@@ -473,20 +473,6 @@ def test_artifact_listing_uses_exact_names_and_propagates_api_failure(tmp):
             assert (run / 'outputs').read_text().strip() == f'ratchet={expected}'
 
 
-def test_the_type_carrier_ignores_the_three_records_on_push_only(tmp):
-    del tmp
-    events = _workflow('types.yml')['on']
-    assert events['push']['branches'] == ['main']
-    assert events['push']['paths-ignore'] == [
-        'README.md', 'CONTRIBUTING.md', 'CODE_OF_CONDUCT.md', 'LICENSE',
-        '.github/ci-thresholds.json', 'pyright-baseline.json',
-        '.github/comment-share.json']
-    assert events['pull_request'] == ''
-    # The coverage carrier runs unfiltered: a record-only push re-measures
-    # the same values and stages nothing; its silence is the ratchet's (131).
-    assert 'paths-ignore' not in _workflow('tests.yml')['on']['push']
-
-
 def test_type_staging_runs_after_gate_on_push_and_uses_shared_artifact(tmp):
     del tmp
     job = _workflow('types.yml')['jobs']['types']
