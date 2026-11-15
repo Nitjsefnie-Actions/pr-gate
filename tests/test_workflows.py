@@ -805,8 +805,7 @@ def test_required_checks_run_unfiltered_on_every_pull_request_and_main_push(tmp)
     assert _workflow('tests.yml')['concurrency'] == {
         'group': "tests-${{ github.event_name == 'push' && github.sha || github.ref }}",
         'cancel-in-progress': 'true'}
-    # Only the two unrequired workflows path-filter a push, so every required
-    # push context runs on every main tip a release dispatch can verify.
+    # Only the two unrequired workflows may path-filter a push trigger.
     filtered = {path.name for path in (ROOT / '.github/workflows').glob('*.yml')
                 if {'paths', 'paths-ignore'} & set(_workflow(path.name)['on'].get('push') or {})}
     assert filtered == {'audit.yml', 'codeql.yml'}, filtered
