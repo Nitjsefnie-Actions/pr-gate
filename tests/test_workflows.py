@@ -791,7 +791,7 @@ def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
         'README gate condition must equal the shipped workflow gate condition')
 
 
-def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_actionlint(tmp):
+def test_required_checks_run_unfiltered_on_every_pull_request_and_main_push(tmp):
     del tmp
     for name in ('tests.yml', 'lint.yml', 'types.yml'):
         events = _workflow(name)['on']
@@ -805,6 +805,11 @@ def test_required_pr_checks_are_unfiltered_and_docs_only_pushes_still_run_action
     assert _workflow('tests.yml')['concurrency'] == {
         'group': "tests-${{ github.event_name == 'push' && github.sha || github.ref }}",
         'cancel-in-progress': 'true'}
+    # Only the two unrequired workflows path-filter a push, so every required
+    # push context runs on every main tip a release dispatch can verify.
+    filtered = {path.name for path in (ROOT / '.github/workflows').glob('*.yml')
+                if {'paths', 'paths-ignore'} & set(_workflow(path.name)['on'].get('push') or {})}
+    assert filtered == {'audit.yml', 'codeql.yml'}, filtered
     # actionlint is unfiltered too, so the merge-marker check it hosts is
     # never path-gated — the gap issue 41 closes.
     events = _workflow('actionlint.yml')['on']
