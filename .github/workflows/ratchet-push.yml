@@ -8,7 +8,7 @@ on:
     # installs no packages, and pushes with SSH rather than the job token.
     # It installs the record files that run staged, at their staged
     # repo-relative paths; base.txt is measurement metadata only.
-    # Both carriers remeasure on the next eligible main push; if one
+    # Both carriers remeasure on the next main push; if one
     # carrier's ratchet commit makes its sibling's measurement stale, that
     # sibling can stage its improvement again there. A record-only push
     # never loops: remeasuring stages nothing.
