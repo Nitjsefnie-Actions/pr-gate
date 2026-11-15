@@ -21,7 +21,7 @@ name: pr gate
 # comment would silently do nothing. The pinned action reads the template at
 # the PR's base SHA and runs no pull-request code. synchronize re-runs the
 # gate on every push, so its check attaches to each new head.
-on:
+on: # zizmor: ignore[dangerous-triggers]
   pull_request_target:
     types: [opened, edited, reopened, synchronize, ready_for_review]
 permissions:
