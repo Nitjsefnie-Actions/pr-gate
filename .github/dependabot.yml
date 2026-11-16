@@ -26,11 +26,10 @@ updates:
           - "*"
       # A group without `applies-to` covers version updates only. Security
       # updates are enabled on this repository (verified via
-      # `gh api repos/Nitjsefnie-Actions/pr-gate/automated-security-fixes`
-      # on 2026-10-03), so without this group a security bump would arrive
-      # outside the version group — one pull request per `uses:` line,
-      # leaving `init` and `analyze` on different revisions inside
-      # .github/workflows/codeql.yml.
+      # `gh api repos/Nitjsefnie-Actions/pr-gate/automated-security-fixes`),
+      # so without this group a security bump would arrive outside the
+      # version group — one pull request per `uses:` line, leaving `init` and
+      # `analyze` on different revisions inside .github/workflows/codeql.yml.
       github-actions-security:
         applies-to: security-updates
         patterns:

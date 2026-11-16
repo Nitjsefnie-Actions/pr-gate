@@ -4,9 +4,9 @@
 CONTRIBUTING.md's scope rule allows a workflow's `name:` as a scope only with
 type `ci`, and states the distinction: `ci(claim)` changes the workflow, while
 `fix(claim)` would claim to fix the script — and this repository has no script
-with a workflow's name, so the rule reaches every workflow-name scope. Nothing
-checked it, and prose that no gate reads is a convention, not a rule, so this
-check reads the same rule the prose states.
+with a workflow's name, so the rule reaches every workflow-name scope. Prose
+that no gate reads is a convention, not a rule, so this check reads the same
+rule the prose states.
 
 The workflow-name set is DERIVED at HEAD from the tracked files under
 .github/workflows, not kept in a list here. A remembered list is only as

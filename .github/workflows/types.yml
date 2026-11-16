@@ -1,8 +1,7 @@
 name: types
 
-# The static type checker over the tree's Python. The tree's only static
-# check until now was `ruff check --select E9,F63,F7,F82`; nothing
-# answered "what types does this code actually have". This code parses
+# The static type checker over the tree's Python. No other check in the
+# tree answers "what types does this code actually have". This code parses
 # untrusted pull-request bodies and writes to pull requests with a write
 # token, so a typing defect is an admission-gate defect.
 #

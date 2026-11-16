@@ -110,11 +110,11 @@ comment and fails the gate's own check; the PR stays open. Require the gate's
 job check in a ruleset to hold the merge until every check passes. Every edit
 of or push to a non-draft PR by a human author re-runs the gate, and once all
 conditions pass it rewrites its comment to say so and its check passes. A
-closed or merged PR is left alone, including one an earlier release closed: its
-author reopens it, or opens a fresh PR from the same branch when GitHub refuses
-that reopen. The gate re-reads the PR before each comment write and aborts when
-it was closed or merged meanwhile. Assignment changes alone do not trigger the
-workflow: edit or push to the PR to request another check.
+closed or merged PR is left alone: its author reopens it, or opens a fresh PR
+from the same branch when GitHub refuses that reopen. The gate re-reads the PR
+before each comment write and aborts when it was closed or merged meanwhile.
+Assignment changes alone do not trigger the workflow: edit or push to the PR to
+request another check.
 
 Commit attribution is an opt-in admission rule. When enabled, the gate checks
 every commit when the PR carries at most 250; a PR with more commits is refused

@@ -5,10 +5,10 @@ passes a head main already holds: main moved past it, and no rebase answers.
 
 The merge ruleset sets strict_required_status_checks_policy to false, so a
 pull request merges on a green head whose checks ran against a main that had
-not yet moved. Nothing compared the two, so a commit that lands on main
-changing a file a required check reads is never applied to the pull request
-before it merges, and the merge publishes a tree whose green run proved
-nothing about it.
+not yet moved. Without this check, a commit that lands on main changing a
+file a required check reads is never applied to the pull request before it
+merges, and the merge publishes a tree whose green run proved nothing about
+it.
 
 The set of such files is DERIVED from the workflows under .github/workflows,
 not kept in a list here. A remembered list is only as current as the last time
@@ -363,8 +363,7 @@ def resolve(candidate, files):
     Resolution against the tree IS the filter: a token that names nothing here
     is not a path this check needs to watch, and a token that names a file or a
     directory is one. There is no shape rule on top of that, because a shape
-    rule is a second remembered list — it is what left `tests/identity.response`
-    out of a hand-written enumeration in the first place.
+    rule is a second remembered list that drifts from the tree.
 
     There is no glob arm, and its absence is deliberate: `candidates()` cannot
     produce a glob metacharacter, so an arm reading one would be a branch that

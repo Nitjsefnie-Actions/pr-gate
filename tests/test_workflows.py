@@ -179,7 +179,7 @@ def test_coverage_gate_reads_floor_from_committed_thresholds(tmp):
             'no coverage step may restate the floor as a literal number')
 
 
-# --- issue 53: patch coverage reporting --------------------------------------
+# --- patch coverage reporting ------------------------------------------------
 
 def test_tests_yml_writes_and_uploads_the_coverage_xml_for_pull_requests(tmp):
     del tmp
@@ -799,8 +799,8 @@ def test_required_checks_run_unfiltered_on_every_pull_request_and_main_push(tmp)
         assert not (events['pull_request'] or {}), f'{name}: filtered PR trigger'
         # Unfiltered, like claim, comment-ratchet and size-ratchet: a
         # ratchet-only commit re-measures the same values, so neither ratchet
-        # stages anything and ratchet-push commits nothing — no loop (issue
-        # 131); and every required context runs on every main push tip.
+        # stages anything and ratchet-push commits nothing — no loop; and
+        # every required context runs on every main push tip.
         assert events['push'] == {'branches': ['main']}, name
     assert _workflow('tests.yml')['concurrency'] == {
         'group': "tests-${{ github.event_name == 'push' && github.sha || github.ref }}",
@@ -810,7 +810,7 @@ def test_required_checks_run_unfiltered_on_every_pull_request_and_main_push(tmp)
                 if {'paths', 'paths-ignore'} & set(_workflow(path.name)['on'].get('push') or {})}
     assert filtered == {'audit.yml', 'codeql.yml'}, filtered
     # actionlint is unfiltered too, so the merge-marker check it hosts is
-    # never path-gated — the gap issue 41 closes.
+    # never path-gated.
     events = _workflow('actionlint.yml')['on']
     assert set(events) == {'push', 'pull_request', 'workflow_dispatch'}
     assert not (events['pull_request'] or {}), 'filtered PR trigger'
