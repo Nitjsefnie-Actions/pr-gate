@@ -140,12 +140,12 @@ def _gap_answers(gaps):
     return answers
 
 
-# Fifth round: a word character in a DIFFERENT inline node must not hide
-# the keyword, since GitHub never sees the two adjacent. Each row is
-# paired with its mirror from the second round, where the keyword itself
-# is on the far side of the boundary and stays inert. The elements are
-# ones GitHub's rendering keeps, and the last two are outside every
-# emphasis-shaped tag list, so a deny list cannot pass this table.
+# A word character in a DIFFERENT inline node must not hide the keyword,
+# since GitHub never sees the two adjacent. NODE_BOUNDARY_INERT mirrors the
+# first three rows, with the keyword itself on the far side of the boundary,
+# where it stays inert. The elements are ones GitHub's rendering keeps, and
+# the last two are outside every emphasis-shaped tag list, so a deny list
+# cannot pass this table.
 NODE_BOUNDARY_CLOSING = (
     '<em>a</em>fixes ',
     '<strong>a</strong>fixes ',
@@ -363,7 +363,7 @@ def test_captured_renderings_pin_the_closing_answer(tmp):
         found = PR_BODY.closing_issues(body)
         if found != expected:
             failures.append((name, found, expected))
-    # Issue 585's leg for this fixture; its footnote holds no issue anchor.
+    # This fixture's footnote holds no issue anchor.
     body = PR_BODY.parse_rendered(GITHUB_FOOTNOTE_HTML, REPOSITORY)
     found = PR_BODY.closing_issues(body)
     if found != [101]:
@@ -388,12 +388,11 @@ def test_a_footnote_definition_closes_what_a_section_would(tmp):
     assert PR_BODY.closing_issues(section) == [101, 104]
 
 
-# Four spellings were merged live against a scratch repository, one
-# throwaway issue each, and GitHub closed on all four: a footnote
-# definition, a hand-written data-footnotes wrapper, a bare div, and a
-# details element. Issue 554's thread records them. The rows here are
-# those four's consistent extrapolation, not merges of their own.
-# no_dataattr and plain_div are the neighbours nothing ever suppressed,
+# GitHub closes on all four of these spellings, each measured by a live
+# merge: a footnote definition, a hand-written data-footnotes wrapper, a
+# bare div, and a details element. The rows here are those four's
+# consistent extrapolation, not merges of their own.
+# no_dataattr and plain_div are the neighbours nothing suppresses,
 # so they are the controls: their answer is the one the rest must reach.
 FOOTNOTE_CLOSING = (
     ('footnote_definition_closing', [101, 104]),
@@ -588,13 +587,12 @@ def test_structural_placements_close_as_github_measures_them(tmp):
     del tmp
     anchor = _issue_html(101)
     url = _ISSUE_URL
-    # Two rows below drive endpoint captures recorded for issue 627: a
-    # same-repository cross reference renders the anchor text #N, in an
-    # anchor byte-identical to GITHUB_ISSUE_101, and an image, markdown
-    # or raw, always renders inside a wrapper anchor, so a bare
-    # <img> never sits between text and a reference. This suite's
-    # owner/repo stands in for the repository path, and example.com for
-    # the camo host, neither of which changes what the parser decides.
+    # Two rows below drive endpoint captures: a same-repository cross
+    # reference renders the anchor text #N, in an anchor byte-identical to
+    # GITHUB_ISSUE_101, and an image, markdown or raw, always renders inside a
+    # wrapper anchor, so a bare <img> never sits between text and a reference.
+    # This suite's owner/repo stands in for the repository path, and example.com
+    # for the camo host, neither of which changes what the parser decides.
     same_repo = GITHUB_ISSUE_101.replace(
         'Nitjsefnie-Harness-Commons/daedalus', 'owner/repo')
     camo_image = (

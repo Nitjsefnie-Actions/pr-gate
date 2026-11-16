@@ -44,9 +44,9 @@ def test_raise_updates_only_floor_and_measured(tmp):
 
 
 def test_raise_needs_more_than_the_hysteresis_and_keeps_a_gap(tmp):
-    # Issue #95: a measurement within the hysteresis justifies no raise, and
+    # A measurement within the hysteresis justifies no raise, and
     # a raise keeps a fixed 1.5-point gap below the new measured value, so
-    # the record never reads floor == measured again.
+    # the record never reads floor == measured.
     code, output, _ = _invoke(tmp, '95.1')
     assert code == 3 and not output.exists(), 'a 1.5-point tie never raises'
     code, output, _ = _invoke(tmp, '94.2')

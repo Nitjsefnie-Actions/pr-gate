@@ -10,15 +10,11 @@ name: actionlint
 #   actionlint — is this workflow WELL-FORMED? Schema, expression syntax,
 #   context availability (`github.event.review` on a push event),
 #   `runs-on` labels, and shellcheck over every `run:` block, which is where
-#   most real bugs live. It found `for i in $(seq 1 30)` with an unused `i`
-#   in tests.yml on its first run here.
+#   most real bugs live.
 #
 #   zizmor — is this workflow SAFE? Script injection through `${{ }}` in a
 #   `run:` block, over-broad `permissions:`, credential persistence after
-#   checkout, unpinned action references. Its first run flagged 39 findings,
-#   14 of them high: every action was tag-pinned rather than hash-pinned,
-#   every checkout left the job token in .git/config, and no workflow
-#   declared permissions at all.
+#   checkout, unpinned action references.
 #
 # Both tools are pinned. actionlint is verified by checksum rather than
 # trusted from the release page, because a linter that runs before every
@@ -60,8 +56,8 @@ jobs:
       # Fork release, not stock rhysd/actionlint: upstream v1.7.12 plus
       # rhysd/actionlint#654, which adds GitHub's documented `queue` key
       # under `concurrency` (single|max). Stock 1.7.12 false-reds the
-      # `queue: max` that claim.yml needs (issue 19); return to rhysd's
-      # own release once it ships the key.
+      # `queue: max` that claim.yml needs; return to rhysd's own release once
+      # it ships the key.
       ACTIONLINT_VERSION: 1.7.12-queue.1
       ACTIONLINT_REPO: Nitjsefnie-OSC/actionlint
       # sha256 of actionlint_1.7.12-queue.1_linux_amd64.tar.gz, from the
@@ -78,21 +74,17 @@ jobs:
           python-version: "3.15"
 
       - name: Check no tracked file carries a merge-conflict marker
-        # a3363ac landed on main with `<<<<<<< HEAD` and the `>>>>>>> 0d9bffc`
-        # line still in README.md, and three review rounds and every gate in
-        # this repository read straight past them: a conflict marker is text
-        # that looks like prose in a Markdown file, so only a mechanical check
-        # can see it. git grep reads the tracked files out of the working
-        # tree, which on a clean checkout is the repository as shipped, and
-        # -I keeps a binary from being reported as a match. The three markers
-        # are matched in the shapes git writes them: `<<<<<<< ` and `>>>>>>> `
+        # A conflict marker is text that looks like prose in a Markdown file, so
+        # only a mechanical check can see it. git grep reads the tracked files out
+        # of the working tree, which on a clean checkout is the repository as
+        # shipped, and -I keeps a binary from being reported as a match. The three
+        # markers are matched in the shapes git writes them: `<<<<<<< ` and `>>>>>>> `
         # carry the label after seven characters, and the separator is exactly
         # seven `=`; diff3's extra `||||||| base` line changes nothing, because
-        # the other three are still written. This job rather than the suites
-        # one because this workflow's push trigger is deliberately unfiltered
-        # (see the push trigger's own comment), so it runs for the
-        # documentation-only commit that carries the marker as well as for the
-        # code change.
+        # the other three are still written. This job rather than the suites one
+        # because this workflow's push trigger is deliberately unfiltered (see the
+        # push trigger's own comment), so it runs for a documentation-only commit
+        # that carries a marker as well as for a code change.
         run: |
           # git grep exits 1 for "no match" and above 1 for an error it could
           # not run, and a guard that reads its own error as a clean tree is
