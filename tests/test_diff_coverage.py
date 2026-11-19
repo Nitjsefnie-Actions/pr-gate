@@ -490,8 +490,3 @@ def test_the_main_entry_point_writes_stdout_and_maps_the_exit_code(tmp):
     assert done.returncode == 1
     assert done.stdout == ''
     assert done.stderr.startswith('diff_coverage:')
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()),
-                                  tmp_prefix='prdiffcoverage_'))

@@ -9,7 +9,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util  # noqa: E402
 from _prfootnotes import FOOTNOTE_HTML  # noqa: E402
 from _prgate import (  # noqa: E402
     GITHUB_FOOTNOTE_HTML, GITHUB_HTML, GITHUB_ISSUE_101, GITHUB_ISSUE_104,
@@ -644,12 +643,3 @@ def test_structural_placements_close_as_github_measures_them(tmp):
         body = PR_BODY.parse_rendered(
             _valid_html(references=references), 'owner/repo')
         assert PR_BODY.closing_issues(body) == closing, references
-
-
-def main():
-    return _util.runner(
-        _util.collect(globals()), tmp_prefix='prbodyclosing_')
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())

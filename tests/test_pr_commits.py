@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util
 from _prgate import (
     FakeApi, TEMPLATE, _gate_module, _issue, _pull, _recorded_writes,
     _run_script, _script_fixtures, _valid_body,
@@ -188,7 +187,3 @@ def test_the_environment_turns_the_check_off_only_with_false(tmp):
         fetched = any(call['argv'][4] == COMMITS for call in calls)
         assert fetched is not off, value
         assert len(_recorded_writes(calls)) == (0 if off else 1), value
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prcommits_'))

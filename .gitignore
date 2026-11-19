@@ -62,6 +62,8 @@ scripts/ci/*
 !tests/
 tests/*
 !tests/_util.py
+!tests/conftest.py
+!tests/test_conftest.py
 !tests/_prgate.py
 !tests/_prgate_message.py
 !tests/_prgate_race.py

@@ -411,9 +411,3 @@ def test_fetch_base_deepens_a_shallow_clone(tmp):
     module = _load()
     module.fetch_base(shallow)
     assert _git(shallow, 'rev-parse', '--is-shallow-repository').strip() == 'false'
-
-
-if __name__ == '__main__':
-    import _util
-    raise SystemExit(_util.runner(
-        _util.collect(globals()), tmp_prefix='prscopes_'))

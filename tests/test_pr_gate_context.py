@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util
 from _prgate import (
     CLI_FOOTER_BODY, CLI_FOOTER_HTML, FakeApi, ROOT, _gate_module,
     _issue, _pull, _valid_body, _valid_html,
@@ -42,7 +41,3 @@ def test_markdown_context_follows_each_actual_repository(tmp):
         assert _gate_module().run(api, repository, '99', 'alice', template) == 0
         assert api.markdown_contexts == [repository]
         assert api.pull['state'] == 'open' and api.writes == []
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prcontext_'))

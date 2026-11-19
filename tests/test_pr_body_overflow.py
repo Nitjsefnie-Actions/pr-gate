@@ -102,7 +102,3 @@ def test_shipped_instruction_comments_are_rejected(tmp):
     assert PR_BODY.retains_instruction_comment(TEMPLATE, TEMPLATE)
     assert not PR_BODY.retains_instruction_comment(
         '## Summary\nA change.\n<!-- reviewer note -->', TEMPLATE)
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='overflowgate_'))

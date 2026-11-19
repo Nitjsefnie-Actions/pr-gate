@@ -438,7 +438,3 @@ def test_command_seams_capture_output_and_propagate_a_process_failure(tmp):
             assert error.returncode == 7
         else:
             raise AssertionError('a failed gh subprocess must not become an empty response')
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prrelease_'))

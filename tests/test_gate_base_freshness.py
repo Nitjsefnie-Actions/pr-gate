@@ -676,9 +676,3 @@ def test_main_handlers(tmp):
         assert code == 1
     finally:
         os.environ['PATH'] = saved_path
-
-
-if __name__ == '__main__':
-    import _util
-    raise SystemExit(_util.runner(
-        _util.collect(globals()), tmp_prefix='prfreshness_'))

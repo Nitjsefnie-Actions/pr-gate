@@ -615,7 +615,3 @@ def test_push_with_only_base_metadata_does_not_commit_or_push(tmp):
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert not any(command[0] in ('add', 'commit', 'push') for command in commands)
     assert not (tmp / 'ratchet-repo/base.txt').exists()
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='ratchet_push_'))

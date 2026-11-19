@@ -11,7 +11,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util  # noqa: E402
 from _prgate import (  # noqa: E402
     PR_BODY, TEMPLATE, _html_body, _issue_html, _text_html,
     _valid_html,
@@ -99,12 +98,3 @@ def test_layout_reads_an_image_alt_text_as_a_heading_name(tmp):
         '<p dir="auto">Ran the suite.</p>')
     sections = PR_BODY.parse_rendered(rendered, 'owner/repo').sections
     assert PR_BODY.layout_errors(sections, TEMPLATE) == []
-
-
-def main():
-    return _util.runner(
-        _util.collect(globals()), tmp_prefix='prbodyelements_')
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())

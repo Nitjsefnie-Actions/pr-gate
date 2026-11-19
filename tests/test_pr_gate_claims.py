@@ -13,7 +13,6 @@ from _prgate import (  # noqa: E402
     _markdown_code_spans, _text_html, _valid_body, _valid_html,
     _write_sequence,
 )
-import _util  # noqa: E402
 
 
 def _assert_numbers_code_spanned(comment):
@@ -421,12 +420,3 @@ def test_a_still_failing_rerun_updates_the_gate_comment(tmp):
     _assert_gate_message(
         writes[0], OPEN_FIRST, ['Issue `#101` is not assigned to you.'])
     assert len(api.comments) == 1
-
-
-def main():
-    return _util.runner(
-        _util.collect(globals()), tmp_prefix='prgateclaims_')
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())

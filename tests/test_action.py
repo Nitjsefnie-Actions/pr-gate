@@ -8,7 +8,6 @@ import subprocess
 from pathlib import Path
 
 import yaml
-import _util
 from _prgate import (
     ROOT, TEMPLATE, FakeApi, _Response, _gate_module, _issue,
     _pull, _recorded_writes, _script_fixtures, _valid_body, _valid_html,
@@ -257,7 +256,3 @@ def test_conventional_commits_input_defaults_on_and_reaches_main(tmp):
         directory.mkdir()
         _run_packaged_action(directory, *POLICY_REVISIONS[0],
                              conventional_commits=value)
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='praction_'))

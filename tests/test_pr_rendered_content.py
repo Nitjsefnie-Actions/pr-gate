@@ -1,7 +1,6 @@
 """Actual GitHub renderings retain one authoritative section interpretation."""
 import json
 from pathlib import Path
-import _util
 from _prgate import PR_BODY, ROOT, _gate_module
 from test_pr_gate_context import RepositoryApi
 
@@ -46,7 +45,3 @@ def test_captured_code_whitespace_preserves_visible_line_breaks(tmp):
             assert api.writes == [], case['name']
         else:
             assert 'Footer' in api.comments[0]['body']
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prrendered_'))

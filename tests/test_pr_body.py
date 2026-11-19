@@ -5,7 +5,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util  # noqa: E402
 from _parser_guard import (  # noqa: E402
     assigned_state_names, base_state_names)
 from _prfootnotes import (  # noqa: E402
@@ -540,12 +539,3 @@ def test_retains_instruction_comment(tmp):
     assert not PR_BODY.retains_instruction_comment(_valid_body(), TEMPLATE)
     prose = comment.removeprefix('<!--').removesuffix('-->')
     assert not PR_BODY.retains_instruction_comment(prose, TEMPLATE)
-
-
-def main():
-    return _util.runner(
-        _util.collect(globals()), tmp_prefix='prbody_')
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
