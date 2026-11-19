@@ -14,10 +14,13 @@ def tmp():
 @pytest.hookimpl(wrapper=True)
 def pytest_make_collect_report(collector):
     report = yield
-    if (isinstance(collector, pytest.Module) and collector.path.name.startswith('test_')
-            and report.passed and not report.result):
-        report.outcome = 'failed'
-        report.longrepr = f'No tests collected from {collector.path.name}'
+    if isinstance(collector, pytest.Module) and collector.path.name.startswith('test_'):
+        if report.skipped:
+            report.outcome = 'failed'
+            report.longrepr = f'{collector.path.name} skipped at import: {report.longrepr}'
+        elif report.passed and not report.result:
+            report.outcome = 'failed'
+            report.longrepr = f'No tests collected from {collector.path.name}'
     return report
 
 
