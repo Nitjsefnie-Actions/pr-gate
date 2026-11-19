@@ -8,11 +8,8 @@ on:
     # installs no packages, and pushes with SSH rather than the job token.
     # It installs the record files that run staged, at their staged
     # repo-relative paths; base.txt is measurement metadata only.
-    # Both carriers remeasure on the next main push; if one
-    # carrier's ratchet commit makes its sibling's measurement stale, that
-    # sibling can stage its improvement again there. A record-only push
-    # never loops: remeasuring stages nothing.
-    workflows: [tests, types]
+    # A record-only push never loops: remeasuring stages nothing.
+    workflows: [types]
     types: [completed]
 
 permissions: {}
@@ -97,7 +94,7 @@ jobs:
           }
           # Only a records file may sit between the measured base and main.
           if [ -n "$(git -C "$RUNNER_TEMP/ratchet-repo" diff --name-only "$base" "$fetched" -- \
-              ':!.github/ci-thresholds.json' ':!pyright-baseline.json' \
+              ':!.github/ci-thresholds.json' ':!.github/test-times.json' ':!pyright-baseline.json' \
               ':!.github/comment-share.json' ':!.github/size-baseline.json')" ]; then
             drop "Non-records changes landed on main between the measured base and its tip."
           fi

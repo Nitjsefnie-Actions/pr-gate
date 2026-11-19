@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # The fixture's actionlint.yml as a commit on main changes it: a gate file the head lacks.
 MOVED_GATE = ('name: actionlint\non: push\njobs:\n  actionlint:\n    runs-on: changed\n'
               '    steps:\n      - run: ./actionlint -color .github/workflows/*.yml\n')
+# The fixture's tests.yml: both required jobs it defines run the suite runner.
+TESTS_YML = ('name: tests\non: push\njobs:\n' + ''.join(
+    f'  {job}:\n    steps:\n      - run: python run_tests.py\n' for job in ('test', 'report')))
 
 
 def _load():
@@ -71,14 +74,7 @@ def _fixture(tmp):
             '    runs-on: ubuntu-latest\n'
             '    steps:\n'
             '      - run: ./actionlint -color .github/workflows/*.yml\n',
-        '.github/workflows/tests.yml':
-            'name: tests\n'
-            'on: push\n'
-            'jobs:\n'
-            '  suites:\n'
-            '    runs-on: ubuntu-latest\n'
-            '    steps:\n'
-            '      - run: python run_tests.py\n',
+        '.github/workflows/tests.yml': TESTS_YML,
         'run_tests.py': 'print("suite runner")\n',
         'README.md': '# fixture\n',
     })
@@ -111,9 +107,10 @@ def _freshness(*arguments, event: str | None = 'pull_request', script=None, cwd=
 def test_required_jobs_name_the_two_required_contexts(tmp):
     del tmp
     module = _load()
-    assert module.REQUIRED_JOBS == ('actionlint', 'suites')
+    assert module.REQUIRED_JOBS == ('actionlint', 'test', 'report')
     assert module.BASE_BRANCH == 'main'
-    for name, path in (('actionlint', 'actionlint.yml'), ('suites', 'tests.yml')):
+    for name, path in (('actionlint', 'actionlint.yml'), ('test', 'tests.yml'),
+                       ('report', 'tests.yml')):
         jobs = yaml.load(
             (ROOT / '.github/workflows' / path).read_text(encoding='utf-8'),
             Loader=yaml.BaseLoader)['jobs']
@@ -121,20 +118,20 @@ def test_required_jobs_name_the_two_required_contexts(tmp):
 
 
 # The exact derived set on this repository's HEAD: a required job naming a new file forces this
-# pin to change in the same commit, so the set can neither shrink nor grow in silence. The suites
-# job names `tests/`, which resolves to every tracked file under it.
+# pin to change in the same commit, so the set can neither shrink nor grow in silence. The test
+# job's `tests` input names `tests/`, which resolves to every tracked file under it.
 def test_gate_paths_on_this_repository(tmp):
     del tmp
     done = _freshness('--print-paths', cwd=str(ROOT))
     assert done.returncode == 0, done.stderr
     assert done.stdout.splitlines() == sorted([
         '.github/ci-thresholds.json',
+        '.github/test-times.json',
         '.github/workflows/actionlint.yml',
         '.github/workflows/audit.yml',
         '.github/workflows/claim.yml',
         '.github/workflows/codeql.yml',
         '.github/workflows/comment-share.yml',
-        '.github/workflows/coverage-comment.yml',
         '.github/workflows/lint.yml',
         '.github/workflows/pin-guard.yml',
         '.github/workflows/pr-gate.yml',
@@ -143,6 +140,7 @@ def test_gate_paths_on_this_repository(tmp):
         '.github/workflows/scorecard.yml',
         '.github/workflows/secrets.yml',
         '.github/workflows/size-baseline.yml',
+        '.github/workflows/test-ratchet-comment.yml',
         '.github/workflows/tests.yml',
         '.github/workflows/types.yml',
         'README.md',
@@ -151,8 +149,6 @@ def test_gate_paths_on_this_repository(tmp):
         'requirements-test.txt',
         'requirements-zizmor.txt',
         'scripts/ci/commit_scopes.py',
-        'scripts/ci/coverage_ratchet.py',
-        'scripts/ci/diff_coverage.py',
         'scripts/ci/gate_base_freshness.py',
         'scripts/ci/pr_attribution.py', 'scripts/ci/pr_commits.py',
         'scripts/ci/pr_body.py',
@@ -262,9 +258,7 @@ def test_red_names_a_merge_commit(tmp):
     _git(tmp, 'clone', str(origin), str(adv))
     _config(adv)
     _commit(adv, 'ci: the second parent', {
-        '.github/workflows/tests.yml':
-            'name: tests\non: push\njobs:\n  suites:\n'
-            '    steps:\n      - run: python run_tests.py\n'})
+        '.github/workflows/tests.yml': TESTS_YML + '# the second parent\n'})
     _git(side, 'push', 'origin', 'main')
     _git(adv, 'pull', '--no-rebase', 'origin', 'main')
     _git(adv, 'push', 'origin', 'main')
@@ -336,9 +330,7 @@ def test_expressions_are_stripped_before_paths_are_taken(tmp):
             'name: actionlint\non: push\njobs:\n  actionlint:\n'
             '    steps:\n'
             '      - run: python -m pytest ${{ matrix.python }}\n',
-        '.github/workflows/tests.yml':
-            'name: tests\non: push\njobs:\n  suites:\n'
-            '    steps:\n      - run: python run_tests.py\n',
+        '.github/workflows/tests.yml': TESTS_YML,
     })
     assert 'matrix.python' not in module.gate_paths(repo), (
         'the expression is stripped before the run text is scanned, so its '
@@ -356,9 +348,8 @@ def test_whole_tree_spelling_adds_no_paths(tmp):
         '.github/workflows/actionlint.yml':
             'name: actionlint\non: push\njobs:\n  actionlint:\n'
             f'    steps:\n{marker}',
-        '.github/workflows/tests.yml':
-            'name: tests\non: push\njobs:\n  suites:\n'
-            f'    steps:\n{marker}',
+        '.github/workflows/tests.yml': 'name: tests\non: push\njobs:\n' + ''.join(
+            f'  {job}:\n    steps:\n{marker}' for job in ('test', 'report')),
     })
     try:
         module.gate_paths(repo)
@@ -457,6 +448,14 @@ def test_uses_and_with_fields_are_read_and_skipped(tmp):
     steps = module.workflow_steps(text, 'w.yml')['actionlint']
     assert steps[0]['uses'] == 'actions/checkout@1111111111111111111111111111111111111111'
     assert steps[1]['uses'] == './'
+
+
+def test_with_values_are_read_but_not_their_keys_or_comments(tmp):
+    del tmp
+    text = ('jobs:\n  test:\n    steps:\n      - uses: o/a@1\n        with:\n'
+            '          # docs/\n          docs: src/**/x.py\n          cell: ${{ matrix.os }}\n')
+    step = _load().workflow_steps(text, 'w.yml')['test'][0]
+    assert step['with'] == 'src/**/x.py\n${{ matrix.os }}'
 
 
 def test_resolve_arms(tmp):
@@ -619,9 +618,7 @@ def test_whole_action_use_takes_the_directory_whole(tmp):
         '.github/workflows/actionlint.yml':
             'name: actionlint\non: push\njobs:\n  actionlint:\n'
             '    steps:\n      - uses: ./\n',
-        '.github/workflows/tests.yml':
-            'name: tests\non: push\njobs:\n  suites:\n'
-            '    steps:\n      - run: python run_tests.py\n',
+        '.github/workflows/tests.yml': TESTS_YML,
     })
     module = _load()
     assert 'README.md' in module.gate_paths(repo), (
@@ -646,9 +643,7 @@ def test_check_reports_a_merge_commit_in_process(tmp):
     _git(tmp, 'clone', str(origin), str(adv))
     _config(adv)
     _commit(adv, 'ci: the second parent', {
-        '.github/workflows/tests.yml':
-            'name: tests\non: push\njobs:\n  suites:\n'
-            '    steps:\n      - run: python run_tests.py\n'})
+        '.github/workflows/tests.yml': TESTS_YML + '# the second parent\n'})
     _git(side, 'push', 'origin', 'main')
     _git(adv, 'pull', '--no-rebase', 'origin', 'main')
     _git(adv, 'push', 'origin', 'main')

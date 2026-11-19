@@ -1,17 +1,14 @@
 """Run the shipped ratchet shell with real local git and fake network transport."""
 import json
 import os
-import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-from coverage import CoverageData
 import _util
 from test_action import _action_bash
 from test_workflows import _workflow, _shipped_action_pin
-from _measuredcell import measured_if, measured_python
 from test_type_ratchet import _document
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -31,7 +28,7 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     del tmp
     workflow = _workflow('ratchet-push.yml')
     assert workflow['on'] == {'workflow_run': {
-        'workflows': ['tests', 'types'],
+        'workflows': ['types'],
         'types': ['completed']}}
     assert workflow['permissions'] == {}
     assert workflow['concurrency'] == {'group': 'ratchet-push', 'cancel-in-progress': 'false'}
@@ -61,109 +58,12 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
         assert '${{' not in step.get('run', '')
 
 
-def test_staging_is_push_only_on_the_measured_cell_after_a_green_gate(tmp):
-    del tmp
-    workflow = _workflow('tests.yml')
-    assert workflow['on']['push']['branches'] == ['main']
-    assert workflow['on']['pull_request'] == ''
-    steps = workflow['jobs']['suites']['steps']
-    stage = _step('tests.yml', 'Stage the ratchet data')
-    upload = _step('tests.yml', 'Upload the ratchet data')
-    assert stage['id'] == 'ratchet'
-    matrix = _workflow('tests.yml')['jobs']['suites']['strategy']['matrix']
-    operand = measured_python(matrix, [stage])
-    assert ' '.join(stage['if'].split()) == (
-        f"{measured_if(operand)} && github.event_name == 'push'")
-    assert stage['env'] == {'PR_GATE_MEASURED_HEAD': '${{ github.sha }}'}
-    assert stage['shell'] == 'bash'
-    assert upload['if'] == (
-        "github.event_name == 'push' && steps.ratchet.outputs.changed == 'true'")
-    assert upload['uses'] == ('actions/upload-artifact@'
-                              + _shipped_action_pin('actions/upload-artifact'))
-    assert steps.index(_step('tests.yml', 'Coverage gate')) < steps.index(stage)
-    assert steps.index(stage) < steps.index(upload)
-    for step in (stage, upload, _step('tests.yml', 'Coverage gate')):
-        assert 'continue-on-error' not in step
-        # With no status function GitHub implicitly requires success().
-        assert not any(f'{status}(' in step['if']
-                       for status in ('always', 'cancelled', 'failure'))
-
-
 def _run(script, tmp, environment, cwd):
     path = tmp / 'step.sh'
     path.write_text(script, encoding='utf-8', newline='\n')
     return subprocess.run([_action_bash(), '-e', '-o', 'pipefail', str(path)],
                           cwd=cwd, env={**os.environ, **environment},
                           capture_output=True, text=True, timeout=60)
-
-
-def test_staging_executes_real_measurement_and_helper_decisions(tmp):
-    script = _step('tests.yml', 'Stage the ratchet data')['run']
-    repo = tmp / 'repo'
-    (repo / '.github').mkdir(parents=True)
-    (repo / 'scripts/ci').mkdir(parents=True)
-    shutil.copyfile(ROOT / 'scripts/ci/coverage_ratchet.py',
-                    repo / 'scripts/ci/coverage_ratchet.py')
-    thresholds = {'coverage': {'python': {'floor': 88.9, 'measured': 90.4, 'cell': 'keep'}}}
-    (repo / '.github/ci-thresholds.json').write_text(json.dumps(thresholds), encoding='utf-8')
-    # Real coverage output: 920/1000 is 92.0 (raise); 919 is the tie, 918 no.
-    source = repo / 'measured.py'
-    source.write_text('x = 1\n' * 1000, encoding='utf-8')
-    for count, changed in [(920, True), (919, False), (918, False)]:
-        run = tmp / str(count)
-        run.mkdir()
-        data = CoverageData(basename=str(run / '.coverage'))
-        # The reporter resolves filenames, including macOS /var aliases, so
-        # synthetic data must use the same physical source path.
-        data.add_lines({str(source.resolve()): set(range(1, count + 1))})
-        data.write()
-        outputs = run / 'outputs'
-        outputs.touch()
-        base = 'a' * 40
-        result = _run("PS4='+ '\nset -x\n" + script, run, {
-            'RUNNER_TEMP': str(run), 'GITHUB_OUTPUT': str(outputs),
-            'PR_GATE_MEASURED_HEAD': base, 'COVERAGE_FILE': str(run / '.coverage'),
-            'PATH': os.pathsep.join((str(Path(sys.executable).parent), os.environ['PATH']))}, repo)
-        actual = outputs.read_text()
-        captured = re.search(r'^\+ measured=(.*)$', result.stderr, re.MULTILINE)
-        measured = captured[1] if captured else '<not captured>'
-        diagnostic = (f'outputs={actual!r}; measured={measured!r}; '
-                      f'stdout={result.stdout!r}; stderr={result.stderr!r}')
-        assert result.returncode == 0, diagnostic
-        artifact = run / 'ratchet-data'
-        assert actual.strip() == f'changed={str(changed).lower()}', diagnostic
-        if changed:
-            assert (artifact / 'base.txt').read_text() == base + '\n'
-            record = json.loads((artifact / '.github/ci-thresholds.json').read_text())
-            assert record['coverage']['python'] == {'floor': 90.5, 'measured': 92.0, 'cell': 'keep'}
-        else:
-            assert not artifact.exists(), 'equal/lower coverage must stage no artifact'
-    bad = tmp / 'bad'
-    bad.mkdir()
-    environment = {'RUNNER_TEMP': str(bad), 'GITHUB_OUTPUT': str(bad / 'out'),
-                   'PR_GATE_MEASURED_HEAD': base, 'COVERAGE_FILE': str(bad / 'missing')}
-    result = _run(script, bad, environment, repo)
-    assert result.returncode != 0
-    assert not (bad / 'ratchet-data/base.txt').exists()
-    # Measurement succeeds, but the helper refuses a malformed record.
-    thresholds['coverage']['python']['floor'] = 'invalid'
-    (repo / '.github/ci-thresholds.json').write_text(json.dumps(thresholds), encoding='utf-8')
-    environment['COVERAGE_FILE'] = str(tmp / '920/.coverage')
-    result = _run(script, bad, environment, repo)
-    assert result.returncode == 2, (result.stdout, result.stderr)
-    assert not (bad / 'ratchet-data').exists()
-
-
-def test_staging_measurements_survive_a_temporary_directory_alias(tmp):
-    physical = tmp / 'physical'
-    physical.mkdir()
-    alias = tmp / 'alias'
-    if os.name == 'nt':
-        subprocess.run(['cmd', '/c', 'mklink', '/J', str(alias), str(physical)],
-                       check=True, capture_output=True, text=True)
-    else:
-        alias.symlink_to(physical, target_is_directory=True)
-    test_staging_executes_real_measurement_and_helper_decisions(alias)
 
 
 # All local git operations are real; fetch/push (remote boundary) and
@@ -236,7 +136,7 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         # The commit lands on the remote after the run measured `base`.
         if move == 'records':
             baseline.write_text('{"error_count":2}\n', encoding='utf-8')
-            for name in ('comment-share', 'size-baseline'):
+            for name in ('comment-share', 'size-baseline', 'test-times'):
                 (repo / f'.github/{name}.json').write_text('{}\n', encoding='utf-8')
             _git(repo, 'add', 'pyright-baseline.json', '.github')
         elif move == 'other':
@@ -269,10 +169,9 @@ def _push_run(tmp, *, empty=False, stale=False, unchanged=False, push_status=0,
         if unchanged:
             shutil.copyfile(thresholds, artifact / '.github/ci-thresholds.json')
         else:
-            module = _util.load(ROOT / 'scripts/ci/coverage_ratchet.py',
-                                'coverage_ratchet_under_test')
-            assert module.main(['--thresholds', str(thresholds), '--measured', '95.2',
-                                '--output', str(artifact / '.github/ci-thresholds.json')]) == 0
+            (artifact / '.github/ci-thresholds.json').write_text(json.dumps({'coverage': {
+                'python': {'floor': 93.7, 'measured': 95.2, 'cell': 'keep'}}}) + '\n',
+                encoding='utf-8', newline='\n')
     if 'types' in records:
         shutil.copyfile(baseline, artifact / 'pyright-baseline.json')
         if not unchanged:

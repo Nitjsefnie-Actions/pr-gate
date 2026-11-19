@@ -23,11 +23,11 @@ run refuses: a job renamed out of every workflow would otherwise shrink the
 set in silence, and a narrower set reports green over a wider gate.
 
 WHAT IT CANNOT SEE. The derivation reads text, so a file a required check
-reads without any `run:` block naming it is outside it. Named here rather than
-left for a reader to infer, because each of these makes the gate NARROWER and
-a narrower gate looks the same as a correct one:
+reads with no `run:` block or `with:` value naming it is outside it. Named
+here rather than left for a reader to infer, because each of these makes the
+gate NARROWER and a narrower gate looks the same as a correct one:
 
-  - A tool reading a configuration file no `run:` names. actionlint reads
+  - A tool reading a configuration file nothing names. actionlint reads
     `.github/actionlint.yaml`; zizmor reads `zizmor.yml` at the root of the
     path it is given and under `.github/`; pytest reads its ini-file.
   - The whole-tree spelling. `git grep ... -- .` in the `actionlint` job's
@@ -65,7 +65,7 @@ from pathlib import Path
 # be asked which jobs it makes required. Each name is still looked up in the
 # workflows below, and a name with no job behind it is a refusal rather than a
 # silently smaller set.
-REQUIRED_JOBS = ("actionlint", "suites")
+REQUIRED_JOBS = ("actionlint", "test", "report")
 
 # The branch a required check's head is compared against. Not configurable:
 # a second branch here would be a second base, and this question has one.
@@ -297,16 +297,18 @@ def apply_field(lines, end, key, value, at, step):
         # comment, and an action reference never contains a space.
         step["uses"] = value.split()[0] if value else None
     elif not value or BLOCK_SCALAR.match(value):
-        # A `with:`/`env:` mapping or a block scalar the step carries but does
-        # not execute. Its text is an input to a step, not a file a step reads,
-        # and reading one is how an expression's spelling would be mistaken for
-        # a path. Its lines are stepped over rather than read as step keys.
-        return block_end(lines, at, 8)
+        # A mapping or block scalar, stepped over rather than read as step keys;
+        # `with:` VALUES are kept, as an action's inputs name the files it reads.
+        after = block_end(lines, at, 8)
+        if key == "with":
+            step["with"] = "\n".join(MAPPING.sub(r"\g<value>", line.strip())
+                                     for line in lines[at + 1:after] if not skippable(line))
+        return after
     return at + 1
 
 
 def step_fields(lines, name, start, end, workflow, dash):
-    """One step's `run:` text and its `uses:` value.
+    """One step's `run:` text, its `uses:` value and its `with:` values.
 
     `dash` is the text following the `- ` on the step's own line, and it is the
     FIRST key the step has. A step written on one line — `- uses:
@@ -315,7 +317,7 @@ def step_fields(lines, name, start, end, workflow, dash):
     after the dash line reads a step with no keys in it: a `uses:` that never
     reaches the local-action branch, and a `run:` that contributes no path.
     """
-    step = {"run": None, "uses": None}
+    step = {"run": None, "uses": None, "with": None}
     index = start
     if dash:
         match = MAPPING.match(dash)
@@ -418,7 +420,7 @@ def gate_paths(root):
     for job in REQUIRED_JOBS:
         # Every workflow defining the name, unioned. A job name is unique within
         # a workflow, not across the repository: a second workflow may define
-        # `suites:` — a matrix leg split into its own file, a Windows runner,
+        # `test:` — a matrix leg split into its own file, a Windows runner,
         # nothing renamed — and taking the first match silently drops the other
         # one's steps, so a file one required check compiles leaves the gate with
         # no message and exit 0. A refusal on a second definition would be
@@ -442,9 +444,7 @@ def gate_paths(root):
                     # answer, and a partial answer would be a narrower gate than
                     # it looks.
                     derived.update(files if uses == "./" else resolve(uses, files))
-                if not step["run"]:
-                    continue
-                for candidate in candidates(step["run"]):
+                for candidate in candidates(f'{step["run"] or ""}\n{step["with"] or ""}'):
                     derived.update(resolve(candidate, files))
     if not derived:
         raise GateError(

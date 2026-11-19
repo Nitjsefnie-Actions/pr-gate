@@ -81,7 +81,7 @@ jobs:
         # markers are matched in the shapes git writes them: `<<<<<<< ` and `>>>>>>> `
         # carry the label after seven characters, and the separator is exactly
         # seven `=`; diff3's extra `||||||| base` line changes nothing, because
-        # the other three are still written. This job rather than the suites one
+        # the other three are still written. This job rather than the test one
         # because this workflow's push trigger is deliberately unfiltered (see the
         # push trigger's own comment), so it runs for a documentation-only commit
         # that carries a marker as well as for a code change.
