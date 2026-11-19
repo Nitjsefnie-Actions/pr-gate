@@ -2,11 +2,8 @@
 
 The fixtures are committed JSON documents shaped like pyright's
 ``--outputjson`` output; nothing here runs the real checker. The suite
-drives the checked-in module IN-PROCESS — the coverage gate measures
-this parent process (`coverage run --source=scripts/ci`), so driving
-the script through subprocesses would count the gate's own statements
-as missed. One subprocess test pins the ``__main__`` entry point
-mapping the verdict to the process exit status.
+drives the checked-in module IN-PROCESS; one subprocess test pins the
+``__main__`` entry point mapping the verdict to the process exit status.
 """
 import contextlib
 import io

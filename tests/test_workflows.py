@@ -19,7 +19,6 @@ import sys
 from pathlib import Path
 
 import yaml
-import _measuredcell
 from test_action import _action_bash
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,7 +98,7 @@ def test_ci_runs_supported_platforms_and_python_versions(tmp):
     assert workflow['on']['push']['branches'] == ['main']
     assert 'paths' not in workflow['on']['push']
     assert not (workflow['on'].get('pull_request') or {})
-    job = workflow['jobs']['suites']
+    job = workflow['jobs']['test']
     matrix = job['strategy']['matrix']
     assert matrix['os'] == ['ubuntu-latest', 'windows-latest', 'macos-latest']
     # The supported range is held as a shape, not as version literals.
@@ -110,353 +109,7 @@ def test_ci_runs_supported_platforms_and_python_versions(tmp):
     assert all(re.fullmatch(r'3\.\d+', version) for version in versions), (
         f'every matrix entry is a version string, not {versions!r}')
     runs = [step['run'] for step in job['steps'] if 'run' in step]
-    assert 'python -m pytest -n auto tests/' in runs
     assert 'python -m ruff check --select E9,F63,F7,F82 .' in runs
-
-
-# Boundary: exactly one matrix cell measures coverage, so a summary line and
-# a gate failure name a single reproducible environment; the XML export rides
-# the same cell and is pull-request-only (a push has no patch to measure).
-def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
-    del tmp
-    workflow = _workflow('tests.yml')
-    matrix = workflow['jobs']['suites']['strategy']['matrix']
-    steps = workflow['jobs']['suites']['steps']
-    coverage_steps = [step for step in steps
-                      if 'coverage' in step.get('run', '')
-                      and step.get('id') != 'ratchet']
-    assert len(coverage_steps) == 4, (
-        'the four coverage reporting/gating steps exclude ratchet staging')
-    cell_if = _measuredcell.measured_if(_measuredcell.measured_python(matrix, steps))
-    pr_only_if = f"{cell_if} && github.event_name == 'pull_request'"
-    for step in coverage_steps:
-        expected = (pr_only_if if 'coverage xml' in step.get('run', '')
-                    else cell_if)
-        assert step['if'] == expected, 'must pin the one measured cell exactly'
-    assert 'ubuntu-latest' in matrix['os'], (
-        "the coverage steps' os operand must stay in the pinned os matrix, "
-        'or the gate runs on no cell')
-    unmeasured_runs = ['python -m pytest -n auto tests/',
-                       'python -m ruff check --select E9,F63,F7,F82 .',
-                       'python -m pip install -r requirements-test.txt']
-    unconditional_runs = {step.get('run', '') for step in steps
-                          if 'if' not in step}
-    for run in unmeasured_runs:
-        assert run in unconditional_runs, (
-            f'the plain run {run!r} must stay unmeasured and unconditional')
-    for step in steps:
-        if step in coverage_steps or step.get('name') == (
-                'Upload the coverage XML report') or step.get('name') in (
-                    'Stage the ratchet data', 'Upload the ratchet data'):
-            continue
-        assert 'if' not in step, (
-            'checkout, setup-python, install, suites and lint must stay '
-            'unconditional on every cell')
-
-
-def test_coverage_gate_reads_floor_from_committed_thresholds(tmp):
-    del tmp
-    steps = [step for step in _workflow('tests.yml')['jobs']['suites']['steps']
-             if 'coverage' in step.get('run', '')
-             and step.get('id') != 'ratchet']
-    assert len(steps) == 4, (
-        'the four reporting/gating steps exclude ratchet staging')
-    measure = next(step for step in steps if 'coverage run' in step['run'])
-    summary = next(step for step in steps
-                   if 'GITHUB_STEP_SUMMARY' in step['run'])
-    gate = next(step for step in steps if '--fail-under=' in step['run'])
-    assert '--source=scripts/ci' in measure['run'], (
-        'the measurement must scope coverage to the scripts/ci runtime surface')
-    assert '-m pytest tests/' in measure['run'], (
-        'coverage must be measured by running the shipped suite itself')
-    assert 'coverage report' in summary['run'], (
-        'the summary must render the measured coverage table')
-    assert '.github/ci-thresholds.json' in gate['run'], (
-        'the gate must read its floor from the committed thresholds file')
-    for step in steps:
-        assert not re.search(r'fail-under=\d', step['run']), (
-            'no coverage step may restate the floor as a literal number')
-
-
-# --- patch coverage reporting ------------------------------------------------
-
-def test_tests_yml_writes_and_uploads_the_coverage_xml_for_pull_requests(tmp):
-    del tmp
-    suites = _workflow('tests.yml')['jobs']['suites']
-    steps = suites['steps']
-    cell_if = _measuredcell.measured_if(
-        _measuredcell.measured_python(suites['strategy']['matrix'], steps))
-    pr_only_if = f"{cell_if} && github.event_name == 'pull_request'"
-    write = next(step for step in steps
-                 if step.get('name') == 'Write the coverage XML report')
-    upload = next(step for step in steps
-                  if step.get('name') == 'Upload the coverage XML report')
-    assert write['run'] == 'python -m coverage xml -o coverage.xml'
-    for step in (write, upload):
-        assert ' '.join(step['if'].split()) == pr_only_if, 'the XML export is pull-request-only'
-    reviewed = _shipped_action_pin('actions/upload-artifact')
-    assert upload['uses'] == f'actions/upload-artifact@{reviewed}'
-    names = [step.get('name') for step in steps]
-    assert names.index('Coverage gate') < names.index(
-        'Write the coverage XML report') < names.index('Lint Python')
-
-
-def test_the_diff_coverage_job_reports_its_own_change_read_only(tmp):
-    del tmp
-    workflow = _workflow('tests.yml')
-    job = workflow['jobs']['diff-coverage']
-    assert ' '.join(job['if'].split()) == (
-        "${{ !cancelled() && needs.suites.result == 'success' "
-        "&& github.event_name == 'pull_request' }}"), (
-        'the reporter runs after a green suites on pull requests only, and '
-        'a skipped ancestor must not hide a successful result')
-    assert job['needs'] == 'suites'
-    assert job['timeout-minutes'] == '10'
-    assert job['permissions'] == {'contents': 'read'}, (
-        'this job reads the proposed tree, so it must not hold a token '
-        'that can write pull request conversation')
-    steps = job['steps']
-    download = next(step for step in steps
-                    if 'download-artifact' in step.get('uses', ''))
-    assert download['uses'] == (
-        'actions/download-artifact@'
-        + _shipped_action_pin('actions/download-artifact'))
-    measure = next(step for step in steps if step.get('name') == (
-        'Measure the coverage of this change'))
-    run = ' '.join(measure['run'].split())
-    assert ('git diff --text --no-ext-diff --no-textconv --unified=0 '
-            'HEAD^1 HEAD > patch.diff') in run
-    assert ('python3 scripts/ci/diff_coverage.py --coverage coverage.xml '
-            '--diff patch.diff > body.md') in run
-    assert 'GITHUB_STEP_SUMMARY' in run, (
-        'the report must land in the job summary as well as the comment')
-    package = next(step for step in steps if step.get('name') == (
-        'Package the comment for the trusted commenter'))
-    assert package['env'] == {
-        'PR_GATE_PR_NUMBER': '${{ github.event.pull_request.number }}'}
-    assert 'pr-number.txt' in package['run']
-    upload = next(step for step in steps if step.get('name') == (
-        'Upload the comment for the trusted commenter'))
-    reviewed = _shipped_action_pin('actions/upload-artifact')
-    assert upload['uses'] == f'actions/upload-artifact@{reviewed}'
-
-
-def test_the_coverage_comment_workflow_is_the_trusted_writer(tmp):
-    del tmp
-    workflow = _workflow('coverage-comment.yml')
-    assert workflow['name'] == 'coverage comment'
-    assert workflow['on'] == {'workflow_run': {'workflows': ['tests'],
-                                               'types': ['completed']}}
-    assert workflow['permissions'] == {'pull-requests': 'write',
-                                       'actions': 'read'}, (
-        'the trusted commenter holds exactly the two grants it needs — '
-        'and never checks: write')
-    group = workflow['concurrency']['group']
-    assert 'workflow_run.head_repository.full_name' in group
-    assert 'workflow_run.head_branch' in group
-    assert workflow['concurrency']['cancel-in-progress'] == 'true', (
-        'two tests runs for one branch finishing together would each find '
-        'no comment and both post; only the newest measurement is worth '
-        'having')
-    job = workflow['jobs']['comment']
-    assert ' '.join(job['if'].split()) == (
-        "github.event.workflow_run.event == 'pull_request'")
-    assert job['runs-on'] == 'ubuntu-latest'
-    assert job['timeout-minutes'] == '10'
-
-
-def test_the_coverage_comment_workflow_spells_its_zizmor_ignore_like_the_gate(tmp):
-    del tmp
-    text = (ROOT / '.github/workflows/coverage-comment.yml').read_text(
-        encoding='utf-8')
-    assert re.search(r'^on: # zizmor: ignore\[dangerous-triggers\]$',
-                     text, re.MULTILINE), (
-        'the suppression belongs on the on: line, spelled exactly like '
-        "pr-gate.yml spells its own")
-    flat = ' '.join(text.split())
-    assert 'executes nothing from the artifact' in flat, (
-        'the ignore carries a justification naming why the trigger is '
-        'safe here')
-
-
-def test_the_coverage_comment_workflow_checks_out_nothing(tmp):
-    del tmp
-    job = _workflow('coverage-comment.yml')['jobs']['comment']
-    uses = [step['uses'] for step in job['steps'] if 'uses' in step]
-    assert uses == [
-        'actions/download-artifact@'
-        + _shipped_action_pin('actions/download-artifact')], (
-        'the only action the trusted job runs is the artifact download: '
-        'no checkout, and no action that executes artifact content')
-    for step in job['steps']:
-        if 'run' in step:
-            assert '${{' not in step['run'], (
-                'event-derived values reach a run block through env:, never '
-                'interpolated into the script text')
-
-
-def test_the_coverage_comment_workflow_resolves_the_pr_and_refuses_stale(tmp):
-    del tmp
-    steps = _workflow('coverage-comment.yml')['jobs']['comment']['steps']
-    artifact = next(step for step in steps if step.get('name') == (
-        'Check for the comment artifact'))
-    assert artifact['env'] == {
-        'GH_TOKEN': '${{ github.token }}',
-        'PR_GATE_REPO': '${{ github.repository }}',
-        'PR_GATE_RUN_ID': '${{ github.event.workflow_run.id }}'}
-    run = artifact['run']
-    assert "-H 'Cache-Control: no-cache'" in run
-    assert '--paginate' in run
-    assert 'diff-coverage-comment' in run
-    assert '.expired == false' in run
-    resolve = next(step for step in steps if step.get('name') == (
-        'Resolve the target pull request from the event'))
-    assert resolve['env'] == {
-        'GH_TOKEN': '${{ github.token }}',
-        'PR_GATE_REPO': '${{ github.repository }}',
-        'PR_GATE_HEAD_SHA': '${{ github.event.workflow_run.head_sha }}',
-        'PR_GATE_HEAD_REPO': '${{ github.event.workflow_run.head_repository.full_name }}',
-        'PR_GATE_EVENT_NUMBERS': '${{ toJSON(github.event.workflow_run.pull_requests.*.number) }}'}
-    run = resolve['run']
-    assert 'pull_requests.*.number' in resolve['env']['PR_GATE_EVENT_NUMBERS'], (
-        'the event is the first source of the pull request number')
-    assert 'repos/$PR_GATE_HEAD_REPO/commits/$PR_GATE_HEAD_SHA/pulls' in run, (
-        'a fork pull request arrives with an empty pull_requests, so the '
-        'head repository is asked which one owns the commit')
-    assert 'expected one pull request' in run, (
-        'more than one resolved pull request is a loud failure, never a '
-        'silent pick')
-    assert '.head.sha' in run and 'stale=true' in run, (
-        'the run head is compared with the pull request current head, and '
-        'a stale run never comments')
-    condition = ("steps.artifact.outputs.present == 'true' "
-                 "&& steps.pr.outputs.stale != 'true' "
-                 "&& steps.pr.outputs.present != 'false'")
-    for step in steps:
-        name = step.get('name', '')
-        if name.startswith(('Download the comment artifact',
-                            'Post or update the pull request comment')):
-            assert ' '.join(step['if'].split()) == condition, name
-
-
-def test_the_coverage_comment_workflow_posts_one_marker_comment_in_place(tmp):
-    del tmp
-    steps = _workflow('coverage-comment.yml')['jobs']['comment']['steps']
-    post = next(step for step in steps if step.get('name') == (
-        'Post or update the pull request comment'))
-    assert post['env'] == {
-        'GH_TOKEN': '${{ github.token }}',
-        'PR_GATE_REPO': '${{ github.repository }}',
-        'PR_GATE_HEAD_SHA': '${{ github.event.workflow_run.head_sha }}',
-        'PR_GATE_PR_NUMBER': '${{ steps.pr.outputs.number }}'}
-    run = post['run']
-    assert 'test -f body.md' in run and 'test -f pr-number.txt' in run
-    assert '[ "$claimed" != "$PR_GATE_PR_NUMBER" ]' in run, (
-        'the claimed number is checked against the event, never obeyed')
-    assert 'refusing to post' in run, (
-        'a mismatch is a loud failure: it is the signal somebody tried')
-    assert '60000' in run, (
-        'the comment API caps a body at 65536 bytes; a silently truncated '
-        'coverage report is a wrong coverage report')
-    assert '<!-- pr-gate-diff-coverage -->' in run
-    assert run.count('<!-- pr-gate-diff-coverage -->') == 2, (
-        'both sites carry the marker: the wrapper prefixing the body and '
-        'the selector finding the existing comment — renaming one would '
-        'orphan the other and post a second comment beside the first')
-    assert 'github-actions[bot]' in run and 'startswith(' in run, (
-        'exactly the bot comment carrying the marker is updated')
-    assert '-X POST' in run and '-X PATCH' in run, (
-        'one comment: posted when absent, updated in place when present')
-    assert ("printf '%s\\n\\n' \"$marker\"\n"
-            "  printf 'Measured at %s.\\n\\n' \"$PR_GATE_HEAD_SHA\"\n"
-            '  cat body.md\n') in run, (
-        'the comment names the commit it measured: the Measured-at line '
-        'sits between the marker and the body, and PR_GATE_HEAD_SHA reaches it '
-        'through env, never interpolation')
-    calls = [match.start() for match
-             in re.finditer(r'if ! revalidate_head; then', run)]
-    assert len(calls) == 2, (
-        'the head SHA is revalidated immediately before each write')
-    assert calls[0] < run.index('-X POST')
-    assert calls[1] < run.index('-X PATCH')
-    assert '>/dev/null' in run
-
-
-# The three refusal arms of the trusted half are loud on purpose: each exit
-# status is pinned separately, because a softened `exit 0` would turn an
-# aimed comment, a truncated report, or an ambiguous destination into a
-# green step — exactly the failure each refusal exists to prevent.
-def _arm(run, header):
-    """Return the text of the `if <header>; then ... fi` arm."""
-    return run.split(header + '; then', 1)[1].split('\nfi', 1)[0]
-
-
-def test_the_coverage_comment_workflow_fails_loud_at_every_refusal(tmp):
-    del tmp
-    steps = _workflow('coverage-comment.yml')['jobs']['comment']['steps']
-    post = next(step for step in steps if step.get('name') == (
-        'Post or update the pull request comment'))
-    run = post['run']
-    mismatch = _arm(run, 'if [ "$claimed" != "$PR_GATE_PR_NUMBER" ]')
-    assert 'exit 1' in mismatch and 'exit 0' not in mismatch, (
-        'a claimed-number mismatch must fail the step loudly: the message '
-        'alone is not the refusal, and exit 0 here would post an aimed '
-        'comment and report success')
-    cap = _arm(run, 'if [ "$size" -gt 60000 ]')
-    assert 'exit 1' in cap and 'exit 0' not in cap, (
-        'an oversized body must fail the step loudly: a silently '
-        'truncated coverage report is a wrong coverage report')
-    resolve = next(step for step in steps if step.get('name') == (
-        'Resolve the target pull request from the event'))
-    multi = _arm(resolve['run'], 'if [ "$count" -ne 1 ]')
-    assert 'exit 1' in multi and 'exit 0' not in multi, (
-        'more than one resolved pull request must fail the step loudly, '
-        'never silently pick one as the destination')
-
-
-def test_tests_yml_uploads_disjoint_artifact_names(tmp):
-    del tmp
-    jobs = _workflow('tests.yml')['jobs']
-    names = [step['with']['name']
-             for job in jobs.values() for step in job['steps']
-             if step.get('uses', '').startswith('actions/upload-artifact@')]
-    assert len(names) == len(set(names)), (
-        'two uploads under one name would overwrite: the second upload '
-        'silently drops the first artifact')
-
-
-# Boundary: shape and cross-file agreement only; the measured value itself is
-# refreshed by re-running the coverage cell, not by this suite.
-def test_coverage_thresholds_floor_is_seeded_below_measurement(tmp):
-    del tmp
-    path = ROOT / '.github/ci-thresholds.json'
-    assert path.is_file(), 'missing .github/ci-thresholds.json'
-    text = path.read_text(encoding='utf-8')
-    thresholds = json.loads(text)
-    assert thresholds['schema_version'] == 1
-    suites = _workflow('tests.yml')['jobs']['suites']
-    operand = _measuredcell.measured_python(suites['strategy']['matrix'], suites['steps'])
-    python = thresholds['coverage']['python']
-    assert python['cell'] == f'ubuntu-latest / Python {operand}', (
-        'the recorded cell must name the cell that measures')
-    assert re.search(r'"floor":\s*\d+\.\d\b', text), (
-        'floor must be a number with exactly one decimal place')
-    assert re.search(r'"measured":\s*\d+\.\d\b', text), (
-        'measured must be a number with exactly one decimal place')
-    assert isinstance(python['floor'], float), (
-        'coverage.python.floor must be a JSON float, '
-        f"got {python['floor']!r}")
-    assert isinstance(python['measured'], float), (
-        'coverage.python.measured must be a JSON float, '
-        f"got {python['measured']!r}")
-    assert 0 <= python['floor'] <= python['measured'] <= 100, (
-        'the floor seeds below the measured value and never above it')
-    ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
-    assert '!.github/ci-thresholds.json' in ignore, (
-        'the thresholds file must be whitelisted in .gitignore')
-    requirements = (ROOT / 'requirements-test.txt').read_text(encoding='utf-8')
-    assert re.search(r'^coverage==', requirements, re.MULTILINE), (
-        'coverage must be a pinned test dependency')
 
 
 def test_workflow_audit_includes_composite_metadata(tmp):
@@ -723,7 +376,7 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
     config = json.loads(
         (ROOT / 'pyrightconfig.json').read_text(encoding='utf-8'))
     assert config['typeCheckingMode'] == 'basic'
-    matrix = _workflow('tests.yml')['jobs']['suites']['strategy']['matrix']
+    matrix = _workflow('tests.yml')['jobs']['test']['strategy']['matrix']
     assert config['pythonVersion'] == matrix['python'][-1], (
         'type-check the newest matrix entry')
     assert config['pythonPlatform'] == 'All'
@@ -825,18 +478,20 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
     # be a second place to drift; the jobs that hold LESS than the
     # workflow — or anything when the workflow holds none — say so here.
     #
-    # claim.yml, coverage-comment.yml, pin-guard.yml and pr-gate.yml are the
-    # repository's no-checkout conversation writers — their tokens answer
-    # /claim commands and post the coverage comment, the pin screen's comments
-    # and the gate's refusal comment — so the pull-requests: write each holds
-    # is the class, not a one-off exception. The universal invariant stands:
-    # a job that checks out the tree never holds a conversation write;
-    # checkout and pull-requests: write are never held together. The grants
+    # claim.yml, pin-guard.yml and pr-gate.yml are the repository's
+    # no-checkout conversation writers — their tokens answer /claim commands
+    # and post the pin screen's comments and the gate's refusal comment — so
+    # the pull-requests: write each holds is the class, not a one-off
+    # exception. The one other holder is test-ratchet's `report` (tests.yml's
+    # job and test-ratchet-comment.yml's): it checks out the tree for the
+    # floors at the base commit, with persist-credentials: false, and runs
+    # only the pinned action, executing nothing from the checkout. The grants
     # sit where this table records them: claim.yml carries issues: write and
     # pull-requests: write at JOB level under a workflow that declares none;
-    # coverage-comment.yml (with actions: read), pin-guard.yml (with contents:
-    # read) and pr-gate.yml (with contents: read and issues: read) carry
-    # pull-requests: write at WORKFLOW level, each one's job inheriting.
+    # pin-guard.yml (with contents: read) and pr-gate.yml (with contents: read
+    # and issues: read) carry pull-requests: write at WORKFLOW level, each
+    # one's job inheriting.
+    report = {'contents': 'read', 'pull-requests': 'write', 'actions': 'read'}
     contracts = {
         'release-dispatch.yml': ({}, {
             'verify': ({'contents': 'read', 'actions': 'read', 'checks': 'read'}, '50'),
@@ -844,8 +499,9 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'comment-share.yml': ({'contents': 'read'}, {'comment-share': (None, '10')}),
         'size-baseline.yml': ({'contents': 'read'}, {'size-baseline': (None, '10')}),
         'tests.yml': ({'contents': 'read'}, {
-            'suites': (None, '20'),
-            'diff-coverage': ({'contents': 'read'}, '10')}),
+            'plan': (None, '10'),
+            'test': (None, '20'),
+            'report': (report, '10')}),
         'ratchet-push.yml': ({}, {'push': ({'actions': 'read'}, '15')}),
         'actionlint.yml': ({'contents': 'read'}, {
             'actionlint': (None, '15')}),
@@ -864,9 +520,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
             'contents': 'read', 'security-events': 'write',
             'id-token': 'write'}, '15')}),
         'secrets.yml': ({'contents': 'read'}, {'gitleaks': (None, '10')}),
-        'coverage-comment.yml': ({'pull-requests': 'write',
-                                  'actions': 'read'}, {
-            'comment': (None, '10')}),
+        'test-ratchet-comment.yml': ({}, {'comment': (report, '10')}),
     }
     assert {path.name for path in (ROOT / '.github/workflows').glob('*.yml')} == set(contracts)
     # The jobs allowed a job-level `if:`, with the guard each one carries.
@@ -874,9 +528,9 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         ('claim.yml', 'claim'),
         ('pr-gate.yml', 'gate'),
         ('scorecard.yml', 'analysis'),
-        ('tests.yml', 'diff-coverage'),
+        ('tests.yml', 'report'),
         ('ratchet-push.yml', 'push'),
-        ('coverage-comment.yml', 'comment'),
+        ('test-ratchet-comment.yml', 'comment'),
     }
     for name, (permissions, jobs) in contracts.items():
         workflow = _workflow(name)
@@ -891,7 +545,7 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
             assert job.get('timeout-minutes') == timeout, name
             assert 'concurrency' not in job, name
             expected_runs = ('${{ matrix.os }}'
-                             if (name, job_name) == ('tests.yml', 'suites')
+                             if (name, job_name) == ('tests.yml', 'test')
                              else 'ubuntu-latest')
             assert job['runs-on'] == expected_runs, name
             if (name, job_name) not in guarded_jobs:

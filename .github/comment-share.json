@@ -19,10 +19,6 @@
     1826,
     2659
   ],
-  ".github/workflows/coverage-comment.yml": [
-    2512,
-    7031
-  ],
   ".github/workflows/lint.yml": [
     1467,
     2285
@@ -50,14 +46,6 @@
   "scripts/ci/commit_scopes.py": [
     6038,
     11704
-  ],
-  "scripts/ci/coverage_ratchet.py": [
-    630,
-    2202
-  ],
-  "scripts/ci/diff_coverage.py": [
-    3466,
-    9406
   ],
   "scripts/ci/gate_base_freshness.py": [
     10444,
