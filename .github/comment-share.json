@@ -4,8 +4,8 @@
     1325
   ],
   ".github/workflows/actionlint.yml": [
-    5275,
-    8527
+    5273,
+    8525
   ],
   ".github/workflows/audit.yml": [
     3064,
@@ -36,8 +36,8 @@
     2351
   ],
   ".github/workflows/tests.yml": [
-    1687,
-    5527
+    475,
+    2522
   ],
   ".github/workflows/types.yml": [
     1330,
@@ -48,8 +48,8 @@
     11704
   ],
   "scripts/ci/gate_base_freshness.py": [
-    10444,
-    19739
+    10361,
+    19812
   ],
   "scripts/ci/pr_body_closing.py": [
     1499,
