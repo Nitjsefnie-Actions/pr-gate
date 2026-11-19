@@ -1,4 +1,4 @@
-"""tests/conftest.py's rules, each run as a nested pytest on a scratch copy of it."""
+"""tests/conftest.py's rules, most run as a nested pytest on a scratch copy of it."""
 import shutil
 import subprocess
 import sys

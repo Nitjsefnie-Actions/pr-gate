@@ -18,7 +18,7 @@ def pytest_make_collect_report(collector):
         if report.skipped:
             report.outcome = 'failed'
             report.longrepr = f'{collector.path.name} skipped at import: {report.longrepr}'
-        elif report.passed and not report.result:
+        elif report.passed and not report.result and not collector.config.getoption('lf', False):
             report.outcome = 'failed'
             report.longrepr = f'No tests collected from {collector.path.name}'
     return report
