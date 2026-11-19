@@ -20,7 +20,6 @@ from pathlib import Path
 
 import yaml
 import _measuredcell
-import _util
 from test_action import _action_bash
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -111,7 +110,7 @@ def test_ci_runs_supported_platforms_and_python_versions(tmp):
     assert all(re.fullmatch(r'3\.\d+', version) for version in versions), (
         f'every matrix entry is a version string, not {versions!r}')
     runs = [step['run'] for step in job['steps'] if 'run' in step]
-    assert 'python run_tests.py' in runs
+    assert 'python -m pytest -n auto tests/' in runs
     assert 'python -m ruff check --select E9,F63,F7,F82 .' in runs
 
 
@@ -137,7 +136,7 @@ def test_coverage_measured_on_exactly_one_matrix_cell(tmp):
     assert 'ubuntu-latest' in matrix['os'], (
         "the coverage steps' os operand must stay in the pinned os matrix, "
         'or the gate runs on no cell')
-    unmeasured_runs = ['python run_tests.py',
+    unmeasured_runs = ['python -m pytest -n auto tests/',
                        'python -m ruff check --select E9,F63,F7,F82 .',
                        'python -m pip install -r requirements-test.txt']
     unconditional_runs = {step.get('run', '') for step in steps
@@ -168,7 +167,7 @@ def test_coverage_gate_reads_floor_from_committed_thresholds(tmp):
     gate = next(step for step in steps if '--fail-under=' in step['run'])
     assert '--source=scripts/ci' in measure['run'], (
         'the measurement must scope coverage to the scripts/ci runtime surface')
-    assert 'run_tests.py' in measure['run'], (
+    assert '-m pytest tests/' in measure['run'], (
         'coverage must be measured by running the shipped suite itself')
     assert 'coverage report' in summary['run'], (
         'the summary must render the measured coverage table')
@@ -732,7 +731,7 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
     for directory in ('scripts/ci', 'tests'):
         assert directory in config['include'], (
             f'pyright must analyse {directory} — the issue names both')
-    assert config['include'] == ['run_tests.py', 'scripts/ci', 'tests'], (
+    assert config['include'] == ['scripts/ci', 'tests'], (
         'the analysis scope is exactly the tracked Python')
     for excluded in ('**/__pycache__', '.venv'):
         assert excluded in config['exclude']
@@ -745,10 +744,9 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
     assert 'enable' not in messages, (
         'a category enable re-enables every specific disable listed '
         'before it, so the E/W checks stay on by not being disabled')
-    assert {'subprocess-run-check', 'broad-exception-caught',
-            'protected-access'} <= disabled, (
+    assert {'subprocess-run-check', 'protected-access'} <= disabled, (
         'each per-message disable must be one a real finding forced')
-    assert len(disabled) == 6, (
+    assert len(disabled) == 5, (
         'no disable may join without a real finding and a reason comment')
     pycodestyle_cfg = configparser.ConfigParser()
     pycodestyle_cfg.read_string(
@@ -1527,7 +1525,3 @@ def test_pyyaml_pin_agrees_across_the_hash_pinned_manifests(tmp):
     assert pins['requirements-test.txt'] == pins['requirements-actionlint.txt'], (
         'the two manifests must pin the same PyYAML release: the actionlint '
         'job and the suites import the same module')
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prworkflows_'))

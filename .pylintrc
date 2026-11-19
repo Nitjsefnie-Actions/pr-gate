@@ -6,7 +6,7 @@
 # score line — is that gate's verdict.
 #
 # The list below turns off the style categories (C = convention,
-# R = refactor, I = information) wholesale, then names exactly three
+# R = refactor, I = information) wholesale, then names exactly two
 # error/warning messages to admit anyway, because a real finding forced
 # each one: the first tree-wide run (pylint 4.1.1, 2026-10-02) reported
 # nothing else. The E/W categories are never named in an `enable=`
@@ -16,15 +16,13 @@
 # suppressing nothing here; no entry below is dead.
 
 [MASTER]
+# The suites import `scripts.ci` from the repository root, as pytest runs them.
+init-hook=import sys; sys.path.insert(0, '.')
 
 [MESSAGES CONTROL]
 # subprocess-run-check — the suites inspect returncode themselves and
 #   print their own failure diagnostics; check=True would raise before
 #   the assertion that explains what actually went wrong.
-#
-# broad-exception-caught — the suite runner catches whatever a test
-#   raises to count the failure and run the remaining suites; the runner
-#   must not die on one bad test.
 #
 # protected-access — the suites reach into module internals
 #   deliberately; that is what lets them exercise a helper without
@@ -33,5 +31,4 @@ disable=C,
     R,
     I,
     subprocess-run-check,
-    broad-exception-caught,
     protected-access

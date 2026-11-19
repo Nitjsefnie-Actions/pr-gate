@@ -29,7 +29,7 @@ are development tools only; runtime modules must stay standard-library-only.
 Run these from the repository root with the virtual environment active:
 
 ```bash
-python run_tests.py
+python -m pytest -n auto tests/
 python -m ruff check --select E9,F63,F7,F82 .
 git ls-files "*.py" | xargs python -m pycodestyle
 git ls-files "*.py" | xargs pylint --rcfile=.pylintrc
@@ -40,9 +40,10 @@ zizmor --no-progress action.yml .github/workflows/
 git diff --check
 ```
 
-`run_tests.py` discovers every `tests/test_*.py` module and refuses empty
-discovery/execution. Individual suites also run directly, for example
-`python tests/test_action.py` or `python tests/test_pr_rendered_content.py`.
+pytest runs every `tests/test_*.py` module; `tests/conftest.py` gives each test
+its private `tmp` directory and fails the run on a module that collects no test
+or on any skipped test. Individual suites run the same way, for example
+`python -m pytest tests/test_action.py`.
 CI runs the same tests and Python lint on Linux, Windows, and macOS across both
 supported Python versions. The separate workflow audit pins actionlint
 1.7.12 and zizmor — zizmor's version lives in `requirements-zizmor.txt`,

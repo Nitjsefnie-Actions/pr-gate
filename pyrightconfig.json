@@ -3,7 +3,6 @@
     "pythonVersion": "3.15",
     "pythonPlatform": "All",
     "include": [
-        "run_tests.py",
         "scripts/ci",
         "tests"
     ],

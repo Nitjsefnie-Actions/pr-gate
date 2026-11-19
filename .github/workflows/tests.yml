@@ -41,7 +41,7 @@ jobs:
       - name: Run every suite
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python run_tests.py
+        run: python -m pytest -n auto tests/
       # Coverage is measured and gated on one matrix cell so the reported
       # number names one reproducible environment. The floor
       # lives in .github/ci-thresholds.json, never restated here; the
@@ -50,7 +50,7 @@ jobs:
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.15'
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: coverage run --source=scripts/ci run_tests.py
+        run: coverage run --source=scripts/ci -m pytest tests/
       - name: Record the coverage summary
         if: matrix.os == 'ubuntu-latest' && matrix.python == '3.15'
         run: python -m coverage report --format=markdown --precision=1 >> "$GITHUB_STEP_SUMMARY"
