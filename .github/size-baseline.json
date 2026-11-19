@@ -1,12 +1,12 @@
 {
   "trees": {
-    "tests/": 10828
+    "tests/": 10826
   },
   "schema_version": 1,
   "baseline": {
     "scripts/ci/gate_base_freshness.py": 598,
     "tests/_prgate.py": 749,
-    "tests/test_gate_base_freshness.py": 683,
+    "tests/test_gate_base_freshness.py": 679,
     "tests/test_pr_attribution.py": 970,
     "tests/test_pr_body.py": 541,
     "tests/test_pr_body_closing.py": 645,
