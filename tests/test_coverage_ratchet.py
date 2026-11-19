@@ -148,7 +148,3 @@ def test_cli_malformed_json_missing_file_and_write_error_fail(tmp):
     result = subprocess.run([sys.executable, str(SCRIPT), *args], capture_output=True,
                             text=True, timeout=30)
     assert result.returncode == 2 and result.stderr
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='coverage_ratchet_'))

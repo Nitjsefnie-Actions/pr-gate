@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 import yaml
-import _util
 from _prgate import PR_BODY, ROOT, _gate_module, _recorded_writes, _script_fixtures, _write_gh_stub
 from test_action import _action_bash, _action_steps, _expression
 from test_pr_gate_context import RepositoryApi
@@ -118,7 +117,3 @@ def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
             assert 'Bugs Discovered' in writes[0][2]['body']
         else:
             assert writes == []
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prbugspace_'))

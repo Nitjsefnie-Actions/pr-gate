@@ -4,7 +4,6 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util
 from _prgate import (
     ROOT, _api, _gate_module, _html_body, _issue, _issue_gets, _issue_html,
     _text_html, _valid_body, _valid_html,
@@ -249,7 +248,3 @@ def test_footer_whitespace_mode_follows_code_boundaries(tmp):
         assert _run(api) == (0 if expected == 'admitted' else 2)
         assert api.pull['state'] == 'open', markup
         assert (api.writes == []) == (expected == 'admitted'), markup
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prcontent_'))

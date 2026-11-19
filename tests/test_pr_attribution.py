@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util
 from _prgate import (
     FakeApi, _Response, _issue, _pull, _run_script, _script_fixtures,
     ROOT, _valid_body, run_gate,
@@ -969,7 +968,3 @@ def test_commit_list_transport_failure_is_an_attribution_error(tmp=None):
         assert str(error) == 'gh pagination exceeded 3 commit pages'
     else:
         raise AssertionError('a paginate transport failure was not wrapped')
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prattr_'))

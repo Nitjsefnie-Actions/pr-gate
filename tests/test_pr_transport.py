@@ -4,7 +4,6 @@ import os
 import subprocess
 import sys
 
-import _util
 from _prgate import ROOT, _write_gh_stub
 
 
@@ -78,7 +77,3 @@ assert response.data == {'title': 'caf\u00e9'}, response.data
 '''
     result = _request_in_c_locale(tmp, payload, checks)
     assert result.returncode == 0, (result.stdout, result.stderr)
-
-
-if __name__ == '__main__':
-    raise SystemExit(_util.runner(_util.collect(globals()), tmp_prefix='prtransport_'))

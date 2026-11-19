@@ -278,8 +278,3 @@ def test_tighten_refuses_malformed_baseline_without_writing(tmp):
     with contextlib.redirect_stderr(io.StringIO()) as error:
         code, _ = _invoke('--tighten', '--baseline', absent, document=_document())
     assert code == 2 and error.getvalue() and not absent.exists()
-
-
-if __name__ == '__main__':
-    from _util import collect, runner
-    raise SystemExit(runner(collect(globals()), tmp_prefix='typeratchet_'))

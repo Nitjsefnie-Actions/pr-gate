@@ -8,7 +8,6 @@ from pathlib import Path
 from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import _util  # noqa: E402
 from _prgate import (  # noqa: E402
     BOT, CLI_FOOTER_HTML, OPEN_FIRST, MARKER,
     RESOLVED_FIRST, TEMPLATE,
@@ -330,15 +329,18 @@ def test_write_failure_message_carries_the_response_body(tmp):
     assert (code, run_error) == (1, f'pr gate failed: {expected}\n')
 
 
-def test_open_admissible_human_close_aborts_resolved_comment_patch(_tmp):
+def test_open_admissible_human_close_aborts_resolved_comment_patch(tmp):
+    del tmp
     _assert_open_resolved_human_close_aborts_comment()
 
 
-def test_open_inadmissible_human_close_aborts_the_comment(_tmp):
+def test_open_inadmissible_human_close_aborts_the_comment(tmp):
+    del tmp
     _assert_open_inadmissible_human_close_aborts_comment()
 
 
-def test_open_inadmissible_merge_aborts_before_comment(_tmp):
+def test_open_inadmissible_merge_aborts_before_comment(tmp):
+    del tmp
     _assert_open_inadmissible_merge_aborts_comment()
 
 
@@ -732,12 +734,3 @@ def test_unparsable_gh_failure_reports_one_stderr_line(tmp):
     assert result.stderr.splitlines() == [
         'pr gate failed: could not read gh response: first gh failure line '
         'second gh failure line'], result.stderr
-
-
-def main():
-    return _util.runner(
-        _util.collect(globals()), tmp_prefix='prgate_')
-
-
-if __name__ == '__main__':
-    raise SystemExit(main())
