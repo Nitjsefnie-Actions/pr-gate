@@ -15,7 +15,6 @@
 !pyright-baseline.json
 !.pylintrc
 !setup.cfg
-!run_tests.py
 !.gitleaks.toml
 !.github/
 .github/*

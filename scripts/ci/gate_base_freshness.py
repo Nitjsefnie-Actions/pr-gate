@@ -39,9 +39,8 @@ a narrower gate looks the same as a correct one:
     door, against a ruleset the maintainer set to false on purpose. That is
     the maintainer's decision to make, so the limit is named and the answer
     stays visible rather than taken here.
-  - What a gate script reaches from inside itself, past the `run:` block —
-    `run_tests.py` discovers every `tests/test_*.py` module, and none of
-    those names reaches this derivation.
+  - What a gate script reaches from inside itself, past the paths its `run:`
+    block names.
 
 Runs on the standard library alone. The workflows are read with a parser for
 the block layout this repository uses rather than a YAML dependency, for the

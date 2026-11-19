@@ -6,7 +6,7 @@ name: types
 # token, so a typing defect is an admission-gate defect.
 #
 # pyright runs in basic mode over exactly the tracked Python
-# (pyrightconfig.json: run_tests.py, scripts/ci, tests), version-pinned
+# (pyrightconfig.json: scripts/ci, tests), version-pinned
 # in requirements-lint.txt. It resolves `import yaml` in tests/ through
 # the test dependencies installed below.
 #
