@@ -120,11 +120,6 @@ def test_required_jobs_name_the_two_required_contexts(tmp):
         assert name in jobs, f'{path} must define the required job {name!r}'
 
 
-def _tracked_tests():
-    return subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'HEAD', 'tests/'], cwd=ROOT,
-                          capture_output=True, text=True, check=True).stdout.splitlines()
-
-
 # The exact derived set on this repository's HEAD: a required job naming a new file forces this
 # pin to change in the same commit, so the set can neither shrink nor grow in silence. The suites
 # job names `tests/`, which resolves to every tracked file under it.
@@ -167,7 +162,8 @@ def test_gate_paths_on_this_repository(tmp):
         'scripts/ci/pr_policy.py',
         'scripts/ci/release_dispatch.py',
         'scripts/ci/type_ratchet.py',
-    ] + _tracked_tests()), done.stdout
+    ] + subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'HEAD', 'tests/'], cwd=ROOT,
+                       capture_output=True, text=True, check=True).stdout.splitlines()), done.stdout
 
 
 def test_green_when_the_head_carries_every_gate_commit(tmp):
