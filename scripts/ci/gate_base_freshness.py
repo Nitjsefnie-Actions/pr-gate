@@ -29,7 +29,7 @@ a narrower gate looks the same as a correct one:
 
   - A tool reading a configuration file no `run:` names. actionlint reads
     `.github/actionlint.yaml`; zizmor reads `zizmor.yml` at the root of the
-    path it is given and under `.github/`.
+    path it is given and under `.github/`; pytest reads its ini-file.
   - The whole-tree spelling. `git grep ... -- .` in the `actionlint` job's
     merge-marker step reads EVERY tracked file, and `.` resolves to nothing
     here, so that step contributes no paths at all. Giving `resolve()` a
