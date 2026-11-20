@@ -3,6 +3,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 CONFTEST = Path(__file__).resolve().parent / 'conftest.py'
@@ -31,6 +33,42 @@ def test_tmp_is_removed_after_its_test(tmp):
     assert done.returncode == 0, done.stdout + done.stderr
     seen = Path(record.read_text(encoding='utf-8'))
     assert seen.name.startswith('pr_gate_tests_') and not seen.exists()
+
+
+def test_a_killed_runs_tmp_is_removed_by_the_next_run(tmp):
+    record = tmp / 'left.txt'
+    killed = _pytest(tmp, {'test_left.py': 'import os\n\ndef test_left(tmp):\n'
+                           f'    open({str(record)!r}, "w", encoding="utf-8").write(str(tmp))\n'
+                           '    os._exit(9)\n'})
+    assert killed.returncode == 9, killed.stdout + killed.stderr
+    left = Path(record.read_text(encoding='utf-8'))
+    done = _pytest(tmp, {'test_left.py': 'def test_ok():\n    pass\n'})
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert left.name.startswith('pr_gate_tests_') and not list(left.parent.glob(left.name + '*'))
+
+
+def test_a_live_runs_tmp_survives_every_other_run(tmp):
+    record, release, live, other = tmp / 'live.txt', tmp / 'go', tmp / 'live', tmp / 'other'
+    live.mkdir()
+    other.mkdir()
+    wait = ('import os, time\n\ndef test_live(tmp):\n'
+            f'    open({str(record)!r}, "w", encoding="utf-8").write(str(tmp))\n'
+            f'    while not os.path.exists({str(release)!r}):\n        time.sleep(0.05)\n')
+    with ThreadPoolExecutor() as pool:
+        running = pool.submit(_pytest, live, {'test_live.py': wait})
+        try:
+            while not running.done() and not (record.exists() and record.stat().st_size):
+                time.sleep(0.05)
+            held = Path(record.read_text(encoding='utf-8'))
+            for workers in ('0', '2'):
+                done = _pytest(other, {'test_ok.py': 'def test_ok(tmp):\n    del tmp\n'}, workers)
+                assert done.returncode == 0, done.stdout + done.stderr
+                assert held.is_dir()
+        finally:
+            release.touch()
+        done = running.result()
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert not list(held.parent.glob(held.name + '*'))
 
 
 def test_a_module_that_runs_no_test_fails_the_run(tmp):
