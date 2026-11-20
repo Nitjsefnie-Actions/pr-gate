@@ -30,7 +30,7 @@ def _release(fd, lock):
     """Unlink lock while held; Windows unlinks no open file, so only once closed."""
     try:
         os.unlink(lock)
-    except PermissionError:
+    except OSError:
         os.close(fd)
         with contextlib.suppress(OSError):
             os.unlink(lock)
@@ -67,7 +67,7 @@ def pytest_sessionstart():
         try:
             _lock(fd, wait=False)
             dead = os.fstat(fd).st_nlink > 0
-            if dead and lock.with_suffix('').exists():
+            if dead and lock.with_suffix('').is_dir(follow_symlinks=False):
                 shutil.rmtree(lock.with_suffix(''), onexc=_writable)
         except OSError:
             dead = False
