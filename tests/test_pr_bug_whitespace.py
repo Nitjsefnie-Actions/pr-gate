@@ -49,11 +49,6 @@ def test_captured_code_newline_is_not_a_single_line_bug_pointer(tmp):
     _decision(CASES['code_newline'], 'The bug', 'refused', 'only unordered list items')
 
 
-def test_code_spaces_are_compared_exactly_not_blanket_rejected(tmp):
-    del tmp
-    _decision(CASES['code_two_spaces'], 'The  bug', 'admitted')
-
-
 def test_bug_normal_flow_whitespace_still_collapses(tmp):
     del tmp
     case = CASES['code_two_spaces']

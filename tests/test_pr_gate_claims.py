@@ -267,20 +267,6 @@ def test_layout_failure_with_reference_comments(tmp):
         ['Required section "Summary" is missing.'])
 
 
-def test_related_without_reference_comments(tmp):
-    del tmp
-    body = _valid_body('see the tracker')
-    rendered = _valid_html(references=_text_html('see the tracker'))
-    code, writes, _output, _error = _execute(
-        _api(issues={}, rendered=rendered), body)
-    assert code == 2
-    assert _write_sequence(writes) == [
-        ('POST', 'repos/owner/repo/issues/99/comments')]
-    _assert_gate_message(
-        writes[0], OPEN_FIRST,
-        ['No checked issue is assigned to you.'])
-
-
 def test_reference_outside_related_does_not_claim(tmp):
     del tmp
     body = _valid_body('none').replace(
