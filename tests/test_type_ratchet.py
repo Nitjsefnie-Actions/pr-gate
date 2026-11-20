@@ -192,7 +192,7 @@ def test_tighten_refuses_malformed_or_incomplete_reports_without_writes(tmp):
     documents = [[], {}, {'summary': {'errorCount': 0}},
                  {'generalDiagnostics': []},
                  {'generalDiagnostics': [], 'summary': []},
-                 {'generalDiagnostics': [False], 'summary': {'errorCount': 0}},
+                 {'generalDiagnostics': ['entry'], 'summary': {'errorCount': 0}},
                  {'generalDiagnostics': 'bad', 'summary': {'errorCount': 0}}]
     for bad_count in (True, -1, '0', None, 1):
         documents.append({'generalDiagnostics': [], 'summary': {'errorCount': bad_count}})
@@ -212,7 +212,7 @@ def test_tighten_refuses_malformed_or_incomplete_reports_without_writes(tmp):
 
 def test_tighten_refuses_malformed_baseline_without_writing(tmp):
     baseline = tmp / 'baseline.json'
-    for content in ('{bad', '[]', '{}', '{"error_count":true}',
+    for content in ('{bad', '[]', '{}', '{"other":1}', '{"error_count":true}',
                     '{"error_count":-1}', '{"error_count":"2"}'):
         baseline.write_text(content, encoding='utf-8')
         before = baseline.read_bytes()
