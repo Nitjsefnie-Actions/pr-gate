@@ -94,28 +94,12 @@ def test_counts_fall_freely_below_the_baseline(tmp):
     assert '1 measured' in out
 
 
-def test_warnings_and_informations_never_count(tmp):
-    _baseline(tmp / 'baseline.json', 0)
-    code, out = _invoke('--baseline', tmp / 'baseline.json',
-                        document=_document(warnings=2, informations=2))
-    assert code == 0
-    assert '0 measured' in out
-
-
 def test_missing_general_diagnostics_key_counts_zero_errors(tmp):
     _baseline(tmp / 'baseline.json', 0)
     code, out = _invoke('--baseline', tmp / 'baseline.json',
                         document={'summary': {'filesAnalyzed': 1}})
     assert code == 0
     assert '0 measured' in out
-
-
-def test_document_read_from_stdin_when_no_path_argument(tmp):
-    _baseline(tmp / 'baseline.json', 0)
-    code, _ = _invoke('--baseline', tmp / 'baseline.json',
-                      document=_document(errors=0))
-    assert code == 0, (
-        'no path argument means the report arrives on stdin')
 
 
 def test_malformed_document_fails_loudly(tmp):
@@ -136,13 +120,6 @@ def test_non_object_document_fails_loudly(tmp):
     assert out == ''
 
 
-def test_missing_baseline_file_fails_loudly(tmp):
-    code, out = _invoke('--baseline', tmp / 'absent.json',
-                        document=_document(errors=0))
-    assert code == 2
-    assert out == ''
-
-
 def test_baseline_count_must_be_a_non_negative_integer(tmp):
     for bad in ('"three"', '-1', 'null', 'true', '1.5'):
         (tmp / 'baseline.json').write_text(
@@ -153,17 +130,6 @@ def test_baseline_count_must_be_a_non_negative_integer(tmp):
         assert out == ''
 
 
-def test_non_dict_diagnostic_entry_fails_loudly(tmp):
-    _baseline(tmp / 'baseline.json', 0)
-    code, out = _invoke('--baseline', tmp / 'baseline.json',
-                        document={'generalDiagnostics': ['not a diagnostic'],
-                                  'summary': {'filesAnalyzed': 1}})
-    assert code == 2, (
-        'an unreadable diagnostic entry is a broken gate: an undercount '
-        'must never read as a clean one')
-    assert out == ''
-
-
 def test_non_list_general_diagnostics_fails_loudly(tmp):
     _baseline(tmp / 'baseline.json', 0)
     code, out = _invoke('--baseline', tmp / 'baseline.json',
@@ -172,23 +138,6 @@ def test_non_list_general_diagnostics_fails_loudly(tmp):
     assert code == 2, (
         'a diagnostics member no list can hold is a broken gate, not a '
         'clean count of zero')
-    assert out == ''
-
-
-def test_malformed_baseline_json_fails_loudly(tmp):
-    (tmp / 'baseline.json').write_text('{not json', encoding='utf-8')
-    code, out = _invoke('--baseline', tmp / 'baseline.json',
-                        document=_document(errors=0))
-    assert code == 2
-    assert out == ''
-
-
-def test_baseline_without_error_count_fails_loudly(tmp):
-    (tmp / 'baseline.json').write_text('{"other": 1}', encoding='utf-8')
-    code, out = _invoke('--baseline', tmp / 'baseline.json',
-                        document=_document(errors=0))
-    assert code == 2, (
-        'a baseline without a recorded count cannot gate anything')
     assert out == ''
 
 

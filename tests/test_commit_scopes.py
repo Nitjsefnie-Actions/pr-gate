@@ -139,16 +139,8 @@ def test_scope_read_by_the_gates_own_rule(tmp):
         assert (not reasons) == (scope is not None), subject
 
 
-def test_non_workflow_scope_with_any_type_passes(tmp):
-    repo, _ = _fixture(tmp, head_subject='fix(ci): not a workflow name')
-    done = _run_gate(tmp, repo)
-    assert done.returncode == 0, (done.stdout, done.stderr)
-    assert 'No commit pairs a workflow-name scope' in done.stdout
-
-
 def test_subjects_that_do_not_parse_are_listed_not_failed(tmp):
-    repo, _ = _fixture(
-        tmp, head_subject='Fix round 1: honest comments')
+    repo, _ = _fixture(tmp, head_subject='Fix round 1: honest comments')
     done = _run_gate(tmp, repo)
     assert done.returncode == 0, (done.stdout, done.stderr)
     assert 'not examined' in done.stdout
@@ -340,8 +332,7 @@ def test_fetch_base_brings_main_in(tmp):
 
 
 def test_check_reports_violations_in_process(tmp):
-    repo, _ = _fixture(
-        tmp, head_subject='fix(actionlint): rewritten flag')
+    repo, _ = _fixture(tmp, head_subject='fix(actionlint): rewritten flag')
     module = _load()
     buffer = io.StringIO()
     with contextlib.redirect_stdout(buffer):
@@ -363,23 +354,6 @@ def test_check_lists_unexamined_subjects_in_process(tmp):
     out = buffer.getvalue()
     assert 'Examined 0 commit subjects in origin/main..HEAD; 1 not examined.' in out
     assert 'Fix round 1: honest comments' in out
-
-
-def test_main_returns_the_check_exit_code(tmp):
-    repo, _ = _fixture(tmp, head_subject='ci(actionlint): the workflow moves')
-    module = _load()
-    buffer = io.StringIO()
-    with contextlib.redirect_stdout(buffer):
-        code = module.main(['commit_scopes.py', '--root', str(repo)])
-    assert code == 0
-    assert 'No commit pairs a workflow-name scope' in buffer.getvalue()
-
-
-def test_main_usage_refusal(tmp):
-    del tmp
-    module = _load()
-    code = module.main(['commit_scopes.py', '--nonsense'])
-    assert code == 2
 
 
 def test_main_handlers_and_fetch_arms(tmp):

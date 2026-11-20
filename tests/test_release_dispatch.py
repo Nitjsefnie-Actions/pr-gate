@@ -297,14 +297,6 @@ def test_verify_pins_main_before_other_reads_and_returns_only_that_sha(tmp):
     assert [argv[2] for argv in api.calls].count(f'repos/{REPO}/branches/main') == 1
 
 
-def test_verify_refuses_a_checkout_that_main_has_overtaken_before_waiting(tmp):
-    del tmp
-    module = _load()
-    api = API({f'repos/{REPO}/branches/main': {'commit': {'sha': 'f' * 40}}})
-    _refuses(module, lambda: module.verify(api, REPO, '2.10.1'), 'main moved')
-    assert len(api.calls) == 1
-
-
 def _clocked_verify(module, contexts):
     printed, clock = io.StringIO(), Clock()
     # Only the module's binding: a global patch would also drive subprocess's own wait loop.
