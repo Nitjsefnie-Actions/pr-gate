@@ -44,9 +44,9 @@ def test_a_killed_runs_tmp_is_removed_by_the_next_run(tmp):
             '    os._exit(9)\n\ndef _request():\n    api, subprocess.run = GhApi(), _killed\n'
             '    api.gh = "gh"\n    api.request("POST", "repos/o/r/issues", {"body": "x"})\n\n'
             'if __name__ == "__main__":\n    _request()\n\n'
-            f'def test_left(tmp):\n    {write}(str(tmp / "x") + "\\n")\n'
+            f'def test_left(tmp):\n    {write}(str(tmp) + "\\n")\n'
             '    assert subprocess.call([sys.executable, __file__]) == 9\n    _request()\n')
-    with tempfile.TemporaryDirectory(prefix='pr-gate-') as other:  # as a live pr_gate.py's
+    with tempfile.TemporaryDirectory(prefix='pr-gate-', dir=tmp.parent.parent) as gate:
         killed = _pytest(tmp, {'test_left.py': code})
         assert killed.returncode == 9, killed.stdout + killed.stderr
         left = [Path(line).parent for line in record.read_text(encoding='utf-8').splitlines()]
@@ -54,7 +54,7 @@ def test_a_killed_runs_tmp_is_removed_by_the_next_run(tmp):
         done = _pytest(tmp, {'test_left.py': 'def test_ok():\n    pass\n'})
         assert done.returncode == 0, done.stdout + done.stderr
         assert not [path for path in left if list(path.parent.glob(path.name + '*'))], left
-        assert Path(other).is_dir()
+        assert Path(gate).is_dir()  # as a live pr_gate.py run's, in the swept temp dir
 
 
 def test_a_live_runs_tmp_survives_every_other_run(tmp):
