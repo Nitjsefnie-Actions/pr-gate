@@ -1,4 +1,5 @@
 """tests/conftest.py's rules, most run as a nested pytest on a scratch copy of it."""
+import os
 import shutil
 import subprocess
 import sys
@@ -11,19 +12,19 @@ CONFTEST = Path(__file__).resolve().parent / 'conftest.py'
 ROOT = CONFTEST.parent.parent
 
 
-def _pytest(project, files, workers='0'):
+def _pytest(project, files, workers='0', **env):
+    project.mkdir(exist_ok=True)
     shutil.copyfile(CONFTEST, project / 'conftest.py')
     for name, text in files.items():
         (project / name).write_text(text, encoding='utf-8')
     return subprocess.run([sys.executable, '-m', 'pytest', '-q', '-p', 'no:cacheprovider', '-n',
                            workers, str(project)], cwd=project, capture_output=True, text=True,
-                          timeout=120, check=False)
+                          timeout=120, check=False, env={**os.environ, **env})
 
 
 def test_tmp_is_a_private_unresolved_directory(tmp):
     assert isinstance(tmp, Path) and tmp.parent == Path(tempfile.gettempdir())
-    assert tmp.name.startswith('pr_gate_tests_')
-    assert tmp.is_dir() and not any(tmp.iterdir())
+    assert tmp.name.startswith('pr_gate_tests_') and tmp.is_dir() and not any(tmp.iterdir())
 
 
 def test_tmp_is_removed_after_its_test(tmp):
@@ -46,21 +47,20 @@ def test_a_killed_runs_tmp_is_removed_by_the_next_run(tmp):
             'if __name__ == "__main__":\n    _request()\n\n'
             f'def test_left(tmp):\n    {write}(str(tmp) + "\\n")\n'
             '    assert subprocess.call([sys.executable, __file__]) == 9\n    _request()\n')
-    with tempfile.TemporaryDirectory(prefix='pr-gate-', dir=tmp.parent.parent) as gate:
-        killed = _pytest(tmp, {'test_left.py': code})
+    alone = {'PR_GATE_TESTS_TEMP': str(tmp)}  # its runs sweep only tmp, which holds the decoy
+    with tempfile.TemporaryDirectory(prefix='pr-gate-', dir=tmp) as gate:
+        killed = _pytest(tmp, {'test_left.py': code}, **alone)
         assert killed.returncode == 9, killed.stdout + killed.stderr
         left = [Path(line).parent for line in record.read_text(encoding='utf-8').splitlines()]
         assert [p.name[:8] for p in left if p.is_dir()] == ['pr_gate_'] + ['pr-gate-'] * 2, left
-        done = _pytest(tmp, {'test_left.py': 'def test_ok():\n    pass\n'})
+        done = _pytest(tmp, {'test_left.py': 'def test_ok():\n    pass\n'}, **alone)
         assert done.returncode == 0, done.stdout + done.stderr
         assert not [path for path in left if list(path.parent.glob(path.name + '*'))], left
-        assert Path(gate).is_dir()  # as a live pr_gate.py run's, in the swept temp dir
+        assert Path(gate).is_dir()  # as a live pr_gate.py run's
 
 
 def test_a_live_runs_tmp_survives_every_other_run(tmp):
     record, release, live, other = tmp / 'live.txt', tmp / 'go', tmp / 'live', tmp / 'other'
-    live.mkdir()
-    other.mkdir()
     wait = ('import os, time\n\ndef test_live(tmp):\n'
             f'    open({str(record)!r}, "w", encoding="utf-8").write(str(tmp))\n'
             f'    while not os.path.exists({str(release)!r}):\n        time.sleep(0.05)\n')
