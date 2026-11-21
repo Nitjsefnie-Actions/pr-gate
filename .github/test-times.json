@@ -1,143 +1,421 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "cells": {
     "macos-latest / Python 3.14": {
-      "tests/test_action.py": 3.68,
-      "tests/test_commit_scopes.py": 10.97,
-      "tests/test_conftest.py": 4.65,
-      "tests/test_gate_base_freshness.py": 17.12,
-      "tests/test_pr_attribution.py": 1.9,
-      "tests/test_pr_body.py": 0.07,
-      "tests/test_pr_body_closing.py": 0.05,
-      "tests/test_pr_body_elements.py": 0.01,
-      "tests/test_pr_body_overflow.py": 0.03,
-      "tests/test_pr_bug_whitespace.py": 7.4,
-      "tests/test_pr_commits.py": 13.38,
-      "tests/test_pr_content.py": 0.08,
-      "tests/test_pr_gate.py": 18.05,
-      "tests/test_pr_gate_claims.py": 0.02,
-      "tests/test_pr_gate_context.py": 0.01,
-      "tests/test_pr_rendered_content.py": 0.0,
-      "tests/test_pr_transport.py": 1.24,
-      "tests/test_ratchet_push.py": 30.06,
-      "tests/test_release_dispatch.py": 1.42,
-      "tests/test_type_ratchet.py": 0.23,
-      "tests/test_workflows.py": 3.04
+      "tests/test_action.py": [
+        3.68,
+        6.49
+      ],
+      "tests/test_commit_scopes.py": [
+        10.97,
+        8.04
+      ],
+      "tests/test_conftest.py": [
+        4.65,
+        7.85
+      ],
+      "tests/test_gate_base_freshness.py": [
+        17.12
+      ],
+      "tests/test_pr_attribution.py": [
+        1.9
+      ],
+      "tests/test_pr_body.py": [
+        0.07
+      ],
+      "tests/test_pr_body_closing.py": [
+        0.05
+      ],
+      "tests/test_pr_body_elements.py": [
+        0.01
+      ],
+      "tests/test_pr_body_overflow.py": [
+        0.03
+      ],
+      "tests/test_pr_bug_whitespace.py": [
+        7.4,
+        4.65
+      ],
+      "tests/test_pr_commits.py": [
+        13.38,
+        8.47
+      ],
+      "tests/test_pr_content.py": [
+        0.08
+      ],
+      "tests/test_pr_gate.py": [
+        18.05
+      ],
+      "tests/test_pr_gate_claims.py": [
+        0.02
+      ],
+      "tests/test_pr_gate_context.py": [
+        0.01
+      ],
+      "tests/test_pr_rendered_content.py": [
+        0.0
+      ],
+      "tests/test_pr_transport.py": [
+        1.24
+      ],
+      "tests/test_ratchet_push.py": [
+        30.06,
+        46.24
+      ],
+      "tests/test_release_dispatch.py": [
+        1.42
+      ],
+      "tests/test_type_ratchet.py": [
+        0.23
+      ],
+      "tests/test_workflows.py": [
+        3.04
+      ]
     },
     "macos-latest / Python 3.15": {
-      "tests/test_action.py": 6.25,
-      "tests/test_commit_scopes.py": 8.57,
-      "tests/test_conftest.py": 7.7,
-      "tests/test_gate_base_freshness.py": 12.21,
-      "tests/test_pr_attribution.py": 3.19,
-      "tests/test_pr_body.py": 0.11,
-      "tests/test_pr_body_closing.py": 0.06,
-      "tests/test_pr_body_elements.py": 0.01,
-      "tests/test_pr_body_overflow.py": 0.05,
-      "tests/test_pr_bug_whitespace.py": 5.66,
-      "tests/test_pr_commits.py": 9.61,
-      "tests/test_pr_content.py": 0.05,
-      "tests/test_pr_gate.py": 13.57,
-      "tests/test_pr_gate_claims.py": 0.04,
-      "tests/test_pr_gate_context.py": 0.0,
-      "tests/test_pr_rendered_content.py": 0.01,
-      "tests/test_pr_transport.py": 1.23,
-      "tests/test_ratchet_push.py": 47.33,
-      "tests/test_release_dispatch.py": 0.9,
-      "tests/test_type_ratchet.py": 0.38,
-      "tests/test_workflows.py": 2.09
+      "tests/test_action.py": [
+        6.25
+      ],
+      "tests/test_commit_scopes.py": [
+        8.57
+      ],
+      "tests/test_conftest.py": [
+        7.7
+      ],
+      "tests/test_gate_base_freshness.py": [
+        12.21
+      ],
+      "tests/test_pr_attribution.py": [
+        3.19
+      ],
+      "tests/test_pr_body.py": [
+        0.11
+      ],
+      "tests/test_pr_body_closing.py": [
+        0.06
+      ],
+      "tests/test_pr_body_elements.py": [
+        0.01
+      ],
+      "tests/test_pr_body_overflow.py": [
+        0.05
+      ],
+      "tests/test_pr_bug_whitespace.py": [
+        5.66,
+        4.13
+      ],
+      "tests/test_pr_commits.py": [
+        9.61,
+        6.79
+      ],
+      "tests/test_pr_content.py": [
+        0.05
+      ],
+      "tests/test_pr_gate.py": [
+        13.57,
+        9.32
+      ],
+      "tests/test_pr_gate_claims.py": [
+        0.04
+      ],
+      "tests/test_pr_gate_context.py": [
+        0.0
+      ],
+      "tests/test_pr_rendered_content.py": [
+        0.01
+      ],
+      "tests/test_pr_transport.py": [
+        1.23
+      ],
+      "tests/test_ratchet_push.py": [
+        47.33
+      ],
+      "tests/test_release_dispatch.py": [
+        0.9
+      ],
+      "tests/test_type_ratchet.py": [
+        0.38
+      ],
+      "tests/test_workflows.py": [
+        2.09
+      ]
     },
     "ubuntu-latest / Python 3.14": {
-      "tests/test_action.py": 9.74,
-      "tests/test_commit_scopes.py": 4.49,
-      "tests/test_conftest.py": 14.91,
-      "tests/test_gate_base_freshness.py": 6.91,
-      "tests/test_pr_attribution.py": 5.03,
-      "tests/test_pr_body.py": 0.12,
-      "tests/test_pr_body_closing.py": 0.16,
-      "tests/test_pr_body_elements.py": 0.01,
-      "tests/test_pr_body_overflow.py": 0.03,
-      "tests/test_pr_bug_whitespace.py": 9.11,
-      "tests/test_pr_commits.py": 15.32,
-      "tests/test_pr_content.py": 0.07,
-      "tests/test_pr_gate.py": 21.5,
-      "tests/test_pr_gate_claims.py": 0.06,
-      "tests/test_pr_gate_context.py": 0.0,
-      "tests/test_pr_rendered_content.py": 0.02,
-      "tests/test_pr_transport.py": 1.71,
-      "tests/test_ratchet_push.py": 54.94,
-      "tests/test_release_dispatch.py": 1.02,
-      "tests/test_type_ratchet.py": 0.46,
-      "tests/test_workflows.py": 2.52
+      "tests/test_action.py": [
+        9.74
+      ],
+      "tests/test_commit_scopes.py": [
+        4.49
+      ],
+      "tests/test_conftest.py": [
+        14.91
+      ],
+      "tests/test_gate_base_freshness.py": [
+        6.91
+      ],
+      "tests/test_pr_attribution.py": [
+        5.03
+      ],
+      "tests/test_pr_body.py": [
+        0.12
+      ],
+      "tests/test_pr_body_closing.py": [
+        0.16
+      ],
+      "tests/test_pr_body_elements.py": [
+        0.01
+      ],
+      "tests/test_pr_body_overflow.py": [
+        0.03
+      ],
+      "tests/test_pr_bug_whitespace.py": [
+        9.11
+      ],
+      "tests/test_pr_commits.py": [
+        15.32
+      ],
+      "tests/test_pr_content.py": [
+        0.07
+      ],
+      "tests/test_pr_gate.py": [
+        21.5
+      ],
+      "tests/test_pr_gate_claims.py": [
+        0.06
+      ],
+      "tests/test_pr_gate_context.py": [
+        0.0
+      ],
+      "tests/test_pr_rendered_content.py": [
+        0.02
+      ],
+      "tests/test_pr_transport.py": [
+        1.71
+      ],
+      "tests/test_ratchet_push.py": [
+        54.94
+      ],
+      "tests/test_release_dispatch.py": [
+        1.02
+      ],
+      "tests/test_type_ratchet.py": [
+        0.46
+      ],
+      "tests/test_workflows.py": [
+        2.52
+      ]
     },
     "ubuntu-latest / Python 3.15": {
-      "tests/test_action.py": 7.53,
-      "tests/test_commit_scopes.py": 2.52,
-      "tests/test_conftest.py": 11.83,
-      "tests/test_gate_base_freshness.py": 5.5,
-      "tests/test_pr_attribution.py": 3.01,
-      "tests/test_pr_body.py": 0.06,
-      "tests/test_pr_body_closing.py": 0.06,
-      "tests/test_pr_body_elements.py": 0.0,
-      "tests/test_pr_body_overflow.py": 0.01,
-      "tests/test_pr_bug_whitespace.py": 7.09,
-      "tests/test_pr_commits.py": 12.36,
-      "tests/test_pr_content.py": 0.04,
-      "tests/test_pr_gate.py": 14.71,
-      "tests/test_pr_gate_claims.py": 0.02,
-      "tests/test_pr_gate_context.py": 0.0,
-      "tests/test_pr_rendered_content.py": 0.01,
-      "tests/test_pr_transport.py": 1.02,
-      "tests/test_ratchet_push.py": 35.41,
-      "tests/test_release_dispatch.py": 0.54,
-      "tests/test_type_ratchet.py": 0.45,
-      "tests/test_workflows.py": 1.81
+      "tests/test_action.py": [
+        7.53
+      ],
+      "tests/test_commit_scopes.py": [
+        2.52,
+        3.74
+      ],
+      "tests/test_conftest.py": [
+        11.83,
+        15.39
+      ],
+      "tests/test_gate_base_freshness.py": [
+        5.5
+      ],
+      "tests/test_pr_attribution.py": [
+        3.01,
+        4.74
+      ],
+      "tests/test_pr_body.py": [
+        0.06
+      ],
+      "tests/test_pr_body_closing.py": [
+        0.06
+      ],
+      "tests/test_pr_body_elements.py": [
+        0.0
+      ],
+      "tests/test_pr_body_overflow.py": [
+        0.01
+      ],
+      "tests/test_pr_bug_whitespace.py": [
+        7.09,
+        8.92
+      ],
+      "tests/test_pr_commits.py": [
+        12.36,
+        15.72
+      ],
+      "tests/test_pr_content.py": [
+        0.04
+      ],
+      "tests/test_pr_gate.py": [
+        14.71,
+        20.35
+      ],
+      "tests/test_pr_gate_claims.py": [
+        0.02
+      ],
+      "tests/test_pr_gate_context.py": [
+        0.0
+      ],
+      "tests/test_pr_rendered_content.py": [
+        0.01
+      ],
+      "tests/test_pr_transport.py": [
+        1.02
+      ],
+      "tests/test_ratchet_push.py": [
+        35.41,
+        45.51
+      ],
+      "tests/test_release_dispatch.py": [
+        0.54
+      ],
+      "tests/test_type_ratchet.py": [
+        0.45
+      ],
+      "tests/test_workflows.py": [
+        1.81
+      ]
     },
     "windows-latest / Python 3.14": {
-      "tests/test_action.py": 11.0,
-      "tests/test_commit_scopes.py": 26.37,
-      "tests/test_conftest.py": 14.93,
-      "tests/test_gate_base_freshness.py": 32.06,
-      "tests/test_pr_attribution.py": 7.8,
-      "tests/test_pr_body.py": 0.17,
-      "tests/test_pr_body_closing.py": 0.11,
-      "tests/test_pr_body_elements.py": 0.01,
-      "tests/test_pr_body_overflow.py": 0.05,
-      "tests/test_pr_bug_whitespace.py": 10.02,
-      "tests/test_pr_commits.py": 23.8,
-      "tests/test_pr_content.py": 0.11,
-      "tests/test_pr_gate.py": 24.72,
-      "tests/test_pr_gate_claims.py": 0.07,
-      "tests/test_pr_gate_context.py": 0.0,
-      "tests/test_pr_rendered_content.py": 0.02,
-      "tests/test_pr_transport.py": 1.99,
-      "tests/test_ratchet_push.py": 123.59,
-      "tests/test_release_dispatch.py": 2.0,
-      "tests/test_type_ratchet.py": 0.79,
-      "tests/test_workflows.py": 7.03
+      "tests/test_action.py": [
+        11.0,
+        15.91
+      ],
+      "tests/test_commit_scopes.py": [
+        26.37
+      ],
+      "tests/test_conftest.py": [
+        14.93,
+        21.48
+      ],
+      "tests/test_gate_base_freshness.py": [
+        32.06,
+        45.13
+      ],
+      "tests/test_pr_attribution.py": [
+        7.8
+      ],
+      "tests/test_pr_body.py": [
+        0.17
+      ],
+      "tests/test_pr_body_closing.py": [
+        0.11
+      ],
+      "tests/test_pr_body_elements.py": [
+        0.01
+      ],
+      "tests/test_pr_body_overflow.py": [
+        0.05
+      ],
+      "tests/test_pr_bug_whitespace.py": [
+        10.02,
+        14.05
+      ],
+      "tests/test_pr_commits.py": [
+        23.8
+      ],
+      "tests/test_pr_content.py": [
+        0.11
+      ],
+      "tests/test_pr_gate.py": [
+        24.72,
+        33.45
+      ],
+      "tests/test_pr_gate_claims.py": [
+        0.07
+      ],
+      "tests/test_pr_gate_context.py": [
+        0.0
+      ],
+      "tests/test_pr_rendered_content.py": [
+        0.02
+      ],
+      "tests/test_pr_transport.py": [
+        1.99
+      ],
+      "tests/test_ratchet_push.py": [
+        123.59
+      ],
+      "tests/test_release_dispatch.py": [
+        2.0
+      ],
+      "tests/test_type_ratchet.py": [
+        0.79
+      ],
+      "tests/test_workflows.py": [
+        7.03,
+        8.9
+      ]
     },
     "windows-latest / Python 3.15": {
-      "tests/test_action.py": 10.66,
-      "tests/test_commit_scopes.py": 23.66,
-      "tests/test_conftest.py": 13.82,
-      "tests/test_gate_base_freshness.py": 38.95,
-      "tests/test_pr_attribution.py": 5.63,
-      "tests/test_pr_body.py": 0.14,
-      "tests/test_pr_body_closing.py": 0.1,
-      "tests/test_pr_body_elements.py": 0.01,
-      "tests/test_pr_body_overflow.py": 0.03,
-      "tests/test_pr_bug_whitespace.py": 9.24,
-      "tests/test_pr_commits.py": 15.34,
-      "tests/test_pr_content.py": 0.08,
-      "tests/test_pr_gate.py": 20.46,
-      "tests/test_pr_gate_claims.py": 0.05,
-      "tests/test_pr_gate_context.py": 0.0,
-      "tests/test_pr_rendered_content.py": 0.01,
-      "tests/test_pr_transport.py": 1.73,
-      "tests/test_ratchet_push.py": 84.22,
-      "tests/test_release_dispatch.py": 1.47,
-      "tests/test_type_ratchet.py": 0.7,
-      "tests/test_workflows.py": 5.59
+      "tests/test_action.py": [
+        10.66
+      ],
+      "tests/test_commit_scopes.py": [
+        23.66
+      ],
+      "tests/test_conftest.py": [
+        13.82
+      ],
+      "tests/test_gate_base_freshness.py": [
+        38.95
+      ],
+      "tests/test_pr_attribution.py": [
+        5.63,
+        7.12
+      ],
+      "tests/test_pr_body.py": [
+        0.14
+      ],
+      "tests/test_pr_body_closing.py": [
+        0.1
+      ],
+      "tests/test_pr_body_elements.py": [
+        0.01
+      ],
+      "tests/test_pr_body_overflow.py": [
+        0.03
+      ],
+      "tests/test_pr_bug_whitespace.py": [
+        9.24,
+        13.18
+      ],
+      "tests/test_pr_commits.py": [
+        15.34,
+        21.35
+      ],
+      "tests/test_pr_content.py": [
+        0.08
+      ],
+      "tests/test_pr_gate.py": [
+        20.46,
+        30.49
+      ],
+      "tests/test_pr_gate_claims.py": [
+        0.05
+      ],
+      "tests/test_pr_gate_context.py": [
+        0.0
+      ],
+      "tests/test_pr_rendered_content.py": [
+        0.01
+      ],
+      "tests/test_pr_transport.py": [
+        1.73
+      ],
+      "tests/test_ratchet_push.py": [
+        84.22
+      ],
+      "tests/test_release_dispatch.py": [
+        1.47
+      ],
+      "tests/test_type_ratchet.py": [
+        0.7
+      ],
+      "tests/test_workflows.py": [
+        5.59
+      ]
     }
   }
 }
