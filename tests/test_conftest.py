@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 CONFTEST = Path(__file__).resolve().parent / 'conftest.py'
+ROOT = CONFTEST.parent.parent
 
 
 def _pytest(project, files, workers='0'):
@@ -32,19 +33,29 @@ def test_tmp_is_removed_after_its_test(tmp):
                          f'    open({str(record)!r}, "w", encoding="utf-8").write(str(tmp))\n'})
     assert done.returncode == 0, done.stdout + done.stderr
     seen = Path(record.read_text(encoding='utf-8'))
-    assert seen.name.startswith('pr_gate_tests_') and not seen.exists()
+    assert seen.name.startswith('pr_gate_tests_') and not seen.parent.exists()  # the run's too
 
 
 def test_a_killed_runs_tmp_is_removed_by_the_next_run(tmp):
     record = tmp / 'left.txt'
-    killed = _pytest(tmp, {'test_left.py': 'import os\n\ndef test_left(tmp):\n'
-                           f'    open({str(record)!r}, "w", encoding="utf-8").write(str(tmp))\n'
-                           '    os._exit(9)\n'})
-    assert killed.returncode == 9, killed.stdout + killed.stderr
-    left = Path(record.read_text(encoding='utf-8'))
-    done = _pytest(tmp, {'test_left.py': 'def test_ok():\n    pass\n'})
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert left.name.startswith('pr_gate_tests_') and not list(left.parent.glob(left.name + '*'))
+    write = f'open({str(record)!r}, "a", encoding="utf-8").write'
+    code = ('import os, subprocess, sys\n'
+            f'sys.path.insert(0, {str(ROOT)!r})\nfrom scripts.ci.pr_gate import GhApi\n\n'
+            f'def _killed(arguments, **_):\n    {write}(arguments[-1] + "\\n")\n'
+            '    os._exit(9)\n\ndef _request():\n    api, subprocess.run = GhApi(), _killed\n'
+            '    api.gh = "gh"\n    api.request("POST", "repos/o/r/issues", {"body": "x"})\n\n'
+            'if __name__ == "__main__":\n    _request()\n\n'
+            f'def test_left(tmp):\n    {write}(str(tmp / "x") + "\\n")\n'
+            '    assert subprocess.call([sys.executable, __file__]) == 9\n    _request()\n')
+    with tempfile.TemporaryDirectory(prefix='pr-gate-') as other:  # as a live pr_gate.py's
+        killed = _pytest(tmp, {'test_left.py': code})
+        assert killed.returncode == 9, killed.stdout + killed.stderr
+        left = [Path(line).parent for line in record.read_text(encoding='utf-8').splitlines()]
+        assert [p.name[:8] for p in left if p.is_dir()] == ['pr_gate_'] + ['pr-gate-'] * 2, left
+        done = _pytest(tmp, {'test_left.py': 'def test_ok():\n    pass\n'})
+        assert done.returncode == 0, done.stdout + done.stderr
+        assert not [path for path in left if list(path.parent.glob(path.name + '*'))], left
+        assert Path(other).is_dir()
 
 
 def test_a_live_runs_tmp_survives_every_other_run(tmp):

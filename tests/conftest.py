@@ -6,6 +6,7 @@ import stat
 import sys
 import tempfile
 from pathlib import Path
+from unittest import mock
 
 import pytest
 
@@ -38,8 +39,7 @@ def _release(fd, lock):
         os.close(fd)
 
 
-@pytest.fixture
-def tmp():
+def _private():
     while True:
         fd, lock = tempfile.mkstemp(prefix='pr_gate_tests_', suffix='.lock')
         _lock(fd, wait=True)
@@ -57,8 +57,11 @@ def tmp():
     _release(fd, lock)
 
 
-def pytest_sessionstart():
-    """Remove each tmp whose lock no live process holds."""
+tmp = pytest.fixture(_private, name='tmp')
+
+
+def pytest_sessionstart(session):
+    """Remove each tmp no live process holds, then root this run's temporary files in one."""
     for lock in list(Path(tempfile.gettempdir()).glob('pr_gate_tests_*.lock')):
         try:
             fd = os.open(lock, os.O_RDWR)
@@ -75,6 +78,10 @@ def pytest_sessionstart():
             _release(fd, lock)
         else:
             os.close(fd)
+    session.config.add_cleanup((run := contextlib.ExitStack()).close)
+    root = str(run.enter_context(contextlib.contextmanager(_private)()))
+    run.enter_context(mock.patch.dict(os.environ, TMPDIR=root))  # its Python children's too
+    run.enter_context(mock.patch.object(tempfile, 'tempdir', root))
 
 
 @pytest.hookimpl(wrapper=True)
