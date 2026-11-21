@@ -1,4 +1,4 @@
-"""Each test's private tmp directory; an empty test module or a skip fails."""
+"""Each test's private tmp, inside its run's own; an empty test module or a skip fails."""
 import contextlib
 import os
 import shutil
@@ -39,9 +39,9 @@ def _release(fd, lock):
         os.close(fd)
 
 
-def _private():
+def _private(directory=None):
     while True:
-        fd, lock = tempfile.mkstemp(prefix='pr_gate_tests_', suffix='.lock')
+        fd, lock = tempfile.mkstemp(prefix='pr_gate_tests_', suffix='.lock', dir=directory)
         _lock(fd, wait=True)
         if os.fstat(fd).st_nlink:  # else a sweep unlinked it first
             break
@@ -61,8 +61,9 @@ tmp = pytest.fixture(_private, name='tmp')
 
 
 def pytest_sessionstart(session):
-    """Remove each tmp no live process holds, then root this run's temporary files in one."""
-    for lock in list(Path(tempfile.gettempdir()).glob('pr_gate_tests_*.lock')):
+    """Sweep dead runs' tmps; root this run's files in one beside, never in, its parent run's."""
+    system = os.environ.get('PR_GATE_TESTS_TEMP', tempfile.gettempdir())
+    for lock in list(Path(system).glob('pr_gate_tests_*.lock')):
         try:
             fd = os.open(lock, os.O_RDWR)
         except OSError:
@@ -79,8 +80,8 @@ def pytest_sessionstart(session):
         else:
             os.close(fd)
     session.config.add_cleanup((run := contextlib.ExitStack()).close)
-    root = str(run.enter_context(contextlib.contextmanager(_private)()))
-    run.enter_context(mock.patch.dict(os.environ, TMPDIR=root))  # its Python children's too
+    root = str(run.enter_context(contextlib.contextmanager(_private)(system)))
+    run.enter_context(mock.patch.dict(os.environ, TMPDIR=root, PR_GATE_TESTS_TEMP=system))
     run.enter_context(mock.patch.object(tempfile, 'tempdir', root))
 
 

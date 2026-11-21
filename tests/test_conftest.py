@@ -21,8 +21,7 @@ def _pytest(project, files, workers='0'):
 
 
 def test_tmp_is_a_private_unresolved_directory(tmp):
-    assert isinstance(tmp, Path)
-    assert tmp.parent == Path(tempfile.gettempdir())
+    assert isinstance(tmp, Path) and tmp.parent == Path(tempfile.gettempdir())
     assert tmp.name.startswith('pr_gate_tests_')
     assert tmp.is_dir() and not any(tmp.iterdir())
 
@@ -34,11 +33,11 @@ def test_tmp_is_removed_after_its_test(tmp):
     assert done.returncode == 0, done.stdout + done.stderr
     seen = Path(record.read_text(encoding='utf-8'))
     assert seen.name.startswith('pr_gate_tests_') and not seen.parent.exists()  # the run's too
+    assert seen.parent.parent == tmp.parent.parent  # beside this run's, never inside it
 
 
 def test_a_killed_runs_tmp_is_removed_by_the_next_run(tmp):
-    record = tmp / 'left.txt'
-    write = f'open({str(record)!r}, "a", encoding="utf-8").write'
+    record, write = tmp / 'left.txt', f'open({str(tmp / "left.txt")!r}, "a").write'
     code = ('import os, subprocess, sys\n'
             f'sys.path.insert(0, {str(ROOT)!r})\nfrom scripts.ci.pr_gate import GhApi\n\n'
             f'def _killed(arguments, **_):\n    {write}(arguments[-1] + "\\n")\n'
@@ -79,7 +78,7 @@ def test_a_live_runs_tmp_survives_every_other_run(tmp):
             release.touch()
         done = running.result()
     assert done.returncode == 0, done.stdout + done.stderr
-    assert not list(held.parent.glob(held.name + '*'))
+    assert not list(held.parent.parent.glob(held.parent.name + '*'))
 
 
 def test_a_module_that_runs_no_test_fails_the_run(tmp):
