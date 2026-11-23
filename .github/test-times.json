@@ -15,10 +15,12 @@
         7.85
       ],
       "tests/test_gate_base_freshness.py": [
-        17.12
+        17.12,
+        12.45
       ],
       "tests/test_pr_attribution.py": [
-        1.9
+        1.9,
+        3.76
       ],
       "tests/test_pr_body.py": [
         0.07
@@ -69,7 +71,8 @@
         0.23
       ],
       "tests/test_workflows.py": [
-        3.04
+        3.04,
+        1.99
       ]
     },
     "macos-latest / Python 3.15": {
@@ -169,7 +172,8 @@
         0.03
       ],
       "tests/test_pr_bug_whitespace.py": [
-        9.11
+        9.11,
+        6.73
       ],
       "tests/test_pr_commits.py": [
         15.32
@@ -405,7 +409,8 @@
         1.73
       ],
       "tests/test_ratchet_push.py": [
-        84.22
+        84.22,
+        121.55
       ],
       "tests/test_release_dispatch.py": [
         1.47
@@ -414,7 +419,8 @@
         0.7
       ],
       "tests/test_workflows.py": [
-        5.59
+        5.59,
+        8.62
       ]
     }
   }
