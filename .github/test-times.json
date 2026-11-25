@@ -66,7 +66,8 @@
       ],
       "tests/test_ratchet_push.py": [
         30.06,
-        46.24
+        46.24,
+        64.94
       ],
       "tests/test_release_dispatch.py": [
         1.42
@@ -82,22 +83,26 @@
     "macos-latest / Python 3.15": {
       "tests/test_action.py": [
         6.25,
-        4.57
+        4.57,
+        9.13
       ],
       "tests/test_commit_scopes.py": [
         8.57,
-        12.08
+        12.08,
+        17.83
       ],
       "tests/test_conftest.py": [
         7.7,
-        11.79
+        11.79,
+        16.43
       ],
       "tests/test_gate_base_freshness.py": [
         12.21,
         17.44
       ],
       "tests/test_pr_attribution.py": [
-        3.19
+        3.19,
+        5.81
       ],
       "tests/test_pr_body.py": [
         0.11
@@ -113,11 +118,13 @@
       ],
       "tests/test_pr_bug_whitespace.py": [
         5.66,
-        4.13
+        4.13,
+        8.55
       ],
       "tests/test_pr_commits.py": [
         9.61,
-        6.79
+        6.79,
+        12.12
       ],
       "tests/test_pr_content.py": [
         0.05
