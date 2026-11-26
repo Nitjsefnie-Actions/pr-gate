@@ -64,7 +64,7 @@ def test_secrets_scans_full_history_from_a_trusted_config(tmp):
         r"echo '[0-9a-f]{64}  " + re.escape(tarball) + r"' \| sha256sum -c -",
         lines[-3]), 'the download must be verified against a sha256 digest'
     assert lines[-2:] == [f'tar xzf {tarball} gitleaks', './gitleaks version']
-    assert set(steps[2]['env']) == {'EVENT_NAME', 'BASE_SHA', 'BEFORE_SHA'}
+    assert set(steps[2]['env']) == {'PR_GATE_EVENT_NAME', 'PR_GATE_BASE_SHA', 'PR_GATE_BEFORE_SHA'}
     scan = steps[3]
     assert 'if' not in scan and 'continue-on-error' not in scan
     assert '||' not in scan['run'], 'no error-swallowing fallback may weaken the gate'
@@ -93,20 +93,20 @@ def test_the_scan_step_clears_the_judged_exemptions(tmp):
     stub = repo / 'gitleaks'
     stub.write_text(
         '#!/usr/bin/env bash\n'
-        'printf "%s\\n" "$@" > "$STUB_ARGV"\n'
-        'cat .git/info/attributes > "$STUB_ATTRIBUTES"\n'
-        'if [ -e .gitleaksignore ]; then echo present > "$STUB_IGNORE"; '
-        'else echo absent > "$STUB_IGNORE"; fi\n',
+        'printf "%s\\n" "$@" > "$PR_GATE_STUB_ARGV"\n'
+        'cat .git/info/attributes > "$PR_GATE_STUB_ATTRIBUTES"\n'
+        'if [ -e .gitleaksignore ]; then echo present > "$PR_GATE_STUB_IGNORE"; '
+        'else echo absent > "$PR_GATE_STUB_IGNORE"; fi\nexit 3\n',
         encoding='utf-8', newline='\n')
     stub.chmod(0o755)
     result = subprocess.run(
         [_action_bash(), '-e', str(_step_script(tmp, 'Scan the tree and the history'))],
         cwd=repo, capture_output=True, text=True, timeout=120,
         env={**os.environ, 'RUNNER_TEMP': str(runner),
-             'STUB_ARGV': str(record / 'argv'),
-             'STUB_ATTRIBUTES': str(record / 'attributes'),
-             'STUB_IGNORE': str(record / 'ignore')})
-    assert result.returncode == 0, (result.stdout, result.stderr)
+             'PR_GATE_STUB_ARGV': str(record / 'argv'),
+             'PR_GATE_STUB_ATTRIBUTES': str(record / 'attributes'),
+             'PR_GATE_STUB_IGNORE': str(record / 'ignore')})
+    assert result.returncode == 3, ('the scan status is the step status', result.stderr)
     assert (record / 'attributes').read_text(encoding='utf-8') == '* diff\n', (
         'a plain diff attribute keeps a NUL-bearing blob in the scan; -diff '
         'and an unspecified attribute both hide it from git log -p')
@@ -116,6 +116,8 @@ def test_the_scan_step_clears_the_judged_exemptions(tmp):
     assert argv[:4] == ['detect', '--verbose', '--redact', '--ignore-gitleaks-allow'], argv
     assert argv[4] == '--config' and Path(argv[5]) == copy_dir / '.gitleaks.toml', argv
     assert argv[6] == '--gitleaks-ignore-path' and Path(argv[7]) == copy_dir, argv
+    log_opts = '--full-history --all --diff-filter=uxdb --diff-merges=first-parent'
+    assert argv[8:] == [f'--log-opts={log_opts}'], 'the walk keeps type changes and merges'
 
 
 def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
@@ -154,8 +156,8 @@ def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
         result = subprocess.run(
             [_action_bash(), '-e', str(script)], cwd=repo, capture_output=True,
             text=True, timeout=120, env={**os.environ, 'RUNNER_TEMP': str(runner),
-                                         'BASH_ENV': str(bash_env), 'EVENT_NAME': event,
-                                         'BASE_SHA': base, 'BEFORE_SHA': before})
+                                         'BASH_ENV': str(bash_env), 'PR_GATE_EVENT_NAME': event,
+                                         'PR_GATE_BASE_SHA': base, 'PR_GATE_BEFORE_SHA': before})
         copy_dir = runner / 'gitleaks-trusted'
         return (result, (copy_dir / '.gitleaks.toml').read_text(encoding='utf-8'),
                 (copy_dir / '.gitleaksignore').read_text(encoding='utf-8'))
@@ -172,9 +174,10 @@ def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
     result, config, _ = run(event='schedule')
     assert result.returncode == 0 and 'description = "tip"' in config, (
         'a scheduled scan must read origin/main, not the judged tree')
-    result, config, _ = run(before='not-a-sha')
-    assert result.returncode == 0 and config == '[extend]\nuseDefault = true\n', (
-        'a name that is no commit falls back to the default rules')
+    for named in ({'before': 'not-a-sha'}, {'event': 'pull_request'}):
+        result, config, _ = run(**named)
+        assert result.returncode == 0 and config == '[extend]\nuseDefault = true\n', (
+            f'{named}: a name that is no commit falls back to the default rules')
     for config_text in ('[extend]\npath = "elsewhere.toml"\n',
                         '[extend]\nPath = "elsewhere.toml"\n'):
         result, _, _ = run(before=commit(config_text, 'tip redirects'))
