@@ -86,6 +86,7 @@ tests/*
 !tests/test_pr_bug_whitespace.py
 !tests/test_action.py
 !tests/test_workflows.py
+!tests/test_ci_secrets.py
 !tests/test_type_ratchet.py
 !tests/test_gate_base_freshness.py
 !tests/test_release_dispatch.py

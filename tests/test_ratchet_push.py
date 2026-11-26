@@ -27,21 +27,18 @@ def _step(workflow, name):
 def test_privileged_job_accepts_only_successful_main_pushes(tmp):
     del tmp
     workflow = _workflow('ratchet-push.yml')
-    assert workflow['on'] == {'workflow_run': {
-        'workflows': ['types'],
-        'types': ['completed']}}
+    assert workflow['on'] == {'workflow_run': {'workflows': ['types'], 'types': ['completed']}}
     assert workflow['permissions'] == {}
+    assert set(workflow['jobs']) == {'push'}
     assert workflow['concurrency'] == {
         'group': 'ratchet-push', 'cancel-in-progress': 'false', 'queue': 'max'}
-    assert set(workflow['jobs']) == {'push'}
     job = workflow['jobs']['push']
     assert ' '.join(job['if'].split()) == (
         "github.event.workflow_run.event == 'push' && "
         "github.event.workflow_run.head_branch == 'main' && "
         "github.event.workflow_run.head_repository.full_name == github.repository && "
         "github.event.workflow_run.conclusion == 'success'")
-    assert job['environment'] == 'main-push'
-    assert job['permissions'] == {'actions': 'read'}
+    assert job['environment'] == 'main-push' and job['permissions'] == {'actions': 'read'}
     assert job['runs-on'] == 'ubuntu-latest' and int(job['timeout-minutes']) > 0
     assert all(step['uses'].startswith(('actions/download-artifact@',
                                         'actions/setup-python@'))

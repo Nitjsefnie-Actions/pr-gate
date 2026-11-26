@@ -180,7 +180,7 @@ jobs:
         # of a hash-pinned tool from whatever sdist the index serves.
         run: >-
           python -m pip install --require-hashes --only-binary=:all:
-          --retry 8 --timeout 60 -r requirements-zizmor.txt
+          --retries 8 --timeout 60 -r requirements-zizmor.txt
 
       - name: Install PyYAML
         # The actionlint step's wrapper generator imports yaml; PyYAML is a
@@ -189,7 +189,7 @@ jobs:
         # hash-pinned manifest, the same shape as requirements-zizmor.txt.
         run: >-
           python -m pip install --require-hashes --only-binary=:all:
-          --retry 8 --timeout 60 -r requirements-actionlint.txt
+          --retries 8 --timeout 60 -r requirements-actionlint.txt
 
       - name: actionlint
         id: actionlint
