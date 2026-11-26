@@ -6,5 +6,6 @@
       "measured": 98.6,
       "cell": "ubuntu-latest / Python 3.15"
     }
-  }
+  },
+  "note": "The cell is spelled 'ubuntu-latest / Python 3.15' and not test-ratchet's README 'ubuntu-latest-py3.15': it keys .github/test-times.json, so renaming it to match the README would orphan every recorded timing."
 }
