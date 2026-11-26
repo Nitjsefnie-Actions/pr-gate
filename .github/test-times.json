@@ -369,7 +369,8 @@
         0.02
       ],
       "tests/test_pr_transport.py": [
-        1.99
+        1.99,
+        3.39
       ],
       "tests/test_ratchet_push.py": [
         123.59,
@@ -452,7 +453,8 @@
         121.55
       ],
       "tests/test_release_dispatch.py": [
-        1.47
+        1.47,
+        2.63
       ],
       "tests/test_type_ratchet.py": [
         0.7
