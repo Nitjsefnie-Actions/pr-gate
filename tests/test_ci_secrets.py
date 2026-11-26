@@ -16,7 +16,7 @@ from test_action import _action_bash
 from test_workflows import _named_run, _shipped_action_pin, _workflow
 
 ROOT = Path(__file__).resolve().parents[1]
-TRUSTED_STEP = "Take the scan's config and ignore list from the trusted commit"
+CONFIG_STEP = "Take the scan's config and ignore list from the trusted commit"
 
 
 def _git(repo, *arguments):
@@ -47,7 +47,7 @@ def test_secrets_scans_full_history_from_a_trusted_config(tmp):
         'group': 'secrets-${{ github.ref }}', 'cancel-in-progress': 'true'}
     steps = workflow['jobs']['gitleaks']['steps']
     assert [step.get('name') for step in steps] == [
-        None, 'Download gitleaks and verify its digest', TRUSTED_STEP,
+        None, 'Download gitleaks and verify its digest', CONFIG_STEP,
         'Scan the tree and the history'], [step.get('name') for step in steps]
     assert steps[0]['uses'] == (
         f"actions/checkout@{_shipped_action_pin('actions/checkout')}")
@@ -84,8 +84,8 @@ def test_the_scan_step_clears_the_judged_exemptions(tmp):
     attributes.write_text('some/file.txt -diff\n', encoding='utf-8')
     (repo / '.gitleaksignore').write_text('judged exemption\n', encoding='utf-8')
     runner = Path(tmp) / 'runner-temp'
-    trusted = runner / 'gitleaks-trusted'
-    trusted.mkdir(parents=True)
+    copy_dir = runner / 'gitleaks-trusted'
+    copy_dir.mkdir(parents=True)
     record = Path(tmp) / 'record'
     record.mkdir()
     # The step runs ./gitleaks, so the stub takes the binary's place in the
@@ -114,15 +114,18 @@ def test_the_scan_step_clears_the_judged_exemptions(tmp):
         'the judged tree no longer exempts itself through .gitleaksignore')
     argv = (record / 'argv').read_text(encoding='utf-8').splitlines()
     assert argv[:4] == ['detect', '--verbose', '--redact', '--ignore-gitleaks-allow'], argv
-    assert argv[4] == '--config' and Path(argv[5]) == trusted / '.gitleaks.toml', argv
-    assert argv[6] == '--gitleaks-ignore-path' and Path(argv[7]) == trusted, argv
+    assert argv[4] == '--config' and Path(argv[5]) == copy_dir / '.gitleaks.toml', argv
+    assert argv[6] == '--gitleaks-ignore-path' and Path(argv[7]) == copy_dir, argv
 
 
 def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
     repo = Path(tmp) / 'repo'
     repo.mkdir()
     _git(repo, 'init', '-q', '-b', 'main')
-    trusted_config = '[extend]\nuseDefault = true\n[allowlist]\ndescription = "tip"\n'
+    _git(repo, 'config', 'user.name', 'fixture')
+    _git(repo, 'config', 'user.email', 'fixture@example.com')
+    _git(repo, 'config', 'commit.gpgsign', 'false')
+    tip_config = '[extend]\nuseDefault = true\n[allowlist]\ndescription = "tip"\n'
 
     def commit(config, message, ignore=None):
         (repo / '.gitleaks.toml').write_text(config, encoding='utf-8', newline='\n')
@@ -134,10 +137,10 @@ def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
         _git(repo, 'commit', '-qm', message)
         return _git(repo, 'rev-parse', 'HEAD').strip()
 
-    tip = commit(trusted_config, 'tip')
+    tip = commit(tip_config, 'tip')
     commit('[allowlist]\ndescription = "the head exempts itself"\n', 'head',
            ignore='the head exempts itself\n')
-    script = _step_script(tmp, TRUSTED_STEP)
+    script = _step_script(tmp, CONFIG_STEP)
     # The secrets job runs on ubuntu, where python3 exists; this suite also
     # runs on Windows, so the step's python3 is the interpreter running it.
     bash_env = Path(tmp) / 'python3.bash'
@@ -153,9 +156,9 @@ def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
             text=True, timeout=120, env={**os.environ, 'RUNNER_TEMP': str(runner),
                                          'BASH_ENV': str(bash_env), 'EVENT_NAME': event,
                                          'BASE_SHA': base, 'BEFORE_SHA': before})
-        trusted = runner / 'gitleaks-trusted'
-        return (result, (trusted / '.gitleaks.toml').read_text(encoding='utf-8'),
-                (trusted / '.gitleaksignore').read_text(encoding='utf-8'))
+        copy_dir = runner / 'gitleaks-trusted'
+        return (result, (copy_dir / '.gitleaks.toml').read_text(encoding='utf-8'),
+                (copy_dir / '.gitleaksignore').read_text(encoding='utf-8'))
 
     result, config, ignored = run(before=tip)
     assert result.returncode == 0, (result.stdout, result.stderr)
