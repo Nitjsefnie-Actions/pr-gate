@@ -1,14 +1,12 @@
 name: lint
 
 # The defect linters over every tracked Python file. `ruff check --select
-# E9,F63,F7,F82` (syntax errors, invalid comparisons, misplaced statements,
-# undefined names) covers only those classes, so these two answer what it
-# cannot:
+# E9,F63,F7,F82` (syntax and undefined-name errors) covers only those
+# classes, so these two answer what it cannot:
 #
 #   pycodestyle — is this Python CONVENTIONAL? PEP 8's compile-time rules:
 #   indentation, whitespace, blank lines, trailing whitespace, imports on
-#   their own line. Its exit code is the verdict; a score line is
-#   decoration.
+#   their own line. Its exit code is the verdict, never its score.
 #
 #   pylint — where are the DEFECTS? Unused imports/variables, undefined
 #   names, dangerous defaults, redefined names, bare excepts. The checked
@@ -36,13 +34,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: lint-${{ github.ref }}
+  group: lint-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
   lint:
+    # One job: `lint` is a required context, so splitting it would strand merges.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -1,9 +1,9 @@
 name: types
 
-# The static type checker over the tree's Python. No other check in the
-# tree answers "what types does this code actually have". This code parses
-# untrusted pull-request bodies and writes to pull requests with a write
-# token, so a typing defect is an admission-gate defect.
+# The static type checker over the tree's Python. No other check answers
+# "what types does this code actually have"; this code parses untrusted
+# pull-request text and writes with a write token, so a typing defect is an
+# admission-gate defect.
 #
 # pyright runs in basic mode over exactly the tracked Python
 # (pyrightconfig.json: scripts/ci, tests), version-pinned
@@ -31,13 +31,14 @@ permissions:
   contents: read
 
 concurrency:
-  group: types-${{ github.ref }}
+  group: types-${{ github.event_name == 'push' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
   types:
+    # One job: `types` is a required status context, so splitting it would strand merges.
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
