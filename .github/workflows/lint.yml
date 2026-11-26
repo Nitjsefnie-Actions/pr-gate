@@ -1,8 +1,9 @@
 name: lint
 
 # The defect linters over every tracked Python file. `ruff check --select
-# E9,F63,F7,F82` (syntax and undefined-name errors) covers only those
-# classes, so these two answer what it cannot:
+# E9,F63,F7,F82` (syntax errors, invalid comparisons, misplaced statements,
+# undefined names) covers only those classes, so these two answer what it
+# cannot:
 #
 #   pycodestyle — is this Python CONVENTIONAL? PEP 8's compile-time rules:
 #   indentation, whitespace, blank lines, trailing whitespace, imports on
@@ -17,8 +18,8 @@ name: lint
 #
 # Both tools are hash-pinned in requirements-lint.txt, which Dependabot
 # watches for version bumps; a version inside a run: block is invisible
-# to it. Both gates read the tool's exit code — a lint score of 10.00/10 can
-# coexist with a red exit, so the score is never consulted.
+# to it. Both gates read the tool's exit code: a perfect score can coexist
+# with a red exit.
 
 on:
   push:
