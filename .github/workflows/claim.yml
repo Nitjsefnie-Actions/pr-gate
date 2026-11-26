@@ -1,27 +1,13 @@
 name: claim
-
 on:
   issue_comment:  # zizmor: ignore[dangerous-triggers]
     types: [created]
-
 concurrency:
-  # Both contributors racing to claim an issue must receive an answer — and
-  # so must the third. A group keeps one PENDING run by default and cancels
-  # it when a newer run arrives, so a third /claim landing while one runs
-  # would leave the second claimer with no answer. queue: max keeps up to 100
-  # pending runs instead and cancels any further run once the queue is full;
-  # GitHub notes the FIFO order is not guaranteed, and the key may not be
-  # combined with cancel-in-progress: true, so the false below is required,
-  # not chosen.
   group: claim-${{ github.event.issue.number }}
   cancel-in-progress: false
   queue: max
-
 jobs:
   claim:
-    # The action declines a /claim on a pull request or a closed issue with a
-    # reply, so only bots and command words are filtered here; a pre-filter
-    # would leave the commander with no answer.
     if: >-
       github.event.comment.user.type != 'Bot'
       && (contains(github.event.comment.body, '/claim')
@@ -29,9 +15,6 @@ jobs:
           || contains(github.event.comment.body, '/release'))
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # The narrowest token that can assign. Nothing here reads the tree, so
-    # there is no contents: read and no checkout: the job talks to the API
-    # only. Scoped to this one job per the pinned release's README block.
     permissions:
       issues: write
       pull-requests: write
