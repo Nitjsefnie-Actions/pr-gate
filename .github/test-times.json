@@ -7,6 +7,9 @@
         6.49,
         9.27
       ],
+      "tests/test_ci_secrets.py": [
+        1.86
+      ],
       "tests/test_commit_scopes.py": [
         10.97,
         8.04
@@ -85,6 +88,9 @@
         6.25,
         4.57,
         9.13
+      ],
+      "tests/test_ci_secrets.py": [
+        1.86
       ],
       "tests/test_commit_scopes.py": [
         8.57,
@@ -166,6 +172,9 @@
         9.74,
         6.57
       ],
+      "tests/test_ci_secrets.py": [
+        1.24
+      ],
       "tests/test_commit_scopes.py": [
         4.49,
         2.76
@@ -176,7 +185,8 @@
       ],
       "tests/test_gate_base_freshness.py": [
         6.91,
-        4.96
+        4.96,
+        3.67
       ],
       "tests/test_pr_attribution.py": [
         5.03,
@@ -241,6 +251,9 @@
       "tests/test_action.py": [
         7.53,
         5.39
+      ],
+      "tests/test_ci_secrets.py": [
+        1.54
       ],
       "tests/test_commit_scopes.py": [
         2.52,
@@ -318,6 +331,9 @@
         11.0,
         15.91
       ],
+      "tests/test_ci_secrets.py": [
+        4.02
+      ],
       "tests/test_commit_scopes.py": [
         26.37
       ],
@@ -358,7 +374,8 @@
       ],
       "tests/test_pr_gate.py": [
         24.72,
-        33.45
+        33.45,
+        17.95
       ],
       "tests/test_pr_gate_claims.py": [
         0.07
@@ -378,7 +395,8 @@
         91.87
       ],
       "tests/test_release_dispatch.py": [
-        2.0
+        2.0,
+        0.98
       ],
       "tests/test_type_ratchet.py": [
         0.79
@@ -386,13 +404,17 @@
       "tests/test_workflows.py": [
         7.03,
         8.9,
-        12.38
+        12.38,
+        5.07
       ]
     },
     "windows-latest / Python 3.15": {
       "tests/test_action.py": [
         10.66,
         13.61
+      ],
+      "tests/test_ci_secrets.py": [
+        5.89
       ],
       "tests/test_commit_scopes.py": [
         23.66,
