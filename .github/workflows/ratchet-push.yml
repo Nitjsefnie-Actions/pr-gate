@@ -15,15 +15,19 @@ on:
 permissions: {}
 
 concurrency:
-  group: ratchet-push
+  # One group, so two measurements cannot both land; queue: max keeps the
+  # pending runs instead of letting a new arrival cancel the one pending.
   # A cancellation could stop between commit and push.
+  group: ratchet-push
   cancel-in-progress: false
+  queue: max
 
 jobs:
   push:
     if: >-
       github.event.workflow_run.event == 'push' &&
       github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
       github.event.workflow_run.conclusion == 'success'
     environment: main-push
     runs-on: ubuntu-latest
@@ -56,7 +60,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.15'
+          python-version: "3.15"
       - name: Push the ratchet commit to main
         if: steps.list.outputs.ratchet == 'true'
         env:
