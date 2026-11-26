@@ -287,11 +287,11 @@ def _head():
                           capture_output=True, text=True).stdout.strip()
 
 
-def test_verify_pins_main_before_other_reads_and_returns_only_that_sha(tmp):
+def test_verify_pins_main_refuses_a_non_successor_and_returns_only_that_sha(tmp):
     del tmp
     module = _load()
-    sha = _head()
-    api = _verify_api(sha)
+    api = _verify_api(sha := _head())
+    _refuses(module, partial(module.verify, _verify_api(sha), REPO, '2.10.2'), 'successor')
     assert module.verify(api, REPO, '2.10.1') == sha
     assert api.calls[0][2] == f'repos/{REPO}/branches/main'
     assert [argv[2] for argv in api.calls].count(f'repos/{REPO}/branches/main') == 1
