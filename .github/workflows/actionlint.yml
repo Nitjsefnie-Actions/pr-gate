@@ -175,9 +175,9 @@ jobs:
 
       - name: Install zizmor
         id: install_zizmor
-        # pip's own --retry and a wheel-only install: the retry.sh wrapper's
-        # policy without a second copy to keep in step, and no source build
-        # of a hash-pinned tool from whatever sdist the index serves.
+        # pip's own --retries (5xx transport failures) and a wheel-only
+        # install: no wrapper script to keep in step, and no source build of
+        # a hash-pinned tool from whatever sdist the index serves.
         run: >-
           python -m pip install --require-hashes --only-binary=:all:
           --retries 8 --timeout 60 -r requirements-zizmor.txt

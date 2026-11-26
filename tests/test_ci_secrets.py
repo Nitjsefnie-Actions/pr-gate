@@ -1,7 +1,7 @@
 """The secret scan's workflow: a frozen binary and a trusted config source.
 
 The scan's config and ignore list come from the commit that is not being
-judged, so the step that reads them is executed here against a real
+judged, so both steps that act on them are executed here against a real
 repository, not only read.
 """
 import os
@@ -16,6 +16,19 @@ from test_action import _action_bash
 from test_workflows import _named_run, _shipped_action_pin, _workflow
 
 ROOT = Path(__file__).resolve().parents[1]
+TRUSTED_STEP = "Take the scan's config and ignore list from the trusted commit"
+
+
+def _git(repo, *arguments):
+    return subprocess.run(['git', '-C', str(repo), *arguments], check=True,
+                          capture_output=True, text=True).stdout
+
+
+def _step_script(tmp, name):
+    steps = _workflow('secrets.yml')['jobs']['gitleaks']['steps']
+    script = Path(tmp) / f'{name}.sh'
+    script.write_text(_named_run(steps, name), encoding='utf-8', newline='\n')
+    return script
 
 
 def test_secrets_scans_full_history_from_a_trusted_config(tmp):
@@ -34,8 +47,7 @@ def test_secrets_scans_full_history_from_a_trusted_config(tmp):
         'group': 'secrets-${{ github.ref }}', 'cancel-in-progress': 'true'}
     steps = workflow['jobs']['gitleaks']['steps']
     assert [step.get('name') for step in steps] == [
-        None, 'Download gitleaks and verify its digest',
-        "Take the scan's config and ignore list from the trusted commit",
+        None, 'Download gitleaks and verify its digest', TRUSTED_STEP,
         'Scan the tree and the history'], [step.get('name') for step in steps]
     assert steps[0]['uses'] == (
         f"actions/checkout@{_shipped_action_pin('actions/checkout')}")
@@ -52,21 +64,8 @@ def test_secrets_scans_full_history_from_a_trusted_config(tmp):
         r"echo '[0-9a-f]{64}  " + re.escape(tarball) + r"' \| sha256sum -c -",
         lines[-3]), 'the download must be verified against a sha256 digest'
     assert lines[-2:] == [f'tar xzf {tarball} gitleaks', './gitleaks version']
-    # The scan's config and ignore list come from the trusted commit: read
-    # from the judged tree, a change could exempt its own finding. The names
-    # it reads are the data flow, so they are pinned as the contract.
     assert set(steps[2]['env']) == {'EVENT_NAME', 'BASE_SHA', 'BEFORE_SHA'}
-    trusted = steps[2]['run']
-    assert 'pull_request) trusted="$BASE_SHA"' in trusted
-    assert 'push) trusted="$BEFORE_SHA"' in trusted
-    assert "case \"$trusted\" in '' | *[!0-9a-f]*)" in trusted, (
-        'a non-hex name must be refused before git reads a blob')
     scan = steps[3]
-    assert scan['run'].splitlines()[-3:] == [
-        './gitleaks detect --verbose --redact --ignore-gitleaks-allow \\',
-        '  --config "$RUNNER_TEMP/gitleaks-trusted/.gitleaks.toml" \\',
-        '  --gitleaks-ignore-path "$RUNNER_TEMP/gitleaks-trusted"'], (
-        'the scan takes --ignore-gitleaks-allow and reads the trusted copy')
     assert 'if' not in scan and 'continue-on-error' not in scan
     assert '||' not in scan['run'], 'no error-swallowing fallback may weaken the gate'
     config = tomllib.loads((ROOT / '.gitleaks.toml').read_text(encoding='utf-8'))
@@ -75,32 +74,70 @@ def test_secrets_scans_full_history_from_a_trusted_config(tmp):
         'fail this suite')
 
 
-# The trusted-config step decides where the scan's exemptions come from, so
-# it is executed rather than read: the run of python -I matches CI's.
-def test_the_trusted_config_step_reads_the_previous_tip(tmp):
-    steps = _workflow('secrets.yml')['jobs']['gitleaks']['steps']
-    run_text = _named_run(steps, "Take the scan's config and ignore list from the trusted commit")
+def test_the_scan_step_clears_the_judged_exemptions(tmp):
     repo = Path(tmp) / 'repo'
     repo.mkdir()
+    subprocess.run(['git', 'init', '-q', '-b', 'main', str(repo)], check=True,
+                   capture_output=True)
+    attributes = repo / '.git/info/attributes'
+    attributes.parent.mkdir(parents=True, exist_ok=True)
+    attributes.write_text('some/file.txt -diff\n', encoding='utf-8')
+    (repo / '.gitleaksignore').write_text('judged exemption\n', encoding='utf-8')
+    runner = Path(tmp) / 'runner-temp'
+    trusted = runner / 'gitleaks-trusted'
+    trusted.mkdir(parents=True)
+    record = Path(tmp) / 'record'
+    record.mkdir()
+    # The step runs ./gitleaks, so the stub takes the binary's place in the
+    # repository root and records what the step did around it.
+    stub = repo / 'gitleaks'
+    stub.write_text(
+        '#!/usr/bin/env bash\n'
+        'printf "%s\\n" "$@" > "$STUB_ARGV"\n'
+        'cat .git/info/attributes > "$STUB_ATTRIBUTES"\n'
+        'if [ -e .gitleaksignore ]; then echo present > "$STUB_IGNORE"; '
+        'else echo absent > "$STUB_IGNORE"; fi\n',
+        encoding='utf-8', newline='\n')
+    stub.chmod(0o755)
+    result = subprocess.run(
+        [_action_bash(), '-e', str(_step_script(tmp, 'Scan the tree and the history'))],
+        cwd=repo, capture_output=True, text=True, timeout=120,
+        env={**os.environ, 'RUNNER_TEMP': str(runner),
+             'STUB_ARGV': str(record / 'argv'),
+             'STUB_ATTRIBUTES': str(record / 'attributes'),
+             'STUB_IGNORE': str(record / 'ignore')})
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert (record / 'attributes').read_text(encoding='utf-8') == '* diff\n', (
+        'a plain diff attribute keeps a NUL-bearing blob in the scan; -diff '
+        'and an unspecified attribute both hide it from git log -p')
+    assert (record / 'ignore').read_text(encoding='utf-8').strip() == 'absent', (
+        'the judged tree no longer exempts itself through .gitleaksignore')
+    argv = (record / 'argv').read_text(encoding='utf-8').splitlines()
+    assert argv[:4] == ['detect', '--verbose', '--redact', '--ignore-gitleaks-allow'], argv
+    assert argv[4] == '--config' and Path(argv[5]) == trusted / '.gitleaks.toml', argv
+    assert argv[6] == '--gitleaks-ignore-path' and Path(argv[7]) == trusted, argv
 
-    def git(*arguments):
-        return subprocess.run(['git', '-C', str(repo), *arguments], check=True,
-                              capture_output=True, text=True).stdout
 
-    git('init', '-q', '-b', 'main')
-    git('config', 'user.name', 'fixture')
-    git('config', 'user.email', 'fixture@example.com')
+def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
+    repo = Path(tmp) / 'repo'
+    repo.mkdir()
+    _git(repo, 'init', '-q', '-b', 'main')
+    trusted_config = '[extend]\nuseDefault = true\n[allowlist]\ndescription = "tip"\n'
 
-    def commit(config, message):
+    def commit(config, message, ignore=None):
         (repo / '.gitleaks.toml').write_text(config, encoding='utf-8', newline='\n')
-        git('add', '.gitleaks.toml')
-        git('commit', '-qm', message)
-        return git('rev-parse', 'HEAD').strip()
+        if ignore is None:
+            (repo / '.gitleaksignore').unlink(missing_ok=True)
+        else:
+            (repo / '.gitleaksignore').write_text(ignore, encoding='utf-8', newline='\n')
+        _git(repo, 'add', '-A')
+        _git(repo, 'commit', '-qm', message)
+        return _git(repo, 'rev-parse', 'HEAD').strip()
 
-    tip = commit('[extend]\nuseDefault = true\n[allowlist]\ndescription = "tip"\n', 'tip')
-    commit('[allowlist]\ndescription = "the head exempts itself"\n', 'head')
-    script = Path(tmp) / 'trusted.sh'
-    script.write_text(run_text, encoding='utf-8', newline='\n')
+    tip = commit(trusted_config, 'tip')
+    commit('[allowlist]\ndescription = "the head exempts itself"\n', 'head',
+           ignore='the head exempts itself\n')
+    script = _step_script(tmp, TRUSTED_STEP)
     # The secrets job runs on ubuntu, where python3 exists; this suite also
     # runs on Windows, so the step's python3 is the interpreter running it.
     bash_env = Path(tmp) / 'python3.bash'
@@ -108,22 +145,35 @@ def test_the_trusted_config_step_reads_the_previous_tip(tmp):
                         encoding='utf-8', newline='\n')
     runs = iter(range(100))
 
-    def run(before, event='push'):
+    def run(before='', base='', event='push'):
         runner = Path(tmp) / f'runner-temp-{next(runs)}'
         runner.mkdir()
         result = subprocess.run(
             [_action_bash(), '-e', str(script)], cwd=repo, capture_output=True,
             text=True, timeout=120, env={**os.environ, 'RUNNER_TEMP': str(runner),
                                          'BASH_ENV': str(bash_env), 'EVENT_NAME': event,
-                                         'BASE_SHA': '', 'BEFORE_SHA': before})
-        return result, (runner / 'gitleaks-trusted/.gitleaks.toml').read_text(encoding='utf-8')
+                                         'BASE_SHA': base, 'BEFORE_SHA': before})
+        trusted = runner / 'gitleaks-trusted'
+        return (result, (trusted / '.gitleaks.toml').read_text(encoding='utf-8'),
+                (trusted / '.gitleaksignore').read_text(encoding='utf-8'))
 
-    result, config = run(tip)
+    result, config, ignored = run(before=tip)
     assert result.returncode == 0, (result.stdout, result.stderr)
-    assert 'description = "tip"' in config, 'the scan must read the previous tip, never the head'
-    result, config = run('not-a-sha')
+    assert 'description = "tip"' in config, 'a push must read the previous tip'
+    assert 'exempts itself' not in ignored, (
+        'the judged head\'s .gitleaksignore must never reach the trusted copy')
+    result, config, _ = run(base=tip, event='pull_request')
+    assert result.returncode == 0 and 'description = "tip"' in config, (
+        'a pull request must read its base commit')
+    _git(repo, 'update-ref', 'refs/remotes/origin/main', tip)
+    result, config, _ = run(event='schedule')
+    assert result.returncode == 0 and 'description = "tip"' in config, (
+        'a scheduled scan must read origin/main, not the judged tree')
+    result, config, _ = run(before='not-a-sha')
     assert result.returncode == 0 and config == '[extend]\nuseDefault = true\n', (
-        'a name that is no commit falls back to the default rules, not the judged tree')
-    result, config = run(commit('[extend]\npath = "elsewhere.toml"\n', 'tip redirects'))
-    assert result.returncode != 0 and 'refusing to scan' in result.stderr, (
-        'a trusted config that redirects into the judged checkout must refuse')
+        'a name that is no commit falls back to the default rules')
+    for config_text in ('[extend]\npath = "elsewhere.toml"\n',
+                        '[extend]\nPath = "elsewhere.toml"\n'):
+        result, _, _ = run(before=commit(config_text, 'tip redirects'))
+        assert result.returncode != 0 and 'refusing to scan' in result.stderr, (
+            f'trusted config {config_text!r} must refuse when it redirects')
