@@ -31,12 +31,14 @@ def test_privileged_job_accepts_only_successful_main_pushes(tmp):
         'workflows': ['types'],
         'types': ['completed']}}
     assert workflow['permissions'] == {}
-    assert workflow['concurrency'] == {'group': 'ratchet-push', 'cancel-in-progress': 'false'}
+    assert workflow['concurrency'] == {
+        'group': 'ratchet-push', 'cancel-in-progress': 'false', 'queue': 'max'}
     assert set(workflow['jobs']) == {'push'}
     job = workflow['jobs']['push']
     assert ' '.join(job['if'].split()) == (
         "github.event.workflow_run.event == 'push' && "
         "github.event.workflow_run.head_branch == 'main' && "
+        "github.event.workflow_run.head_repository.full_name == github.repository && "
         "github.event.workflow_run.conclusion == 'success'")
     assert job['environment'] == 'main-push'
     assert job['permissions'] == {'actions': 'read'}
