@@ -14,8 +14,10 @@ import fnmatch
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -188,8 +190,10 @@ def test_zizmor_pin_is_hash_pinned_and_dependabot_visible(tmp):
     workflow = _workflow('actionlint.yml')
     job = workflow['jobs']['actionlint']
     runs = [step['run'] for step in job['steps'] if 'run' in step]
-    assert 'python -m pip install --require-hashes -r requirements-zizmor.txt' in runs, (
-        'zizmor must install from the hash-pinned root manifest')
+    assert ('python -m pip install --require-hashes --only-binary=:all: '
+            '--retry 8 --timeout 60 -r requirements-zizmor.txt') in runs, (
+        'zizmor must install from the hash-pinned root manifest, wheels only, '
+        'with pip retrying transport failures')
     assert not any('--upgrade pip' in run for run in runs), (
         'the audit job must not carry the unreviewed pip upgrade')
     manifest = ROOT / 'requirements-zizmor.txt'
@@ -209,14 +213,14 @@ def test_audit_gate_answers_on_every_trigger_an_advisory_can_arrive_under(tmp):
     workflow = _workflow('audit.yml')
     events = workflow['on']
     assert set(events) == {'push', 'pull_request', 'schedule', 'workflow_dispatch'}
-    assert events['push'] == {
-        'branches': ['main'],
-        'paths-ignore': ['README.md', 'CONTRIBUTING.md',
-                         'CODE_OF_CONDUCT.md', 'LICENSE']}
-    assert not (events['pull_request'] or {})
+    # Both event triggers are filtered to the root manifests the audit glob
+    # reads: a commit that changes no pin cannot change the answer, and the
+    # daily cron re-answers for every commit under the moving advisory data.
+    assert events['push'] == {'branches': ['main'], 'paths': ['requirements*.txt']}
+    assert events['pull_request'] == {'paths': ['requirements*.txt']}
     assert events['schedule'] == [{'cron': '12 4 * * *'}]
     assert workflow['concurrency'] == {
-        'group': 'audit-${{ github.event.pull_request.number || github.ref }}',
+        'group': "audit-${{ github.event_name == 'push' && github.sha || github.ref }}",
         'cancel-in-progress': 'true'}
 
 
@@ -226,8 +230,10 @@ def test_audit_installs_pip_audit_from_a_visible_unhashed_manifest(tmp):
     installs = [step for step in steps if step.get('name') == 'Install pip-audit']
     audits = [step for step in steps if step.get('name') == 'Audit dependencies']
     assert len(installs) == 1 and len(audits) == 1
-    assert installs[0]['run'] == 'python -m pip install -r requirements-pip-audit.txt', (
-        'pip-audit must install from the manifest Dependabot watches, not an inline pin')
+    assert installs[0]['run'] == (
+        'python -m pip install --retry 8 --timeout 60 -r requirements-pip-audit.txt'), (
+        'pip-audit must install from the manifest Dependabot watches, not an '
+        'inline pin, with pip retrying transport failures')
     assert [step.get('name') for step in steps].index('Install pip-audit') < (
         [step.get('name') for step in steps].index('Audit dependencies')), (
         'the audit step must resolve pip-audit from the PATH the install step populates')
@@ -453,9 +459,12 @@ def test_required_checks_run_unfiltered_on_every_pull_request_and_main_push(tmp)
         # stages anything and ratchet-push commits nothing — no loop; and
         # every required context runs on every main push tip.
         assert events['push'] == {'branches': ['main']}, name
-    assert _workflow('tests.yml')['concurrency'] == {
-        'group': "tests-${{ github.event_name == 'push' && github.sha || github.ref }}",
-        'cancel-in-progress': 'true'}
+    # Every push-on-main gate shares its group per SHA: a newer push must not
+    # cancel an older commit's still-running required run. A PR keeps one.
+    for name in ('tests', 'lint', 'types', 'actionlint'):
+        assert _workflow(f'{name}.yml')['concurrency'] == {
+            'group': name + "-${{ github.event_name == 'push' && github.sha || github.ref }}",
+            'cancel-in-progress': 'true'}, name
     # Only the two unrequired workflows may path-filter a push trigger.
     filtered = {path.name for path in (ROOT / '.github/workflows').glob('*.yml')
                 if {'paths', 'paths-ignore'} & set(_workflow(path.name)['on'].get('push') or {})}
@@ -499,15 +508,14 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'comment-share.yml': ({'contents': 'read'}, {'comment-share': (None, '10')}),
         'size-baseline.yml': ({'contents': 'read'}, {'size-baseline': (None, '10')}),
         'tests.yml': ({'contents': 'read'}, {
-            'plan': (None, '10'),
-            'test': (None, '20'),
+            'plan': (None, '10'), 'test': (None, '10'),
             'report': (report, '10')}),
         'ratchet-push.yml': ({}, {'push': ({'actions': 'read'}, '15')}),
         'actionlint.yml': ({'contents': 'read'}, {
             'actionlint': (None, '15')}),
         'audit.yml': ({'contents': 'read'}, {'pip-audit': (None, '15')}),
-        'lint.yml': ({'contents': 'read'}, {'lint': (None, '15')}),
-        'types.yml': ({'contents': 'read'}, {'types': (None, '15')}),
+        'lint.yml': ({'contents': 'read'}, {'lint': (None, '10')}),
+        'types.yml': ({'contents': 'read'}, {'types': (None, '10')}),
         'pin-guard.yml': ({'contents': 'read', 'pull-requests': 'write'}, {
             'pin-guard': (None, '5')}),
         'claim.yml': (None, {'claim': ({'issues': 'write',
@@ -515,7 +523,8 @@ def test_workflow_jobs_keep_exact_permissions_and_timeouts(tmp):
         'pr-gate.yml': ({'contents': 'read', 'issues': 'read',
                          'pull-requests': 'write'}, {'gate': (None, '5')}),
         'codeql.yml': ({}, {'analyze': ({
-            'contents': 'read', 'security-events': 'write'}, '15')}),
+            'actions': 'read', 'contents': 'read',
+            'security-events': 'write'}, '15')}),
         'scorecard.yml': ({'contents': 'read'}, {'analysis': ({
             'contents': 'read', 'security-events': 'write',
             'id-token': 'write'}, '15')}),
@@ -746,7 +755,9 @@ def test_codeql_analyzes_python_and_actions_at_the_event_revision(tmp):
         'every branch push is analysed; only doc-only pushes skip it')
     assert events['schedule'] == [{'cron': '47 3 * * 3'}]
     assert workflow['concurrency'] == {
-        'group': 'codeql-${{ github.ref }}', 'cancel-in-progress': 'true'}
+        'group': "codeql-${{ github.event_name == 'push' && "
+                 "format('{0}-{1}', github.ref, github.sha) || github.ref }}",
+        'cancel-in-progress': 'true'}
     job = workflow['jobs']['analyze']
     assert job['strategy'] == {
         'fail-fast': 'false', 'matrix': {'include': [
@@ -773,60 +784,114 @@ def test_scorecard_only_publishes_scheduled_or_manual_default_branch_analysis(tm
     assert all('if' not in step for step in steps)
 
 
-def test_secrets_scans_full_history_with_a_frozen_binary(tmp):
+def test_secrets_scans_full_history_from_a_trusted_config(tmp):
     del tmp
     workflow = _workflow('secrets.yml')
     events = workflow['on']
     assert set(events) == {'push', 'pull_request', 'schedule', 'workflow_dispatch'}
     assert events['push'] == {'branches': ['main']}, (
         'a scanner must see docs commits, so no paths filter may narrow the push')
-    assert not (events['pull_request'] or {}), 'the pull_request trigger stays unfiltered'
+    assert not (events['pull_request'] or events['workflow_dispatch'] or {}), (
+        'the manual and pull request triggers stay unfiltered')
     assert events['schedule'] == [{'cron': '26 5 * * *'}], (
         "exactly one daily cron, off the hour, clear of codeql Wed '47 3 * * 3' "
         "and scorecard Sat '23 2 * * 6'")
-    assert not (events['workflow_dispatch'] or {}), 'the manual trigger stays unfiltered'
-    assert workflow.get('permissions') == {'contents': 'read'}
     assert workflow['concurrency'] == {
         'group': 'secrets-${{ github.ref }}', 'cancel-in-progress': 'true'}
-    assert set(workflow['jobs']) == {'gitleaks'}
-    job = workflow['jobs']['gitleaks']
-    assert job['runs-on'] == 'ubuntu-latest'
-    assert job['timeout-minutes'] == '10'
-    assert 'permissions' not in job, 'the workflow-level read must be the only grant'
-    steps = job['steps']
-    assert len(steps) == 3
+    steps = workflow['jobs']['gitleaks']['steps']
+    assert [step.get('name') for step in steps] == [
+        None, 'Download gitleaks and verify its digest',
+        "Take the scan's config and ignore list from the trusted commit",
+        'Scan the tree and the history'], [step.get('name') for step in steps]
     assert steps[0]['uses'] == (
         f"actions/checkout@{_shipped_action_pin('actions/checkout')}")
-    # One release, frozen by its digest; which release is the workflow's call.
-    download = steps[1]['run'].splitlines()
-    assert len(download) == 4, download
-    release = re.fullmatch(
-        r'curl --connect-timeout 5 --max-time 120 -fsSLO '
-        r'https://github\.com/gitleaks/gitleaks/releases/download/'
-        r'v(\d+\.\d+\.\d+)/gitleaks_\1_linux_x64\.tar\.gz', download[0])
-    assert release, download[0]
+    # One release, frozen by its digest, retried because a reset connection
+    # exits nonzero too; which release is the workflow's call.
+    lines = steps[1]['run'].splitlines()
+    download = ' '.join(lines)
+    release = re.search(
+        r'--retry 8 --retry-all-errors.*releases/download/v(\d+\.\d+\.\d+)/'
+        r'gitleaks_\1_linux_x64\.tar\.gz', download)
+    assert release, lines
     tarball = f'gitleaks_{release[1]}_linux_x64.tar.gz'
     assert re.fullmatch(
         r"echo '[0-9a-f]{64}  " + re.escape(tarball) + r"' \| sha256sum -c -",
-        download[1]), 'the download must be verified against a sha256 digest'
-    assert download[2:] == [f'tar xzf {tarball} gitleaks', './gitleaks version']
-    scan = steps[2]
-    assert scan['run'] == './gitleaks detect --verbose --redact --config .gitleaks.toml', (
-        'the scan command is the gate itself and ships verbatim')
-    assert 'if' not in scan, 'no step condition may weaken the gate'
-    assert 'continue-on-error' not in scan, 'no failure suppression may weaken the gate'
+        lines[-3]), 'the download must be verified against a sha256 digest'
+    assert lines[-2:] == [f'tar xzf {tarball} gitleaks', './gitleaks version']
+    # The scan's config and ignore list come from the trusted commit: read
+    # from the judged tree, a change could exempt its own finding. The names
+    # it reads are the data flow, so they are pinned as the contract.
+    assert set(steps[2]['env']) == {'EVENT_NAME', 'BASE_SHA', 'BEFORE_SHA'}
+    trusted = steps[2]['run']
+    assert 'pull_request) trusted="$BASE_SHA"' in trusted
+    assert 'push) trusted="$BEFORE_SHA"' in trusted
+    assert "case \"$trusted\" in '' | *[!0-9a-f]*)" in trusted, (
+        'a non-hex name must be refused before git reads a blob')
+    scan = steps[3]
+    assert scan['run'].splitlines()[-3:] == [
+        './gitleaks detect --verbose --redact --ignore-gitleaks-allow \\',
+        '  --config "$RUNNER_TEMP/gitleaks-trusted/.gitleaks.toml" \\',
+        '  --gitleaks-ignore-path "$RUNNER_TEMP/gitleaks-trusted"'], (
+        'the scan takes --ignore-gitleaks-allow and reads the trusted copy')
+    assert 'if' not in scan and 'continue-on-error' not in scan
     assert '||' not in scan['run'], 'no error-swallowing fallback may weaken the gate'
-    assert (ROOT / '.gitleaks.toml').read_text(encoding='utf-8').splitlines() == [
-        "# The [extend] line is load-bearing: it keeps gitleaks's default rules as",
-        '# the gate. An allowlist file that replaces the default rules would',
-        '# silently narrow the gate to nothing, so nothing here replaces them.',
-        '#',
-        "# pr-gate's full history scans clean under the default rules today",
-        '# (gitleaks 8.30.1, 2026-10-02), so no allowlist entry exists.',
-        '[extend]',
-        'useDefault = true'], (
+    config = tomllib.loads((ROOT / '.gitleaks.toml').read_text(encoding='utf-8'))
+    assert config == {'extend': {'useDefault': True}}, (
         'the extend line IS the gate; a narrowing allowlist replacement must '
         'fail this suite')
+
+
+# The trusted-config step decides where the scan's exemptions come from, so
+# it is executed rather than read: the run of python -I matches CI's.
+def test_the_trusted_config_step_reads_the_previous_tip(tmp):
+    steps = _workflow('secrets.yml')['jobs']['gitleaks']['steps']
+    run_text = _named_run(steps, "Take the scan's config and ignore list from the trusted commit")
+    repo = Path(tmp) / 'repo'
+    repo.mkdir()
+
+    def git(*arguments):
+        return subprocess.run(['git', '-C', str(repo), *arguments], check=True,
+                              capture_output=True, text=True).stdout
+
+    git('init', '-q', '-b', 'main')
+    git('config', 'user.name', 'fixture')
+    git('config', 'user.email', 'fixture@example.com')
+    def commit(config, message):
+        (repo / '.gitleaks.toml').write_text(config, encoding='utf-8', newline='\n')
+        git('add', '.gitleaks.toml')
+        git('commit', '-qm', message)
+        return git('rev-parse', 'HEAD').strip()
+
+    tip = commit('[extend]\nuseDefault = true\n[allowlist]\ndescription = "tip"\n', 'tip')
+    commit('[allowlist]\ndescription = "the head exempts itself"\n', 'head')
+    script = Path(tmp) / 'trusted.sh'
+    script.write_text(run_text, encoding='utf-8', newline='\n')
+    # The secrets job runs on ubuntu, where python3 exists; this suite also
+    # runs on Windows, so the step's python3 is the interpreter running it.
+    bash_env = Path(tmp) / 'python3.bash'
+    bash_env.write_text(f'python3() {{ {shlex.quote(sys.executable)} "$@"; }}\n',
+                        encoding='utf-8', newline='\n')
+    runs = iter(range(100))
+
+    def run(before, event='push'):
+        runner = Path(tmp) / f'runner-temp-{next(runs)}'
+        runner.mkdir()
+        result = subprocess.run(
+            [_action_bash(), '-e', str(script)], cwd=repo, capture_output=True,
+            text=True, timeout=120, env={**os.environ, 'RUNNER_TEMP': str(runner),
+                                         'BASH_ENV': str(bash_env), 'EVENT_NAME': event,
+                                         'BASE_SHA': '', 'BEFORE_SHA': before})
+        return result, (runner / 'gitleaks-trusted/.gitleaks.toml').read_text(encoding='utf-8')
+
+    result, config = run(tip)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    assert 'description = "tip"' in config, 'the scan must read the previous tip, never the head'
+    result, config = run('not-a-sha')
+    assert result.returncode == 0 and config == '[extend]\nuseDefault = true\n', (
+        'a name that is no commit falls back to the default rules, not the judged tree')
+    result, config = run(commit('[extend]\npath = "elsewhere.toml"\n', 'tip redirects'))
+    assert result.returncode != 0 and 'refusing to scan' in result.stderr, (
+        'a trusted config that redirects into the judged checkout must refuse')
 
 
 def test_all_action_references_are_immutable_and_share_family_pins(tmp):
