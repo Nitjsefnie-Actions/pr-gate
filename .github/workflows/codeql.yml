@@ -40,7 +40,7 @@ on:
 permissions: {}
 
 concurrency:
-  group: codeql-${{ github.ref }}
+  group: codeql-${{ github.event_name == 'push' && format('{0}-{1}', github.ref, github.sha) || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -54,6 +54,8 @@ jobs:
       # stays read-only.
       security-events: write
       contents: read
+      # The same job grant the sibling repositories carry.
+      actions: read
 
     strategy:
       # One entry per language CodeQL analyses here: `python` for the
@@ -75,7 +77,7 @@ jobs:
           # No ref override: SARIF must describe the event's own revision.
           persist-credentials: false
       - name: Initialize CodeQL
-        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        uses: github/codeql-action/init@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
@@ -84,6 +86,6 @@ jobs:
           # token, so the deeper queries belong in every matrix entry.
           queries: security-extended
       - name: Analyze
-        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        uses: github/codeql-action/analyze@915412ff23e8b7659517e607487dbeae018f2934 # v4.39.5
         with:
           category: /language:${{ matrix.language }}
