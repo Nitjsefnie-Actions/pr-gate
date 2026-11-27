@@ -235,4 +235,13 @@ jobs:
           # known-vulnerable action versions). Read-only, and this workflow
           # declares contents: read.
           GH_TOKEN: ${{ github.token }}
-        run: zizmor --no-progress action.yml .github/workflows/
+        # Exit 1 is zizmor's audit error, such as an online audit's failed
+        # GitHub API call, and is retried; a finding exits 11-14 at once.
+        run: |
+          for attempt in 1 2 3; do
+            status=0
+            zizmor --no-progress action.yml .github/workflows/ || status=$?
+            if [ "$status" -ne 1 ] || [ "$attempt" -eq 3 ]; then exit "$status"; fi
+            echo "attempt $attempt: zizmor exited 1, an audit error; retrying"
+            sleep $(( attempt * 15 ))
+          done
