@@ -55,7 +55,7 @@ def test_version_requires_canonical_three_component_semver(tmp):
     assert module.version_tuple('2.10.0') == (2, 10, 0)
     for version in ('v2.1.1', '2.1', '2.1.1-rc.1', '2.1.1+build', '',
                     ' 2.1.1', '2.1.1\n', '02.1.1', '2.01.1', '2.1.01',
-                    '２.1.1', '-2.1.1', '2.1.1; echo bad'):
+                    '２.1.1', '2０.1.1', '2.1０.1', '2.1.1０', '-2.1.1', '2.1.1; echo bad'):
         _refuses(module, partial(module.version_tuple, version), 'version')
 
 
@@ -68,7 +68,7 @@ def test_numeric_latest_tag_allows_exactly_three_successors(tmp):
          ('2.10.1', '2.11.0', '3.0.0'),
          ('7.4.7', '7.5.0', '8.0.0', '2.10.0', '2.9.1', '2.10.2',
           '2.11.1', '3.0.1', '4.0.0')),
-        ([[{'name': 'v7.4.5'}], [{'name': 'v7.4.6'}]],
+        ([[{'name': 'v7.4.6'}], [{'name': 'v7.4.5'}, {'name': 'v7.4.1０'}]],
          ('7.4.7', '7.5.0', '8.0.0'),
          ('2.10.1', '2.11.0', '3.0.0', '7.4.6', '7.4.8', '7.5.1', '8.0.1', '9.0.0')),
     )
