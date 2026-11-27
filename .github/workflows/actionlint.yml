@@ -117,7 +117,12 @@ jobs:
         # After setup-python: the check runs on the interpreter the setup
         # step put on PATH, not the runner's unversioned python3, and a
         # head that fails here never pays for what follows.
-        run: python3 scripts/ci/gate_base_freshness.py
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR_GATE_REQUIRED_CHECKS=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context')
+          export PR_GATE_REQUIRED_CHECKS
+          python3 scripts/ci/gate_base_freshness.py
 
       - name: Refuse a commit whose scope names a workflow outside the ci type
         # CONTRIBUTING's scope rule allows a workflow's `name:` as a scope

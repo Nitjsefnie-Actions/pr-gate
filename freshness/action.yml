@@ -1,6 +1,10 @@
 name: Gate-base freshness
 description: Fail a pull request whose head lacks a default-branch commit touching a file a required check reads.
 author: Nitjsefnie
+inputs:
+  github-token:
+    description: Token that reads the default branch's rules.
+    default: ${{ github.token }}
 runs:
   using: composite
   steps:
@@ -8,4 +12,8 @@ runs:
       shell: bash
       env:
         PR_GATE_ACTION_PATH: ${{ github.action_path }}
-      run: python3 "$PR_GATE_ACTION_PATH/../scripts/ci/gate_base_freshness.py" --root "$GITHUB_WORKSPACE"
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        PR_GATE_REQUIRED_CHECKS=$(gh api "repos/$GITHUB_REPOSITORY/rules/branches/main" --jq '.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context')
+        export PR_GATE_REQUIRED_CHECKS
+        python3 "$PR_GATE_ACTION_PATH/../scripts/ci/gate_base_freshness.py" --root "$GITHUB_WORKSPACE"

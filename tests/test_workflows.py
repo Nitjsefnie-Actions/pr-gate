@@ -126,12 +126,12 @@ def test_workflow_audit_includes_composite_metadata(tmp):
               'Refuse a commit whose scope names a workflow outside the ci type']
     ported = steps[setup + 1:setup + 4]
     assert [step.get('name') for step in ported] == checks, 'must follow setup-python directly'
-    for step in ported:
-        assert set(step) == {'name', 'run'}, 'a plain run step, id/if/env-free'
+    assert [set(s) for s in ported] == [{'name', 'run'}, {'name', 'env', 'run'}, {'name', 'run'}]
     marker = ported[0]['run']
     assert "git grep -nI -E '^(<{7}( |$)|>{7}( |$)|={7}$)' -- ." in marker
     assert '${{' not in marker
-    assert ported[1]['run'] == 'python3 scripts/ci/gate_base_freshness.py'
+    assert ported[1]['run'].endswith(
+        '\nexport PR_GATE_REQUIRED_CHECKS\npython3 scripts/ci/gate_base_freshness.py\n')
     assert ported[2]['run'] == 'python3 scripts/ci/commit_scopes.py'
 
     def _run_of(name):
