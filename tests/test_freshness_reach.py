@@ -243,6 +243,7 @@ PINNED = [
     'scripts/ci/freshness_workflows.py', 'scripts/ci/gate_base_freshness.py',
     'scripts/ci/pr_attribution.py', 'scripts/ci/pr_body.py', 'scripts/ci/pr_body_closing.py',
     'scripts/ci/pr_commits.py', 'scripts/ci/pr_content.py', 'scripts/ci/pr_gate.py',
-    'scripts/ci/pr_policy.py', 'scripts/ci/release_dispatch.py', 'scripts/ci/type_ratchet.py',
+    'scripts/ci/pr_policy.py', 'scripts/ci/release_dispatch.py',
+    'scripts/ci/secret_scan_config.py', 'scripts/ci/type_ratchet.py', 'secret-scan/action.yml',
     'setup.cfg',
 ]

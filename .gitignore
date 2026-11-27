@@ -12,6 +12,9 @@ freshness/*
 !commit-scopes/
 commit-scopes/*
 !commit-scopes/action.yml
+!secret-scan/
+secret-scan/*
+!secret-scan/action.yml
 !requirements-test.txt
 !requirements-zizmor.txt
 !requirements-pip-audit.txt
@@ -66,6 +69,7 @@ scripts/ci/*
 !scripts/ci/freshness_workflows.py
 !scripts/ci/release_dispatch.py
 !scripts/ci/commit_scopes.py
+!scripts/ci/secret_scan_config.py
 !tests/
 tests/*
 !tests/_util.py

@@ -1,0 +1,70 @@
+name: Secret scan
+description: Scan the whole tree and git history with gitleaks under a config the judged change cannot edit.
+author: Nitjsefnie
+runs:
+  using: composite
+  steps:
+    - name: Download gitleaks and verify its digest
+      # A reset connection exits nonzero like a finding would, so both downloads retry.
+      shell: bash
+      run: |
+        cd "$RUNNER_TEMP"
+        fetch() {
+          curl --fail --silent --show-error --location \
+            --connect-timeout 10 --max-time 60 \
+            --retry 8 --retry-all-errors --retry-max-time 300 \
+            --output "$1" "$2"
+        }
+        fetch gitleaks_8.30.1_linux_x64.tar.gz \
+          https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+        echo '551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  gitleaks_8.30.1_linux_x64.tar.gz' | sha256sum -c -
+        tar xzf gitleaks_8.30.1_linux_x64.tar.gz gitleaks
+        ./gitleaks version
+        fetch gitleaks-default.toml \
+          https://raw.githubusercontent.com/gitleaks/gitleaks/v8.30.1/config/gitleaks.toml
+        echo 'e163e53b9e7e8a8511e77271e2b323ed057759542a6d988258afe3a1fa329caf  gitleaks-default.toml' | sha256sum -c -
+
+    - name: Take the scan's config and ignore list from the trusted commit
+      # Read from the judged tree, they would let a change exempt its own finding.
+      shell: bash
+      env:
+        PR_GATE_ACTION_PATH: ${{ github.action_path }}
+        PR_GATE_EVENT_NAME: ${{ github.event_name }}
+        PR_GATE_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        PR_GATE_BEFORE_SHA: ${{ github.event.before }}
+        PR_GATE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      run: |
+        case "$PR_GATE_EVENT_NAME" in
+          pull_request) trusted="$PR_GATE_BASE_SHA" ;;
+          push) trusted="$PR_GATE_BEFORE_SHA" ;;
+          *) trusted="$(git rev-parse --verify --quiet "refs/remotes/origin/${PR_GATE_DEFAULT_BRANCH:-main}")" || trusted= ;;
+        esac
+        # An empty name would read the index, the judged tree.
+        read_trusted() {
+          case "$trusted" in '' | *[!0-9a-f]*) return 1 ;; esac
+          git cat-file blob "$trusted:$1"
+        }
+        dir="$RUNNER_TEMP/gitleaks-trusted"
+        mkdir "$dir"
+        if ! read_trusted .gitleaks.toml > "$dir/.gitleaks.toml"; then
+          echo "no .gitleaks.toml at trusted commit '$trusted': default rules"
+          printf '[extend]\nuseDefault = true\n' > "$dir/.gitleaks.toml"
+        fi
+        if ! read_trusted .gitleaksignore > "$dir/.gitleaksignore"; then
+          echo "no .gitleaksignore at trusted commit '$trusted': nothing ignored"
+        fi
+        python3 -I "$PR_GATE_ACTION_PATH/../scripts/ci/secret_scan_config.py" \
+          "$RUNNER_TEMP/gitleaks-default.toml" "$RUNNER_TEMP/gitleaks-default-stripped.toml" \
+          "$dir/.gitleaks.toml"
+
+    - name: Scan the tree and the history
+      # Bare: this step's exit status IS the gate. --redact masks what --verbose names.
+      shell: bash
+      run: |
+        rm -rf .gitleaksignore
+        # diff forces a NUL-bearing blob's content into git log -p; unset or -diff hides it.
+        echo '* diff' > .git/info/attributes
+        "$RUNNER_TEMP/gitleaks" detect --verbose --redact --ignore-gitleaks-allow \
+          --config "$RUNNER_TEMP/gitleaks-trusted/.gitleaks.toml" \
+          --gitleaks-ignore-path "$RUNNER_TEMP/gitleaks-trusted" \
+          --log-opts='--full-history --all --diff-filter=uxdb --diff-merges=first-parent'

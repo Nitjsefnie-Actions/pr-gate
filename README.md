@@ -95,6 +95,24 @@ only). Both read the repository's default branch and fetch it themselves.
 Put them in a job the required aggregate already folds: a new job is a new
 required context only once the ruleset or the aggregate names it.
 
+`Nitjsefnie-Actions/pr-gate/secret-scan` runs gitleaks 8.30.1 over the whole
+tree and history on a Linux x64 runner, so it needs a full-history checkout.
+It downloads the binary and that release's default rules, each checked
+against its digest, and reads `.gitleaks.toml` and `.gitleaksignore` from the
+commit the change is judged against: a pull request's base, a push's previous
+tip, otherwise the default branch's tip. It refuses a config there that sets
+`[extend] path`. With no config there, or one setting `useDefault = true`, it
+runs the default rules without the allowlists that exempt a file by its path
+alone.
+
+```yaml
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: Nitjsefnie-Actions/pr-gate/secret-scan@<sha> # vX.Y.Z
+```
+
 ## Admission rules
 
 The template uses `##` section headings followed by instruction comments tagged

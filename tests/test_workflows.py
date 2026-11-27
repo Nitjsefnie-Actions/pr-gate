@@ -788,7 +788,7 @@ def test_all_action_references_are_immutable_and_share_family_pins(tmp):
     checkouts = 0
     for path, steps in steps_by_path:
         for step in steps:
-            if 'uses' not in step:
+            if step.get('uses', '$/').startswith('$/'):  # a local action runs this commit
                 continue
             reference = step['uses']
             action, pin = reference.split('@')
