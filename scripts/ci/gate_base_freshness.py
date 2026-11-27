@@ -16,8 +16,8 @@ somebody remembered to add to it, which is this defect wearing different
 clothes: a gate whose own inputs are enumerated by hand goes stale exactly the
 way this check exists to prevent.
 
-The only hand-held entry is REQUIRED_JOBS, because the ruleset that makes a
-status context required lives in repository settings, which are not in the
+The required jobs come from main's ruleset, which the calling step reads with
+gh into PR_GATE_REQUIRED_CHECKS, since repository settings are not in the
 repository. Every name there must still be FOUND in a workflow below or the
 run refuses: a job renamed out of every workflow would otherwise shrink the
 set in silence, and a narrower set reports green over a wider gate.
@@ -60,12 +60,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-# The required status contexts. Hand-held, and only here: a ruleset is
-# repository configuration, not a file, so nothing under .github/workflows can
-# be asked which jobs it makes required. Each name is still looked up in the
-# workflows below, and a name with no job behind it is a refusal rather than a
-# silently smaller set.
-REQUIRED_JOBS = ("actionlint", "test", "report")
+# main's ruleset's required contexts, one per line; a matrix leg's `job (axes)` names its job.
+REQUIRED_JOBS = tuple(dict.fromkeys(
+    context.split(" (")[0] for context in
+    os.environ.get("PR_GATE_REQUIRED_CHECKS", "").splitlines() if context.strip()))
 
 # The branch a required check's head is compared against. Not configurable:
 # a second branch here would be a second base, and this question has one.
@@ -416,6 +414,8 @@ def gate_paths(root):
         parsed[workflow] = workflow_steps(
             git(root, "cat-file", "blob", f"HEAD:{workflow}",
                 what=f"read {workflow}"), workflow)
+    if not REQUIRED_JOBS:
+        raise GateError("PR_GATE_REQUIRED_CHECKS names no required check of main's ruleset")
     derived = set()
     for job in REQUIRED_JOBS:
         # Every workflow defining the name, unioned. A job name is unique within
@@ -431,7 +431,7 @@ def gate_paths(root):
             raise GateError(
                 f"no workflow under {WORKFLOW_DIR}/ defines the required job "
                 f"`{job}`, so the files the required checks read cannot be built: "
-                f"put the job back, or update REQUIRED_JOBS if it was renamed")
+                f"put the job back, or update the ruleset if it was renamed")
         for name in defining:
             for step in parsed[name][job]:
                 uses = step["uses"] or ""

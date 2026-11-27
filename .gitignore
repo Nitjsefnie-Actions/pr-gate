@@ -95,6 +95,7 @@ tests/*
 !tests/test_ci_secrets.py
 !tests/test_type_ratchet.py
 !tests/test_gate_base_freshness.py
+!tests/test_freshness_required_checks.py
 !tests/test_release_dispatch.py
 !tests/test_commit_scopes.py
 !.github/workflows/ratchet-push.yml
