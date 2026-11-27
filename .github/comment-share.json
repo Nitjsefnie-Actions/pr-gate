@@ -44,8 +44,8 @@
     11704
   ],
   "scripts/ci/gate_base_freshness.py": [
-    10361,
-    19812
+    10172,
+    19814
   ],
   "scripts/ci/pr_body_closing.py": [
     1499,
