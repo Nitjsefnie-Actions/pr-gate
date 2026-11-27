@@ -6,6 +6,7 @@ through the workflow reader in scripts/ci/freshness_workflows.py. Every fixture 
 throwaway git repository under the test's own tmp, never this repository.
 """
 import importlib.util
+import os
 import subprocess
 import sys
 import tempfile
@@ -213,10 +214,12 @@ def test_an_anchor_alias_or_merge_in_a_step_refuses(steps):
 # pin to change in the same commit, so the set can neither shrink nor grow in silence. The test
 # job's `tests` input names `tests/`, which resolves to every tracked file under it; the files
 # the suite's own literals name, such as `LICENSE`, are files a required check reads.
+# Run under an ASCII locale, as on a Windows runner: the scripts it reads are UTF-8 all the same.
 def test_gate_paths_on_this_repository():
-    done = subprocess.run([sys.executable, str(ROOT / 'scripts/ci/gate_base_freshness.py'),
-                           '--print-paths'], cwd=ROOT, capture_output=True, text=True,
-                          check=False)
+    script = str(ROOT / 'scripts/ci/gate_base_freshness.py')
+    done = subprocess.run([sys.executable, '-X', 'utf8=0', script, '--print-paths'], cwd=ROOT,
+                          capture_output=True, text=True, check=False,
+                          env={**os.environ, 'LC_ALL': 'POSIX', 'PYTHONCOERCECLOCALE': '0'})
     assert done.returncode == 0, done.stderr
     tests = subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'HEAD', 'tests/'], cwd=ROOT,
                            capture_output=True, text=True, check=True).stdout.splitlines()

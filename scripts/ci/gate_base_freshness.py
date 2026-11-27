@@ -121,7 +121,9 @@ def git(root, *arguments, what):
     a refusal naming what was being attempted, never an empty answer.
     """
     command = ("git", "-C", str(root)) + arguments
-    done = subprocess.run(command, capture_output=True, text=True)
+    # UTF-8 whatever the runner's locale: the scripts read through here are UTF-8 text.
+    done = subprocess.run(command, capture_output=True, text=True, encoding="utf-8",
+                          errors="replace")
     if done.returncode != 0:
         detail = done.stderr.strip() or "no output"
         raise GateError(
