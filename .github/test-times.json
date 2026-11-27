@@ -21,6 +21,9 @@
         10.52,
         18.98
       ],
+      "tests/test_freshness_reach.py": [
+        3.43
+      ],
       "tests/test_freshness_required_checks.py": [
         1.1
       ],
@@ -113,6 +116,9 @@
         16.43,
         4.58
       ],
+      "tests/test_freshness_reach.py": [
+        2.84
+      ],
       "tests/test_freshness_required_checks.py": [
         1.12
       ],
@@ -202,6 +208,9 @@
         14.91,
         10.0
       ],
+      "tests/test_freshness_reach.py": [
+        0.96
+      ],
       "tests/test_freshness_required_checks.py": [
         1.02
       ],
@@ -285,6 +294,9 @@
       "tests/test_conftest.py": [
         11.83,
         15.39
+      ],
+      "tests/test_freshness_reach.py": [
+        1.57
       ],
       "tests/test_freshness_required_checks.py": [
         0.63
@@ -371,6 +383,9 @@
         14.93,
         21.48,
         10.7
+      ],
+      "tests/test_freshness_reach.py": [
+        10.93
       ],
       "tests/test_freshness_required_checks.py": [
         1.69
@@ -461,6 +476,9 @@
         13.82,
         19.3
       ],
+      "tests/test_freshness_reach.py": [
+        10.04
+      ],
       "tests/test_freshness_required_checks.py": [
         2.09
       ],
@@ -529,7 +547,8 @@
       ],
       "tests/test_workflows.py": [
         5.59,
-        8.62
+        8.62,
+        10.99
       ]
     }
   }
