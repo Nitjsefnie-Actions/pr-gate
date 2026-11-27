@@ -1017,33 +1017,17 @@ def test_audit_step_retries_a_reset_connection_then_succeeds(tmp):
     assert sleeps == ['15'], sleeps
 
 
-def test_audit_step_retries_a_503_service_unavailable(tmp):
-    result, calls, sleeps = _run_audit_step(
-        tmp, ['1|503 Service Unavailable', '0|No vulnerabilities found'],
-        ('requirements-test.txt',))
-    assert result.returncode == 0
-    assert _audited_manifests(calls) == ['requirements-test.txt'] * 2, calls
-    assert sleeps == ['15'], sleeps
-
-
-def test_audit_step_retries_a_429_too_many_requests(tmp):
-    result, calls, sleeps = _run_audit_step(
-        tmp, ['1|429 Too Many Requests', '0|No vulnerabilities found'],
-        ('requirements-test.txt',))
-    assert result.returncode == 0
-    assert _audited_manifests(calls) == ['requirements-test.txt'] * 2, calls
-    assert sleeps == ['15'], sleeps
-
-
-def test_audit_step_retries_a_pip_audit_service_error(tmp):
-    result, calls, sleeps = _run_audit_step(
-        tmp, ['1|pip_audit._service.interface.ServiceError: '
-              'the vulnerability service is unavailable',
-              '0|No vulnerabilities found'],
-        ('requirements-test.txt',))
-    assert result.returncode == 0
-    assert _audited_manifests(calls) == ['requirements-test.txt'] * 2, calls
-    assert sleeps == ['15'], sleeps
+def test_audit_step_retries_a_503_a_429_and_a_service_error(tmp):
+    for case, failure in (('503', '503 Service Unavailable'), ('429', '429 Too Many Requests'),
+                          ('service', 'pip_audit._service.interface.ServiceError: '
+                                      'the vulnerability service is unavailable')):
+        (Path(tmp) / case).mkdir()
+        result, calls, sleeps = _run_audit_step(
+            Path(tmp) / case, [f'1|{failure}', '0|No vulnerabilities found'],
+            ('requirements-test.txt',))
+        assert result.returncode == 0, case
+        assert _audited_manifests(calls) == ['requirements-test.txt'] * 2, (case, calls)
+        assert sleeps == ['15'], (case, sleeps)
 
 
 def test_audit_step_exits_immediately_on_a_non_retryable_4xx(tmp):
