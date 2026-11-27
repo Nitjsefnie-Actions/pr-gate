@@ -27,8 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def _workflow(name):
     path = ROOT / '.github/workflows' / name
     assert path.is_file(), f'missing workflow: {name}'
-    return yaml.load(path.read_text(encoding='utf-8'),
-                     Loader=yaml.BaseLoader)
+    return yaml.load(path.read_text(encoding='utf-8'), Loader=yaml.BaseLoader)
 
 
 def _shipped_action_pin(action):
@@ -126,8 +125,7 @@ def test_workflow_audit_includes_composite_metadata(tmp):
               "Require this head to carry main's gate-defining commits",
               'Refuse a commit whose scope names a workflow outside the ci type']
     ported = steps[setup + 1:setup + 4]
-    assert [step.get('name') for step in ported] == checks, (
-        'must follow setup-python directly')
+    assert [step.get('name') for step in ported] == checks, 'must follow setup-python directly'
     for step in ported:
         assert set(step) == {'name', 'run'}, 'a plain run step, id/if/env-free'
     marker = ported[0]['run']
@@ -322,8 +320,7 @@ def test_lint_workflow_runs_both_defect_linters_from_the_pinned_manifest(tmp):
     test_install_index = steps.index(test_install)
     linters = [step for step in steps
                if step.get('run', '').startswith('git ls-files')]
-    assert len(linters) == 2, (
-        'exactly the two linters gate; nothing else runs the file list')
+    assert len(linters) == 2, 'exactly the two linters gate; nothing else runs the file list'
     assert steps.index(linters[0]) > install_index, (
         'both linters must run after the toolchain install')
     assert steps.index(linters[1]) > install_index, (
@@ -360,10 +357,8 @@ def test_types_workflow_gates_on_the_ratchet_after_the_toolchain(tmp):
         'a new CI step implementing a checked-in module needs a pin that '
         'the step exists')
     assert 'if' not in ratchet, 'no step condition may weaken the gate'
-    assert 'continue-on-error' not in ratchet, (
-        'no failure suppression may weaken the gate')
-    assert '||' not in ratchet['run'], (
-        'no error-swallowing fallback may weaken the gate')
+    assert 'continue-on-error' not in ratchet, 'no failure suppression may weaken the gate'
+    assert '||' not in ratchet['run'], 'no error-swallowing fallback may weaken the gate'
     assert pyright_step.get('continue-on-error') == 'true', (
         'pyright exits 1 while the seeded backlog stands, so its own exit '
         'must not pre-empt the ratchet verdict; only the ratchet gates')
@@ -381,8 +376,7 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
         (ROOT / 'pyrightconfig.json').read_text(encoding='utf-8'))
     assert config['typeCheckingMode'] == 'basic'
     matrix = _workflow('tests.yml')['jobs']['test']['strategy']['matrix']
-    assert config['pythonVersion'] == matrix['python'][-1], (
-        'type-check the newest matrix entry')
+    assert config['pythonVersion'] == matrix['python'][-1], 'type-check the newest matrix entry'
     assert config['pythonPlatform'] == 'All'
     assert config['reportMissingModuleSource'] == 'none'
     for directory in ('scripts/ci', 'tests'):
@@ -396,15 +390,13 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
     pylintrc.read_string((ROOT / '.pylintrc').read_text(encoding='utf-8'))
     messages = pylintrc['MESSAGES CONTROL']
     disabled = {entry.strip() for entry in messages['disable'].split(',')}
-    assert {'C', 'R', 'I'} <= disabled, (
-        'style/convention/refactor checks must stay off')
+    assert {'C', 'R', 'I'} <= disabled, 'style/convention/refactor checks must stay off'
     assert 'enable' not in messages, (
         'a category enable re-enables every specific disable listed '
         'before it, so the E/W checks stay on by not being disabled')
     assert {'subprocess-run-check', 'protected-access'} <= disabled, (
         'each per-message disable must be one a real finding forced')
-    assert len(disabled) == 5, (
-        'no disable may join without a real finding and a reason comment')
+    assert len(disabled) == 5, 'no disable may join without a real finding and a reason comment'
     pycodestyle_cfg = configparser.ConfigParser()
     pycodestyle_cfg.read_string(
         (ROOT / 'setup.cfg').read_text(encoding='utf-8'))
@@ -412,8 +404,7 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
     assert section['max-line-length'] == '100', (
         'the line ceiling must stay at the measured convention')
     ignore = section['ignore'].split(',')
-    assert 'E402' in ignore, (
-        'the sys.path-before-import harness pattern must stay admitted')
+    assert 'E402' in ignore, 'the sys.path-before-import harness pattern must stay admitted'
     for default_ignored in ('E121', 'E123', 'E126', 'E226', 'E24', 'E704',
                             'W503', 'W504'):
         assert default_ignored in ignore, (
@@ -421,8 +412,7 @@ def test_gate_configurations_are_shipped_and_defect_oriented(tmp):
             'must stay spelled out beside E402')
     baseline = json.loads(
         (ROOT / 'pyright-baseline.json').read_text(encoding='utf-8'))
-    assert isinstance(baseline.get('error_count'), int), (
-        'the recorded count must be an integer')
+    assert isinstance(baseline.get('error_count'), int), 'the recorded count must be an integer'
     assert not isinstance(baseline.get('error_count'), bool)
     assert baseline['error_count'] >= 0
 
@@ -738,8 +728,7 @@ def test_claim_prefilters_only_bots_and_command_words(tmp):
     ), 'claim must guard exactly the commenter and all three commands'
     assert len(job['steps']) == 1, 'claim must execute only its pinned action'
     step = job['steps'][0]
-    assert set(step) == {'uses', 'with'}, (
-        'claim needs no checkout, shell or step condition')
+    assert set(step) == {'uses', 'with'}, 'claim needs no checkout, shell or step condition'
 
 
 def test_codeql_analyzes_python_and_actions_at_the_event_revision(tmp):
@@ -923,7 +912,7 @@ _SLEEP_FUNCTION = r"""sleep() {
 """
 
 
-def _run_audit_step(tmp, plan, manifests=()):
+def _run_audit_step(tmp, plan, manifests=(), tool='pip-audit', step=None):
     staging = Path(tmp) / 'repo'
     staging.mkdir()
     for name in manifests:
@@ -931,7 +920,7 @@ def _run_audit_step(tmp, plan, manifests=()):
                                     encoding='utf-8', newline='\n')
     stubs = Path(tmp) / 'stubs'
     stubs.mkdir()
-    stub = stubs / 'pip-audit'
+    stub = stubs / tool
     stub.write_text(_PIP_AUDIT_STUB, encoding='utf-8', newline='\n')
     stub.chmod(0o755)
     bash_env = Path(tmp) / 'bash-env.bash'
@@ -940,7 +929,7 @@ def _run_audit_step(tmp, plan, manifests=()):
     plan_path.write_text(''.join(f'{line}\n' for line in plan),
                          encoding='utf-8', newline='\n')
     script = Path(tmp) / 'audit-step.sh'
-    script.write_text(_named_run(_audit_steps(), 'Audit dependencies'),
+    script.write_text(step or _named_run(_audit_steps(), 'Audit dependencies'),
                       encoding='utf-8', newline='\n')
     environment = dict(os.environ)
     environment['PATH'] = os.pathsep.join((str(stubs), environment['PATH']))
@@ -958,6 +947,17 @@ def _run_audit_step(tmp, plan, manifests=()):
         return path.read_text(encoding='utf-8').splitlines() if path.exists() else []
 
     return result, lines(Path(tmp) / 'calls.log'), lines(Path(tmp) / 'sleeps.log')
+
+
+# zizmor's audit error (exit 1, such as a failed GitHub API call) is re-run
+# with backoff; a finding (11-14) or a third error is final.
+def test_zizmor_reruns_only_its_audit_error(tmp):
+    step = _named_run(_workflow('actionlint.yml')['jobs']['actionlint']['steps'], 'zizmor')
+    for case, plan in enumerate((['1|err e', '0|ok'], ['13|x'], ['1|e', '14|x'], ['1|e'] * 3)):
+        (Path(tmp) / str(case)).mkdir()
+        result, calls, sleeps = _run_audit_step(Path(tmp) / str(case), plan, (), 'zizmor', step)
+        assert (result.returncode, len(calls), sleeps) == (
+            int(plan[-1].split('|')[0]), len(plan), ['15', '30'][:len(plan) - 1]), result.stderr
 
 
 def _audited_manifests(calls):
