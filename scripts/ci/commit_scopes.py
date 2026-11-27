@@ -54,14 +54,14 @@ gate has agreed to judge.
 which is how the suite rehearses it against real fixtures.
 """
 
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
-# The branch a pull request's head is compared against. Not configurable: a
-# second branch here would be a second base, and this question has one.
-BASE_BRANCH = "main"
+# The default branch a pull request's head is compared against, which the calling step names.
+BASE_BRANCH = os.environ.get("PR_GATE_DEFAULT_BRANCH") or "main"
 
 WORKFLOW_DIR = ".github/workflows"
 
