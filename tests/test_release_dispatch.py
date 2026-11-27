@@ -64,7 +64,8 @@ def test_numeric_latest_tag_allows_exactly_three_successors(tmp):
     module = _load()
     histories = (
         ([[{'name': 'v2.9.0'}, {'name': 'v99.0.0-rc.1'}, {'name': 'v2０.1.0'}, {'name': 'v2.1０.0'}],
-          [{'name': 'v2.10.0'}, {'name': 'not-a-release'}]],
+          [{'name': 'v2.10.0'}, {'name': 'not-a-release'}],
+          [{'name': 'v２.1.0'}, {'name': 'v2.１.0'}, {'name': 'v2.1.１'}]],
          ('2.10.1', '2.11.0', '3.0.0'),
          ('7.4.7', '7.5.0', '8.0.0', '2.10.0', '2.9.1', '2.10.2',
           '2.11.1', '3.0.1', '4.0.0')),
@@ -182,8 +183,7 @@ def test_other_events_dependabot_unmapped_and_wrong_sha_never_satisfy(tmp):
                        (_run(sha='b' * 40), _check()),
                        (_run(suite=2), _check()),
                        (_run(), _check(sha='b' * 40))):
-        api = _gate_api([{'workflow_runs': [run] if run else []}],
-                        [{'check_runs': [check]}])
+        api = _gate_api([{'workflow_runs': [run] if run else []}], [{'check_runs': [check]}])
         clock = Clock()
         _refuses(module, partial(_wait, module, api, clock=clock), 'registration grace')
         assert clock.elapsed == 40 and clock.sleeps == [20, 20]
