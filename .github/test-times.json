@@ -9,11 +9,13 @@
         11.97
       ],
       "tests/test_ci_secrets.py": [
-        1.86
+        1.86,
+        0.01
       ],
       "tests/test_commit_scopes.py": [
         10.97,
-        8.04
+        8.04,
+        5.35
       ],
       "tests/test_conftest.py": [
         4.65,
@@ -22,7 +24,8 @@
         18.98
       ],
       "tests/test_freshness_reach.py": [
-        3.43
+        3.43,
+        2.25
       ],
       "tests/test_freshness_required_checks.py": [
         1.1
@@ -102,7 +105,8 @@
       ],
       "tests/test_ci_secrets.py": [
         1.86,
-        3.12
+        3.12,
+        0.01
       ],
       "tests/test_commit_scopes.py": [
         8.57,
@@ -117,7 +121,8 @@
         4.58
       ],
       "tests/test_freshness_reach.py": [
-        2.84
+        2.84,
+        4.17
       ],
       "tests/test_freshness_required_checks.py": [
         1.12
@@ -198,7 +203,8 @@
         6.57
       ],
       "tests/test_ci_secrets.py": [
-        1.24
+        1.24,
+        0.01
       ],
       "tests/test_commit_scopes.py": [
         4.49,
@@ -285,7 +291,8 @@
         9.44
       ],
       "tests/test_ci_secrets.py": [
-        1.54
+        1.54,
+        0.01
       ],
       "tests/test_commit_scopes.py": [
         2.52,
@@ -293,7 +300,8 @@
       ],
       "tests/test_conftest.py": [
         11.83,
-        15.39
+        15.39,
+        7.97
       ],
       "tests/test_freshness_reach.py": [
         1.57
@@ -374,7 +382,8 @@
       ],
       "tests/test_ci_secrets.py": [
         4.02,
-        5.54
+        5.54,
+        0.01
       ],
       "tests/test_commit_scopes.py": [
         26.37,
@@ -467,18 +476,21 @@
       ],
       "tests/test_ci_secrets.py": [
         5.89,
-        4.05
+        4.05,
+        0.01
       ],
       "tests/test_commit_scopes.py": [
         23.66,
-        16.95
+        16.95,
+        32.25
       ],
       "tests/test_conftest.py": [
         13.82,
         19.3
       ],
       "tests/test_freshness_reach.py": [
-        10.04
+        10.04,
+        13.18
       ],
       "tests/test_freshness_required_checks.py": [
         2.09
