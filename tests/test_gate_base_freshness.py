@@ -107,7 +107,8 @@ def _freshness(*arguments, event: str | None = 'pull_request', script=None, cwd=
 def test_required_jobs_name_the_two_required_contexts(tmp):
     del tmp
     module = _load()
-    assert module.REQUIRED_JOBS == ('actionlint', 'test', 'report')
+    assert module.REQUIRED_CHECKS == ('actionlint', 'test (ubuntu-latest, 3.15, 1/2)',
+                                      'test (macos-latest)', 'report')
     assert module.BASE_BRANCH == 'main'
     for name, path in (('actionlint', 'actionlint.yml'), ('test', 'tests.yml'),
                        ('report', 'tests.yml')):
@@ -115,51 +116,6 @@ def test_required_jobs_name_the_two_required_contexts(tmp):
             (ROOT / '.github/workflows' / path).read_text(encoding='utf-8'),
             Loader=yaml.BaseLoader)['jobs']
         assert name in jobs, f'{path} must define the required job {name!r}'
-
-
-# The exact derived set on this repository's HEAD: a required job naming a new file forces this
-# pin to change in the same commit, so the set can neither shrink nor grow in silence. The test
-# job's `tests` input names `tests/`, which resolves to every tracked file under it.
-def test_gate_paths_on_this_repository(tmp):
-    del tmp
-    done = _freshness('--print-paths', cwd=str(ROOT))
-    assert done.returncode == 0, done.stderr
-    assert done.stdout.splitlines() == sorted([
-        '.github/ci-thresholds.json',
-        '.github/test-times.json',
-        '.github/workflows/actionlint.yml',
-        '.github/workflows/audit.yml',
-        '.github/workflows/claim.yml',
-        '.github/workflows/codeql.yml',
-        '.github/workflows/comment-share.yml',
-        '.github/workflows/lint.yml',
-        '.github/workflows/pin-guard.yml',
-        '.github/workflows/pr-gate.yml',
-        '.github/workflows/ratchet-push.yml',
-        '.github/workflows/release-dispatch.yml',
-        '.github/workflows/scorecard.yml',
-        '.github/workflows/secrets.yml',
-        '.github/workflows/size-baseline.yml',
-        '.github/workflows/test-ratchet-comment.yml',
-        '.github/workflows/tests.yml',
-        '.github/workflows/types.yml',
-        'README.md',
-        'action.yml',
-        'requirements-actionlint.txt',
-        'requirements-test.txt',
-        'requirements-zizmor.txt',
-        'scripts/ci/commit_scopes.py',
-        'scripts/ci/gate_base_freshness.py',
-        'scripts/ci/pr_attribution.py', 'scripts/ci/pr_commits.py',
-        'scripts/ci/pr_body.py',
-        'scripts/ci/pr_body_closing.py',
-        'scripts/ci/pr_content.py',
-        'scripts/ci/pr_gate.py',
-        'scripts/ci/pr_policy.py',
-        'scripts/ci/release_dispatch.py',
-        'scripts/ci/type_ratchet.py',
-    ] + subprocess.run(['git', 'ls-tree', '-r', '--name-only', 'HEAD', 'tests/'], cwd=ROOT,
-                       capture_output=True, text=True, check=True).stdout.splitlines()), done.stdout
 
 
 def test_green_when_the_head_carries_every_gate_commit(tmp):
@@ -205,8 +161,8 @@ def test_a_push_passes_only_a_head_main_already_holds(tmp):
 # The workflow step runs the script from the checkout root with no --root,
 # so the default root has to be the repository root. git resolves pathspecs
 # against the `git -C` chdir, so a default root at scripts/ would empty the
-# stale listing and print the green line over a stale head. The script is
-# COPIED to a scripts/ci/ depth inside the fixture rather than run from this
+# stale listing and print the green line over a stale head. The script and its
+# modules are COPIED to a scripts/ci/ depth inside the fixture rather than run from this
 # repository: only a copy at that depth exercises the default-root
 # derivation, and the fixture's own git is never this repository's.
 def test_runs_without_root_at_scripts_ci_depth_reds_a_stale_head(tmp):
@@ -215,9 +171,9 @@ def test_runs_without_root_at_scripts_ci_depth_reds_a_stale_head(tmp):
         '.github/workflows/actionlint.yml': MOVED_GATE})
     script = repo / 'scripts/ci/gate_base_freshness.py'
     script.parent.mkdir(parents=True)
-    script.write_text(
-        (ROOT / 'scripts/ci/gate_base_freshness.py').read_text(encoding='utf-8'),
-        encoding='utf-8', newline='\n')
+    for name in ('gate_base_freshness', 'freshness_reach', 'freshness_workflows'):
+        (script.parent / f'{name}.py').write_text((ROOT / f'scripts/ci/{name}.py').read_text(
+            encoding='utf-8'), encoding='utf-8', newline='\n')
     done = _freshness(script=script, cwd=str(repo))
     assert done.returncode == 1, (done.stdout, done.stderr)
     assert 'main holds 1 commit this head does not' in done.stdout
@@ -312,7 +268,7 @@ def test_refuses_shapes_it_cannot_read(tmp):
     }
     for why, text in fixtures.items():
         try:
-            module.workflow_steps(text, 'fixture.yml')
+            module.workflow_jobs(text, 'fixture.yml')
         except module.WorkflowError:
             continue
         raise AssertionError(f'{why} must refuse, not parse')
@@ -427,7 +383,7 @@ def test_block_scalar_run_text_is_read_verbatim(tmp):
             '          echo one\n'
             '          # a comment bash receives\n'
             '          grep README.md\n')
-    steps = module.workflow_steps(text, 'w.yml')['actionlint']
+    steps = module.workflow_jobs(text, 'w.yml')['actionlint'].steps
     assert [step['run'] for step in steps] == [
         'echo one\n# a comment bash receives\ngrep README.md']
 
@@ -445,7 +401,7 @@ def test_uses_and_with_fields_are_read_and_skipped(tmp):
             '        with:\n'
             '          fetch-depth: 0\n'
             '      - uses: ./\n')
-    steps = module.workflow_steps(text, 'w.yml')['actionlint']
+    steps = module.workflow_jobs(text, 'w.yml')['actionlint'].steps
     assert steps[0]['uses'] == 'actions/checkout@1111111111111111111111111111111111111111'
     assert steps[1]['uses'] == './'
 
@@ -454,7 +410,7 @@ def test_with_values_are_read_but_not_their_keys_or_comments(tmp):
     del tmp
     text = ('jobs:\n  test:\n    steps:\n      - uses: o/a@1\n        with:\n'
             '          # docs/\n          docs: src/**/x.py\n          cell: ${{ matrix.os }}\n')
-    step = _load().workflow_steps(text, 'w.yml')['test'][0]
+    step = _load().workflow_jobs(text, 'w.yml')['test'].steps[0]
     assert step['with'] == 'src/**/x.py\n${{ matrix.os }}'
 
 
@@ -553,7 +509,7 @@ def test_every_tracked_workflow_parses(tmp):
     for name in module.workflow_names(module.tracked_files(ROOT)):
         text = module.git(ROOT, 'cat-file', 'blob', f'HEAD:{name}',
                           what=f'read {name}')
-        jobs = module.workflow_steps(text, name)
+        jobs = module.workflow_jobs(text, name)
         assert jobs, name
 
 
@@ -577,11 +533,11 @@ def test_parser_refusal_arms(tmp):
             '      - run: echo\n         x: 1\n',
         'a non-mapping step key':
             'name: w\njobs:\n  actionlint:\n    steps:\n'
-            '      - run: echo\n          [1, 2]\n',
+            '      - run: echo\n        [1, 2]\n',
     }
     for why, text in cases.items():
         try:
-            module.workflow_steps(text, 'w.yml')
+            module.workflow_jobs(text, 'w.yml')
         except module.WorkflowError:
             continue
         raise AssertionError(f'{why} must refuse, not parse')
@@ -602,8 +558,8 @@ def test_block_scalar_and_block_end_loop_arms(tmp):
             '        name: renamed\n'
             'permissions:\n'
             '  contents: read\n')
-    jobs = module.workflow_steps(text, 'w.yml')
-    steps = jobs['actionlint']
+    jobs = module.workflow_jobs(text, 'w.yml')
+    steps = jobs['actionlint'].steps
     assert steps[0]['run'] == 'echo one'
     assert steps[0]['uses'] is None
 

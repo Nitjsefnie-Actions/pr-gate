@@ -18,9 +18,27 @@ way this check exists to prevent.
 
 The required jobs come from main's ruleset, which the calling step reads with
 gh into PR_GATE_REQUIRED_CHECKS, since repository settings are not in the
-repository. Every name there must still be FOUND in a workflow below or the
-run refuses: a job renamed out of every workflow would otherwise shrink the
-set in silence, and a narrower set reports green over a wider gate.
+repository. Every name there must still be FOUND in a workflow below, as a
+job id or a display name, or the run refuses: a job renamed out of every
+workflow would otherwise shrink the set in silence, and a narrower set reports
+green over a wider gate. A context is a check run's name: a job's `name:`
+(an expression in it matching any text), else its id, a matrix leg's
+`(axes)` dropped.
+
+WHAT IT FOLLOWS (scripts/ci/freshness_reach.py). From each required job, every
+job GitHub runs for it: the jobs it `needs`, transitively, since an aggregate
+that folds others reads what they read; and every job of a local reusable
+workflow it calls (`./` or the `$/` self reference). Each reached job's
+workflow is in the set, as it defines the check. Each tracked script those
+jobs run is followed to a fixpoint: a shell script's text is read like a
+step's, and a Python module brings the tracked modules it imports (indexed
+under every suffix of their paths, since the runner's `sys.path` is not text)
+and the tracked files its string literals, `/`-chains and `join` calls name
+exactly, from the root or its own directory. A step's token names a tracked
+file or every file under a tracked directory; a glob such as
+`.github/workflows/*.yml` breaks at the `*`, and the directory before it is
+taken whole, which is what the glob meant. Over-broad on purpose: a wider
+set is a rebase nobody strictly owed, a narrower one a green nobody earned.
 
 WHAT IT CANNOT SEE. The derivation reads text, so a file a required check
 reads with no `run:` block or `with:` value naming it is outside it. Named
@@ -39,14 +57,17 @@ gate NARROWER and a narrower gate looks the same as a correct one:
     door, against a ruleset the maintainer set to false on purpose. That is
     the maintainer's decision to make, so the limit is named and the answer
     stays visible rather than taken here.
-  - What a gate script reaches from inside itself, past the paths its `run:`
-    block names.
+  - What a gate script reaches past its imports and the files it names: a
+    module imported by a computed name, a path built from a variable, a
+    directory a Python literal names, anything a non-Python, non-shell
+    script reads, and a remote reusable workflow's own files.
 
-Runs on the standard library alone. The workflows are read with a parser for
-the block layout this repository uses rather than a YAML dependency, for the
-same reason the action itself refuses unmodelled shapes: nothing installs a
-YAML dependency for it, and a parser that refuses a shape it does not model
-is better than a silent misreading.
+Runs on the standard library alone, so a gate script in syntax newer than the
+runner's `python3` refuses. The workflows are read with a parser for the
+block layout GitHub workflows use (scripts/ci/freshness_workflows.py writes
+down its subset) rather than a YAML dependency: nothing installs one for it,
+and a parser that refuses a shape it does not model is better than a silent
+misreading.
 
     scripts/ci/gate_base_freshness.py [--root DIR] [--print-paths]
 
@@ -55,14 +76,28 @@ pins the derivation.
 """
 
 import os
-import re
 import subprocess
 import sys
 from pathlib import Path
 
-# main's ruleset's required contexts, one per line; a matrix leg's `job (axes)` names its job.
-REQUIRED_JOBS = tuple(dict.fromkeys(
-    context.split(" (")[0] for context in
+if __package__:
+    # pylint: disable-next=relative-beyond-top-level
+    from .freshness_reach import (
+        LOCAL, candidates, reached_jobs, required_jobs, resolve, script_reach)
+    # pylint: disable-next=relative-beyond-top-level
+    from .freshness_workflows import GateError, WorkflowError, workflow_jobs
+else:
+    # Loaded by path, by the action and the suite alike: its modules sit beside it.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from freshness_reach import (
+        LOCAL, candidates, reached_jobs, required_jobs, resolve, script_reach)
+    from freshness_workflows import GateError, WorkflowError, workflow_jobs
+
+__all__ = ("GateError", "WorkflowError", "gate_paths", "check", "main")
+
+# main's ruleset's required contexts, one per line, as the check runs publishing them are named.
+REQUIRED_CHECKS = tuple(dict.fromkeys(
+    context.strip() for context in
     os.environ.get("PR_GATE_REQUIRED_CHECKS", "").splitlines() if context.strip()))
 
 # The default branch a required check's head is compared against, which the calling step names.
@@ -76,14 +111,6 @@ BASE_BRANCH = os.environ.get("PR_GATE_DEFAULT_BRANCH") or "main"
 PATHSPECS_MAX_BYTES = 65536
 
 WORKFLOW_DIR = ".github/workflows"
-
-
-class GateError(Exception):
-    """This run could not establish the answer, and says so instead."""
-
-
-class WorkflowError(GateError):
-    """A workflow whose shape this parser does not model."""
 
 
 def git(root, *arguments, what):
@@ -102,288 +129,7 @@ def git(root, *arguments, what):
     return done.stdout
 
 
-# --- reading the workflows -------------------------------------------------
-#
-# The subset of YAML these workflows use: explicit block mappings, explicit
-# sequence entries, and block scalars for `run:`. Every step below refuses a
-# shape it does not model rather than guessing at one, because a guessed shape
-# yields a smaller path set, and a smaller path set is a green over a gate that
-# was never checked.
-
-MAPPING = re.compile(r"^(?P<key>[A-Za-z_][A-Za-z0-9_.-]*):(?:[ \t]+(?P<value>.*))?$")
-SEQUENCE = re.compile(r"^- (?P<rest>.+)$")
-BLOCK_SCALAR = re.compile(r"^[|>][0-9+-]*$")
-
-
-def indent_of(line):
-    return len(line) - len(line.lstrip(" "))
-
-
-def skippable(line):
-    """A blank line or a whole-line comment, which carries no node.
-
-    Only ever asked of lines OUTSIDE a block scalar: inside one a `#` line is
-    the step author's own comment, carried to bash verbatim, and dropping it
-    would change what the step runs.
-    """
-    stripped = line.strip()
-    return not stripped or stripped.startswith("#")
-
-
-def block_end(lines, start, indent):
-    """The index just past the node whose key sits at `start` with `indent`."""
-    index = start + 1
-    while index < len(lines):
-        line = lines[index]
-        if not skippable(line) and indent_of(line) <= indent:
-            break
-        index += 1
-    return index
-
-
-def block_scalar(lines, start, key_indent, limit):
-    """The text of the `|` scalar introduced at `start`, and the index after it.
-
-    The block's indentation is the first non-blank body line's, which is what
-    YAML takes as its indicator when the header carries no explicit one. Every
-    line is kept, comments included: they are bytes bash receives.
-    """
-    body = []
-    index = start + 1
-    while index < limit:
-        line = lines[index]
-        if line.strip() and indent_of(line) <= key_indent:
-            break
-        body.append(line)
-        index += 1
-    leads = [indent_of(line) for line in body if line.strip()]
-    lead = min(leads) if leads else key_indent + 2
-    return "\n".join(line[lead:] if len(line) > lead else "" for line in body), index
-
-
-def top_level_keys(lines, key):
-    """[(line index, match)] for column-0 block entries whose key is `key`.
-
-    One `MAPPING.match` per line, narrowed once: calling the match twice —
-    once as a guard, once for its groups — reads to the type checker as two
-    unrelated optionals.
-    """
-    found = []
-    for index, line in enumerate(lines):
-        if skippable(line) or indent_of(line) != 0:
-            continue
-        match = MAPPING.match(line)
-        if match is not None and match["key"] == key:
-            found.append((index, match))
-    return found
-
-
-def workflow_steps(text, workflow):
-    """{job name: [step, ...]} for one workflow, each step its `run` and `uses`."""
-    lines = text.splitlines()
-    # Every top-level `jobs:` is collected rather than the first one taken: a
-    # document with two of them says which jobs this workflow defines only if
-    # you know which half won, and a workflow whose jobs are a flow mapping
-    # (`jobs: {build: ...}`) says nothing this reader can read at all. Both are
-    # refusals, because the alternative is a smaller set with nothing said.
-    job_matches = top_level_keys(lines, "jobs")
-    tops = [index for index, match in job_matches]
-    if len(tops) != 1:
-        raise WorkflowError(
-            f"{workflow} has {len(tops)} top-level `jobs:` mappings; this "
-            f"reader models exactly one, so which jobs it defines cannot be "
-            f"established")
-    if job_matches[0][1]["value"] is not None:
-        raise WorkflowError(
-            f"{workflow} writes `jobs:` as a flow mapping; this reader models "
-            f"only the block form")
-
-    jobs = {}
-    index = tops[0] + 1
-    while index < len(lines):
-        line = lines[index]
-        if skippable(line):
-            index += 1
-            continue
-        if indent_of(line) < 2:
-            break
-        if indent_of(line) != 2:
-            raise WorkflowError(
-                f"{workflow}: expected a job entry under `jobs:`, found {line!r}")
-        match = MAPPING.match(line.strip())
-        if not match or match["value"] is not None:
-            raise WorkflowError(f"{workflow}: expected a job entry, found {line!r}")
-        name = match["key"]
-        if name in jobs:
-            raise WorkflowError(f"{workflow}: duplicate job {name!r}")
-        jobs[name] = (index + 1, block_end(lines, index, 2))
-        index = jobs[name][1]
-
-    return {name: job_steps(lines, name, span, workflow)
-            for name, span in jobs.items()}
-
-
-def job_steps(lines, name, span, workflow):
-    start, end = span
-    steps = []
-    index = start
-    while index < end:
-        line = lines[index]
-        if skippable(line):
-            index += 1
-            continue
-        if indent_of(line) != 4:
-            raise WorkflowError(
-                f"{workflow}: expected a step list or a job key in job "
-                f"`{name}`, found {line!r}")
-        match = MAPPING.match(line.strip())
-        if not match:
-            raise WorkflowError(
-                f"{workflow}: expected a job key in job `{name}`, found {line!r}")
-        if match["key"] == "steps" and match["value"] is not None:
-            # `steps: [{run: ...}]` is a real spelling, and reading the key's
-            # block and finding no entries in it yields an empty step list — a
-            # plausible answer rather than a refusal, for a job whose steps are
-            # right there.
-            raise WorkflowError(
-                f"{workflow}: `steps:` carries a value in job `{name}`; this "
-                f"reader models only the block form")
-        if match["key"] != "steps":
-            # Every other job key — runs-on, strategy, env, permissions — is a
-            # mapping or a scalar that never names a file this check reads, and
-            # its children sit at an indent a step's own keys also use. Skipping
-            # the key's whole block rather than its first line is what keeps
-            # `permissions:`'s children from being read as steps.
-            index = block_end(lines, index, 4)
-            continue
-        index = step_entries(lines, name, index + 1, block_end(lines, index, 4), workflow, steps)
-    return steps
-
-
-def step_entries(lines, name, start, end, workflow, steps):
-    index = start
-    while index < end:
-        line = lines[index]
-        if skippable(line):
-            index += 1
-            continue
-        entry = SEQUENCE.match(line.strip()) if indent_of(line) == 6 else None
-        if entry is None:
-            raise WorkflowError(
-                f"{workflow}: expected a step entry in job `{name}`, found {line!r}")
-        stop = block_end(lines, index, 6)
-        steps.append(step_fields(lines, name, index + 1, stop, workflow,
-                                 entry["rest"]))
-        index = stop
-    return index
-
-
-def apply_field(lines, end, key, value, at, step):
-    """Fold one `key: value` of a step into `step`, and return the next line.
-
-    `at` is the line the key was written on, which for a key sitting on a
-    step's own `- ` line is that dash line rather than the one after it.
-    """
-    if key == "run":
-        if not value or BLOCK_SCALAR.match(value):
-            step["run"], after = block_scalar(lines, at, 8, end)
-            return after
-        step["run"] = value
-    elif key == "uses":
-        # The value is the reference alone; the `# v7.0.1` after it is a
-        # comment, and an action reference never contains a space.
-        step["uses"] = value.split()[0] if value else None
-    elif not value or BLOCK_SCALAR.match(value):
-        # A mapping or block scalar, stepped over rather than read as step keys;
-        # `with:` VALUES are kept, as an action's inputs name the files it reads.
-        after = block_end(lines, at, 8)
-        if key == "with":
-            step["with"] = "\n".join(MAPPING.sub(r"\g<value>", line.strip())
-                                     for line in lines[at + 1:after] if not skippable(line))
-        return after
-    return at + 1
-
-
-def step_fields(lines, name, start, end, workflow, dash):
-    """One step's `run:` text, its `uses:` value and its `with:` values.
-
-    `dash` is the text following the `- ` on the step's own line, and it is the
-    FIRST key the step has. A step written on one line — `- uses:
-    actions/checkout@…`, the spelling every checkout step in this repository
-    uses — carries no key on the following lines at all, so a walk that starts
-    after the dash line reads a step with no keys in it: a `uses:` that never
-    reaches the local-action branch, and a `run:` that contributes no path.
-    """
-    step = {"run": None, "uses": None, "with": None}
-    index = start
-    if dash:
-        match = MAPPING.match(dash)
-        if not match:
-            raise WorkflowError(
-                f"{workflow}: expected a key on the step entry in job `{name}`, "
-                f"found {dash!r}")
-        index = apply_field(lines, end, match["key"],
-                            (match["value"] or "").strip(), start - 1, step)
-    while index < end:
-        line = lines[index]
-        if skippable(line):
-            index += 1
-            continue
-        if indent_of(line) != 8:
-            raise WorkflowError(
-                f"{workflow}: expected a key in a step of job `{name}`, found {line!r}")
-        match = MAPPING.match(line.strip())
-        if not match:
-            raise WorkflowError(
-                f"{workflow}: expected a key in a step of job `{name}`, found {line!r}")
-        index = apply_field(lines, end, match["key"],
-                            (match["value"] or "").strip(), index, step)
-    return step
-
-
 # --- the paths a required check reads --------------------------------------
-
-# The platforms expand `${{ }}` before bash sees a byte, so a path a step
-# reaches THROUGH an expression is not text this matcher can see. Removing the
-# expressions rather than keeping them keeps a resolved value from being read as
-# a path; either way the limit is the same and is named in the report.
-EXPRESSION = re.compile(r"\$\{\{.*?\}\}", re.DOTALL)
-CANDIDATE = re.compile(r"[A-Za-z0-9._/-]+")
-
-
-def candidates(text):
-    return CANDIDATE.findall(EXPRESSION.sub(" ", text))
-
-
-def resolve(candidate, files):
-    """The tracked files a candidate names, or nothing.
-
-    Resolution against the tree IS the filter: a token that names nothing here
-    is not a path this check needs to watch, and a token that names a file or a
-    directory is one. There is no shape rule on top of that, because a shape
-    rule is a second remembered list that drifts from the tree.
-
-    There is no glob arm, and its absence is deliberate: `candidates()` cannot
-    produce a glob metacharacter, so an arm reading one would be a branch that
-    looks like coverage and reaches nothing. The spelling it would have served
-    is already covered — `.github/workflows/*.yml` breaks at the `*` and the
-    `.github/workflows/` that precedes it is a directory, so every workflow is
-    taken whole, which is what that glob meant.
-
-    `.` resolves to nothing, and that is a named reach limit rather than an
-    oversight: `.` and `--` are how these tools spell "every tracked file", so
-    the actionlint job's merge-marker step really does read all of them. See
-    the module docstring for why the whole-tree arm is the maintainer's call.
-    """
-    candidate = candidate[2:] if candidate.startswith("./") else candidate
-    candidate = candidate.rstrip("/")
-    if not candidate:
-        return ()
-    if candidate in files:
-        return (candidate,)
-    prefix = candidate + "/"
-    return tuple(f for f in files if f.startswith(prefix))
-
 
 def tracked_files(root):
     return tuple(f for f in
@@ -410,46 +156,38 @@ def gate_paths(root):
         raise GateError("HEAD tracks no files, so the tree to compare is not there")
     parsed = {}
     for workflow in workflow_names(files):
-        parsed[workflow] = workflow_steps(
+        parsed[workflow] = workflow_jobs(
             git(root, "cat-file", "blob", f"HEAD:{workflow}",
                 what=f"read {workflow}"), workflow)
-    if not REQUIRED_JOBS:
+    if not REQUIRED_CHECKS:
         raise GateError("PR_GATE_REQUIRED_CHECKS names no required check of main's ruleset")
+    reached = reached_jobs(parsed, required_jobs(parsed, REQUIRED_CHECKS, WORKFLOW_DIR))
     derived = set()
-    for job in REQUIRED_JOBS:
-        # Every workflow defining the name, unioned. A job name is unique within
-        # a workflow, not across the repository: a second workflow may define
-        # `test:` — a matrix leg split into its own file, a Windows runner,
-        # nothing renamed — and taking the first match silently drops the other
-        # one's steps, so a file one required check compiles leaves the gate with
-        # no message and exit 0. A refusal on a second definition would be
-        # defensible too, and it would block that ordinary change until a
-        # maintainer answered for it; the union cannot narrow and cannot block.
-        defining = sorted(name for name, jobs in parsed.items() if job in jobs)
-        if not defining:
-            raise GateError(
-                f"no workflow under {WORKFLOW_DIR}/ defines the required job "
-                f"`{job}`, so the files the required checks read cannot be built: "
-                f"put the job back, or update the ruleset if it was renamed")
-        for name in defining:
-            for step in parsed[name][job]:
-                uses = step["uses"] or ""
-                if uses.startswith("./"):
-                    # A step running a composite action out of THIS repository
-                    # reads that action's files as its own parameters, and they
-                    # are not text in this workflow. The directory is taken whole
-                    # rather than its `action.yml` alone: what the action reaches
-                    # from inside is the same question this matcher cannot
-                    # answer, and a partial answer would be a narrower gate than
-                    # it looks.
-                    derived.update(files if uses == "./" else resolve(uses, files))
-                for candidate in candidates(f'{step["run"] or ""}\n{step["with"] or ""}'):
-                    derived.update(resolve(candidate, files))
+    for workflow, job_id in sorted(reached):
+        job = parsed[workflow][job_id]
+        texts = [job.parameters]
+        for step in job.steps:
+            uses = step["uses"] or ""
+            if uses.startswith(LOCAL):
+                # A step running a composite action out of THIS repository
+                # reads that action's files as its own parameters, and they
+                # are not text in this workflow. The directory is taken whole
+                # rather than its `action.yml` alone: what the action reaches
+                # from inside is the same question this matcher cannot
+                # answer, and a partial answer would be a narrower gate than
+                # it looks.
+                derived.update(files if uses in LOCAL else resolve(uses[2:], files))
+            texts += [step["run"] or "", step["with"] or ""]
+        for candidate in candidates("\n".join(texts)):
+            derived.update(resolve(candidate, files))
     if not derived:
         raise GateError(
             "the required checks name no file in this tree, so there is nothing "
             "to compare and this run can vouch for nothing")
-    return sorted(derived)
+    # A reached job's workflow defines it: a change there is a change to the check.
+    derived.update(workflow for workflow, _ in reached)
+    return sorted(script_reach(derived, files, lambda path: git(
+        root, "cat-file", "blob", f"HEAD:{path}", what=f"read {path}")))
 
 
 # --- the comparison --------------------------------------------------------
