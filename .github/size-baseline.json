@@ -4,7 +4,7 @@
   },
   "schema_version": 1,
   "baseline": {
-    "scripts/ci/gate_base_freshness.py": 598,
+    "scripts/ci/gate_base_freshness.py": 597,
     "tests/_prgate.py": 749,
     "tests/test_gate_base_freshness.py": 674,
     "tests/test_pr_attribution.py": 970,
