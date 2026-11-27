@@ -242,6 +242,9 @@ def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
         assert result.returncode != 0 and 'sets [extend] path' in result.stderr, (
             f'trusted config {config_text!r} must refuse when it redirects')
         assert config == config_text, 'the refusal reads the trusted file before any rewrite'
+    (repo / '.git/shallow').write_text(tip + '\n', encoding='utf-8', newline='\n')
+    result = run(before=tip)[0]
+    assert result.returncode != 0 and 'shallow' in result.stderr, 'a shallow log is a suffix'
 
 
 def test_stripping_drops_only_the_allowlists_that_name_a_path_alone(tmp):

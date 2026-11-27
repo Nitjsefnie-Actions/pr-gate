@@ -53,6 +53,9 @@ runs:
         if ! read_trusted .gitleaksignore > "$dir/.gitleaksignore"; then
           echo "no .gitleaksignore at trusted commit '$trusted': nothing ignored"
         fi
+        # A shallow clone's git log is a suffix of history: the rest would read clean.
+        [ "$(git rev-parse --is-shallow-repository)" = false ] || {
+          echo "the checkout is shallow or no repository: check out with fetch-depth: 0" >&2; exit 1; }
         python3 -I "$PR_GATE_ACTION_PATH/../scripts/ci/secret_scan_config.py" \
           "$RUNNER_TEMP/gitleaks-default.toml" "$RUNNER_TEMP/gitleaks-default-stripped.toml" \
           "$dir/.gitleaks.toml"
