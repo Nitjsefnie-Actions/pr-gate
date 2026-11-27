@@ -95,16 +95,19 @@
       "tests/test_commit_scopes.py": [
         8.57,
         12.08,
-        17.83
+        17.83,
+        4.48
       ],
       "tests/test_conftest.py": [
         7.7,
         11.79,
-        16.43
+        16.43,
+        4.58
       ],
       "tests/test_gate_base_freshness.py": [
         12.21,
-        17.44
+        17.44,
+        7.16
       ],
       "tests/test_pr_attribution.py": [
         3.19,
@@ -250,7 +253,8 @@
     "ubuntu-latest / Python 3.15": {
       "tests/test_action.py": [
         7.53,
-        5.39
+        5.39,
+        9.44
       ],
       "tests/test_ci_secrets.py": [
         1.54
@@ -332,7 +336,8 @@
         15.91
       ],
       "tests/test_ci_secrets.py": [
-        4.02
+        4.02,
+        5.54
       ],
       "tests/test_commit_scopes.py": [
         26.37
