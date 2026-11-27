@@ -198,7 +198,7 @@ def test_the_trusted_config_step_reads_the_trusted_event_commit(tmp):
     def run(before='', base='', event='push', default_branch=''):
         runner = Path(tmp) / f'runner-temp-{next(runs)}'
         runner.mkdir()
-        (runner / 'gitleaks-default.toml').write_text(DEFAULT, encoding='utf-8')
+        (runner / 'gitleaks-default.toml').write_text(DEFAULT, encoding='utf-8', newline='\n')
         result = subprocess.run(
             [_action_bash(), '-e', str(script)], cwd=repo, capture_output=True,
             text=True, timeout=120, env={
@@ -280,14 +280,14 @@ def test_a_use_default_rewrite_it_cannot_prove_refuses(text):
 
 def test_the_module_writes_both_configs_or_exits_naming_the_refusal(tmp):
     default, stripped, trusted = (Path(tmp) / name for name in ('d.toml', 's.toml', 't.toml'))
-    default.write_text(DEFAULT, encoding='utf-8')
-    trusted.write_text('[extend]\nuseDefault = true\n', encoding='utf-8')
+    default.write_text(DEFAULT, encoding='utf-8', newline='\n')
+    trusted.write_text('[extend]\nuseDefault = true\n', encoding='utf-8', newline='\n')
     MODULE.main([str(default), str(stripped), str(trusted)])
     assert tomllib.loads(stripped.read_text(encoding='utf-8')) == STRIPPED
     assert tomllib.loads(trusted.read_text(encoding='utf-8')) == {
         'extend': {'path': os.path.abspath(stripped)}}
     default.write_text('[other]\n', encoding='utf-8')  # refused too, but after the trusted file
-    trusted.write_text('[extend]\nuseDefault = true\nPath = "x"\n', encoding='utf-8')
+    trusted.write_text('[extend]\nuseDefault = true\nPath = "x"\n', encoding='utf-8', newline='\n')
     with pytest.raises(SystemExit, match=r'sets \[extend\] path'):
         MODULE.main([str(default), str(stripped), str(trusted)])
     assert trusted.read_text(encoding='utf-8') == '[extend]\nuseDefault = true\nPath = "x"\n'
