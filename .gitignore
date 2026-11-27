@@ -6,6 +6,12 @@
 !CODE_OF_CONDUCT.md
 !SECURITY.md
 !action.yml
+!freshness/
+freshness/*
+!freshness/action.yml
+!commit-scopes/
+commit-scopes/*
+!commit-scopes/action.yml
 !requirements-test.txt
 !requirements-zizmor.txt
 !requirements-pip-audit.txt

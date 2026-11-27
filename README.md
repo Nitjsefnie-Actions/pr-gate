@@ -71,6 +71,29 @@ standard library. For a self-hosted runner, install the tools before this step.
 | `conventional-commits` | Optional; defaults to `true`. Only `false` (case-insensitive, surrounding whitespace ignored) disables the Conventional Commits check. |
 | `template-path` | Optional consumer path; defaults to `.github/PULL_REQUEST_TEMPLATE.md`. |
 
+## Branch checks
+
+Two more actions run this repository's own branch checks in a consumer's
+workflow, after its checkout, on the runner's `python3` (standard library
+only). Both read the default branch `main` and fetch it themselves.
+
+- `Nitjsefnie-Actions/pr-gate/freshness` fails a pull request whose head
+  lacks a commit of `main` that touches a file a required check reads, the
+  set derived from the head's workflows. It passes on every other event.
+- `Nitjsefnie-Actions/pr-gate/commit-scopes` fails a commit in
+  `origin/main..HEAD` whose scope names a workflow while its type is not `ci`.
+
+```yaml
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: Nitjsefnie-Actions/pr-gate/freshness@<sha> # vX.Y.Z
+      - uses: Nitjsefnie-Actions/pr-gate/commit-scopes@<sha> # vX.Y.Z
+```
+
+Put them in a job the required aggregate already folds: a new job is a new
+required context only once the ruleset or the aggregate names it.
+
 ## Admission rules
 
 The template uses `##` section headings followed by instruction comments tagged

@@ -1,0 +1,11 @@
+name: Gate-base freshness
+description: Fail a pull request whose head lacks a default-branch commit touching a file a required check reads.
+author: Nitjsefnie
+runs:
+  using: composite
+  steps:
+    - name: Require this head to carry main's gate-defining commits
+      shell: bash
+      env:
+        PR_GATE_ACTION_PATH: ${{ github.action_path }}
+      run: python3 "$PR_GATE_ACTION_PATH/../scripts/ci/gate_base_freshness.py" --root "$GITHUB_WORKSPACE"
