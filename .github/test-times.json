@@ -182,7 +182,8 @@
         0.38
       ],
       "tests/test_workflows.py": [
-        2.09
+        2.09,
+        3.49
       ]
     },
     "ubuntu-latest / Python 3.14": {
