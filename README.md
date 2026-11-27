@@ -75,12 +75,12 @@ standard library. For a self-hosted runner, install the tools before this step.
 
 Two more actions run this repository's own branch checks in a consumer's
 workflow, after its checkout, on the runner's `python3` (standard library
-only). Both read the default branch `main` and fetch it themselves.
+only). Both read the repository's default branch and fetch it themselves.
 
 - `Nitjsefnie-Actions/pr-gate/freshness` fails a pull request whose head
   lacks a commit of `main` that touches a file a required check reads, the
-  set derived from the head's workflows and the jobs `main`'s ruleset
-  requires, read with the job's token. It passes on every other event.
+  set derived from the head's workflows and the jobs the default branch's
+  ruleset requires, read with the job's token. It passes on every other event.
 - `Nitjsefnie-Actions/pr-gate/commit-scopes` fails a commit in
   `origin/main..HEAD` whose scope names a workflow while its type is not `ci`.
 

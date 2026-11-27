@@ -65,9 +65,8 @@ REQUIRED_JOBS = tuple(dict.fromkeys(
     context.split(" (")[0] for context in
     os.environ.get("PR_GATE_REQUIRED_CHECKS", "").splitlines() if context.strip()))
 
-# The branch a required check's head is compared against. Not configurable:
-# a second branch here would be a second base, and this question has one.
-BASE_BRANCH = "main"
+# The default branch a required check's head is compared against, which the calling step names.
+BASE_BRANCH = os.environ.get("PR_GATE_DEFAULT_BRANCH") or "main"
 
 # The byte size at which a pathspec argument list is refused rather than
 # attempted. The kernel's own limit is `getconf ARG_MAX`, which is not a fixed
