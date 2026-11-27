@@ -21,6 +21,9 @@
         10.52,
         18.98
       ],
+      "tests/test_freshness_required_checks.py": [
+        1.1
+      ],
       "tests/test_gate_base_freshness.py": [
         17.12,
         12.45,
@@ -110,6 +113,9 @@
         16.43,
         4.58
       ],
+      "tests/test_freshness_required_checks.py": [
+        1.12
+      ],
       "tests/test_gate_base_freshness.py": [
         12.21,
         17.44,
@@ -195,6 +201,9 @@
         14.91,
         10.0
       ],
+      "tests/test_freshness_required_checks.py": [
+        1.02
+      ],
       "tests/test_gate_base_freshness.py": [
         6.91,
         4.96,
@@ -275,6 +284,9 @@
       "tests/test_conftest.py": [
         11.83,
         15.39
+      ],
+      "tests/test_freshness_required_checks.py": [
+        0.63
       ],
       "tests/test_gate_base_freshness.py": [
         5.5,
@@ -358,6 +370,9 @@
         14.93,
         21.48,
         10.7
+      ],
+      "tests/test_freshness_required_checks.py": [
+        1.69
       ],
       "tests/test_gate_base_freshness.py": [
         32.06,
@@ -444,6 +459,9 @@
       "tests/test_conftest.py": [
         13.82,
         19.3
+      ],
+      "tests/test_freshness_required_checks.py": [
+        2.09
       ],
       "tests/test_gate_base_freshness.py": [
         38.95,
