@@ -1,8 +1,8 @@
 """CI executes the shipped suite and audits the reusable action itself.
 
-The audit.yml step tests execute the workflow's own run-block text under
-``bash -e`` with fakes standing in only at the external boundary — the
-pip-audit executable (PyPI and the advisory database over the network) as a
+The audit.yml and zizmor step tests execute the workflow's own run-block
+text under ``bash -e`` with fakes standing in only at the external boundary —
+the pip-audit or zizmor executable (its network side: PyPI, advisories) as a
 PATH stub, and sleep (time) as a BASH_ENV shell function, because a Git Bash
 PATH stub for sleep never intercepts and the real sleep would run the
 backoff. Fakes live only at that external boundary, per CONTRIBUTING;
@@ -882,13 +882,13 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
     assert '[SECURITY.md](SECURITY.md)' in (ROOT / 'README.md').read_text(encoding='utf-8')
 
 
-# Test doubles for the audit step's external boundary only. pip-audit stands
-# in for the PyPI/advisory-network side of the step (its whole observable
+# Test doubles for the audit steps' external boundary only. pip-audit (or
+# zizmor) stands in for the step's network side (its whole observable
 # contract here is an argv line and an exit status plus output); the sleep
 # function stands in for time, so the attempt-scaled backoff is pinned
 # without waiting.
 _PIP_AUDIT_STUB = r"""#!/usr/bin/env bash
-# Test double for the pip-audit executable: appends one line per call ("$*")
+# Test double for the pip-audit or zizmor executable: logs each call ("$*")
 # to $PIP_AUDIT_LOG and replays the call-th "exit|payload" line of
 # $PIP_AUDIT_PLAN. A payload prefixed "err " is emitted on stderr (the way
 # pip-audit reports a failed attempt's diagnostic); anything else on stdout.
@@ -923,7 +923,7 @@ _SLEEP_FUNCTION = r"""sleep() {
 """
 
 
-def _run_audit_step(tmp, plan, manifests=()):
+def _run_audit_step(tmp, plan, manifests=(), tool='pip-audit', step=None):
     staging = Path(tmp) / 'repo'
     staging.mkdir()
     for name in manifests:
@@ -931,7 +931,7 @@ def _run_audit_step(tmp, plan, manifests=()):
                                     encoding='utf-8', newline='\n')
     stubs = Path(tmp) / 'stubs'
     stubs.mkdir()
-    stub = stubs / 'pip-audit'
+    stub = stubs / tool
     stub.write_text(_PIP_AUDIT_STUB, encoding='utf-8', newline='\n')
     stub.chmod(0o755)
     bash_env = Path(tmp) / 'bash-env.bash'
@@ -940,7 +940,7 @@ def _run_audit_step(tmp, plan, manifests=()):
     plan_path.write_text(''.join(f'{line}\n' for line in plan),
                          encoding='utf-8', newline='\n')
     script = Path(tmp) / 'audit-step.sh'
-    script.write_text(_named_run(_audit_steps(), 'Audit dependencies'),
+    script.write_text(step or _named_run(_audit_steps(), 'Audit dependencies'),
                       encoding='utf-8', newline='\n')
     environment = dict(os.environ)
     environment['PATH'] = os.pathsep.join((str(stubs), environment['PATH']))
@@ -958,6 +958,22 @@ def _run_audit_step(tmp, plan, manifests=()):
         return path.read_text(encoding='utf-8').splitlines() if path.exists() else []
 
     return result, lines(Path(tmp) / 'calls.log'), lines(Path(tmp) / 'sleeps.log')
+
+
+# zizmor exits 1 when it performed no audit (an online audit's failed GitHub
+# API call) and 11-14 on a finding: only exit 1 is re-run, with backoff.
+def test_zizmor_step_reruns_only_the_no_audit_exit(tmp):
+    step = _named_run(_workflow('actionlint.yml')['jobs']['actionlint']['steps'], 'zizmor')
+    for case, plan, status, sleeps in (
+            ('retried', ['1|err fatal: no audit was performed', '0|clean'], 0, ['15']),
+            ('finding', ['14|2 high'], 14, []), ('usage', ['2|err bad flag'], 2, []),
+            ('finding-after-error', ['1|err no audit', '13|1 medium'], 13, ['15']),
+            ('exhausted', ['1|err no audit'] * 3, 1, ['15', '30'])):
+        (Path(tmp) / case).mkdir()
+        result, calls, slept = _run_audit_step(Path(tmp) / case, plan, tool='zizmor', step=step)
+        assert (result.returncode, len(calls), slept) == (status, len(plan), sleeps), (
+            case, result.stdout, result.stderr)
+        assert set(calls) == {'--no-progress action.yml .github/workflows/'}, calls
 
 
 def _audited_manifests(calls):
