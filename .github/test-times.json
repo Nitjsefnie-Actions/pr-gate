@@ -5,7 +5,8 @@
       "tests/test_action.py": [
         3.68,
         6.49,
-        9.27
+        9.27,
+        11.97
       ],
       "tests/test_ci_secrets.py": [
         1.86
@@ -23,7 +24,8 @@
       "tests/test_gate_base_freshness.py": [
         17.12,
         12.45,
-        7.33
+        7.33,
+        23.85
       ],
       "tests/test_pr_attribution.py": [
         1.9,
