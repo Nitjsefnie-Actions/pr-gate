@@ -1,6 +1,6 @@
 {
   "trees": {
-    "tests/": 8617
+    "tests/": 8618
   },
   "schema_version": 1,
   "baseline": {
@@ -10,6 +10,6 @@
     "tests/test_pr_body_closing.py": 645,
     "tests/test_pr_gate.py": 736,
     "tests/test_ratchet_push.py": 515,
-    "tests/test_workflows.py": 1128
+    "tests/test_workflows.py": 1129
   }
 }
