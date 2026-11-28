@@ -76,7 +76,8 @@ def test_packaged_action_compares_preserved_titles_at_real_gh_boundary(tmp):
     inputs = {'github-token': 'stub-token', 'repository': CAPTURE['repository'],
               'pull-request-number': '233', 'pull-request-author': 'alice',
               'require-commit-attribution': 'false', 'conventional-commits': 'true',
-              'template-path': metadata['inputs']['template-path']['default']}
+              'template-path': metadata['inputs']['template-path']['default'],
+              'drafts': metadata['inputs']['drafts']['default'], 'event draft': 'false'}
     outcomes = (('code_one_space', 'The bug', False),
                 ('code_two_spaces', 'The bug', True),
                 ('code_newline', 'The bug', True),

@@ -27,6 +27,13 @@ inputs:
   template-path:
     description: Consumer template path, read at the pull request base SHA.
     default: .github/PULL_REQUEST_TEMPLATE.md
+  drafts:
+    description: >-
+      Only 'skip' (case-insensitive; surrounding whitespace ignored) passes a
+      run without judging when both its event and the pull request's live
+      state say draft; the default 'judge' judges every run on an open pull
+      request.
+    default: judge
 runs:
   using: composite
   steps:
@@ -44,4 +51,6 @@ runs:
         PR_GATE_REQUIRE_COMMIT_ATTRIBUTION: ${{ inputs.require-commit-attribution }}
         PR_GATE_CONVENTIONAL_COMMITS: ${{ inputs.conventional-commits }}
         PR_GATE_TEMPLATE_PATH: ${{ inputs.template-path }}
+        PR_GATE_DRAFTS: ${{ inputs.drafts }}
+        PR_GATE_EVENT_DRAFT: ${{ github.event.pull_request.draft }}
       run: python "$PR_GATE_ACTION_PATH/scripts/ci/pr_gate.py"

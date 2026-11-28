@@ -15,12 +15,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gate:
-    # Bot-authored pull requests are not gated, and a draft is checked when
-    # it is marked ready for review. GitHub reports a skipped job's check as
-    # success, so neither blocks a merge.
-    if: >-
-      github.event.pull_request.user.type != 'Bot'
-      && github.event.pull_request.draft == false
+    # Bot-authored pull requests are not gated: GitHub reports a skipped
+    # job's check as success. drafts: skip skips a draft its event and
+    # live state agree on.
+    if: github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -31,3 +29,4 @@ jobs:
           pull-request-number: ${{ github.event.pull_request.number }}
           pull-request-author: ${{ github.event.pull_request.user.login }}
           require-commit-attribution: 'true'
+          drafts: skip

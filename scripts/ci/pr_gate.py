@@ -347,13 +347,19 @@ def _write_comment(api, repo, pr, comment, body):
 
 
 def _run(api, repo, pr, actor, template, template_path,
-         require_commit_attribution=False, conventional_commits=False):
+         require_commit_attribution=False, conventional_commits=False,
+         skip_drafts=False, event_draft=False):
     pull_endpoint = f'repos/{repo}/pulls/{pr}'
     pull = _read(api, 'GET', pull_endpoint)
     if not isinstance(pull, dict):
         raise _GateError('pull request response is not an object')
     body = pull.get('body') or ''
     if pull.get('merged') or pull.get('state') != 'open':
+        print('nothing to do')
+        return 0
+    # The live state too, not the payload alone: a run queued by a draft-time
+    # event can start after the pull request was marked ready for review.
+    if skip_drafts and event_draft and pull.get('draft'):
         print('nothing to do')
         return 0
 
@@ -430,10 +436,12 @@ def _run(api, repo, pr, actor, template, template_path,
 def run(api, repo: str, pr: str, actor: str, template: str | None = None,
         template_path: str = '.github/PULL_REQUEST_TEMPLATE.md',
         require_commit_attribution: bool = False,
-        conventional_commits: bool = False) -> int:
+        conventional_commits: bool = False, skip_drafts: bool = False,
+        event_draft: bool = False) -> int:
     """Runs one gate pass and returns the process exit code.
 
-    Zero when the pull request is admissible, merged or not open.
+    Zero when the pull request is admissible, merged or not open, or with
+    `skip_drafts` when both `event_draft` and its live state say draft.
     `INADMISSIBLE_EXIT` when the gate found defects and commented on
     them, with one stderr line naming the observed defects. One when the
     analysis or an API call failed.
@@ -442,7 +450,8 @@ def run(api, repo: str, pr: str, actor: str, template: str | None = None,
         return _run(
             api, repo, pr, actor, template, template_path,
             require_commit_attribution=require_commit_attribution,
-            conventional_commits=conventional_commits)
+            conventional_commits=conventional_commits,
+            skip_drafts=skip_drafts, event_draft=event_draft)
     except _GateError as error:
         print(f'pr gate failed: {error}', file=sys.stderr)
         return 1
@@ -476,7 +485,9 @@ def main() -> int:
         template_path=_environment(
             'TEMPLATE_PATH', '.github/PULL_REQUEST_TEMPLATE.md'),
         require_commit_attribution=require_commit_attribution,
-        conventional_commits=conventional_commits)
+        conventional_commits=conventional_commits,
+        skip_drafts=os.environ.get('PR_GATE_DRAFTS', '').strip().casefold() == 'skip',
+        event_draft=os.environ.get('PR_GATE_EVENT_DRAFT', '').strip() == 'true')
 
 
 if __name__ == '__main__':

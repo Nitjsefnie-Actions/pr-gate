@@ -74,10 +74,13 @@ before changing structured parser outputs.
 ## Security boundaries
 
 Consumer workflows use `pull_request_target` only for opened, edited,
-reopened, synchronize, and ready_for_review events, skip Bot authors and draft pull
-requests, grant only the permissions documented in README, and never cancel an
-in-progress run for the same PR. Their action reference must be a reviewed full
-SHA.
+reopened, synchronize, and ready_for_review events, skip Bot authors, grant
+only the permissions documented in README, and never cancel an in-progress run
+for the same PR. Their action reference must be a reviewed full SHA. Drafts are
+not skipped by the workflow: it sets `drafts: skip`, and the action passes a
+run without judging only when both its event and the pull request's live state
+say draft, since an event payload can still say draft after the pull request
+was marked ready for review.
 
 The action executes only code under its immutable `github.action_path`.
 Never add a PR-head checkout, execute consumer scripts, interpolate PR text
