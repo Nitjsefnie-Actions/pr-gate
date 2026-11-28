@@ -112,8 +112,8 @@ optional scope), and a workflow's `name:` under `.github/workflows/` is a
 scope only with the `ci` type — `ci(claim)` changes the workflow, while any
 other type on that scope is refused by the actionlint job's
 `Nitjsefnie-Actions/commit-scopes` step, which derives the workflow-name set
-from the workflows themselves; take any other
-scope from the file or area the commit is about.
+from the workflows themselves; take any other scope from the file or area the
+commit is about.
 Published action revisions are immutable commit SHAs; do not create mutable
 release tags as a substitute for reviewable pins.
 
