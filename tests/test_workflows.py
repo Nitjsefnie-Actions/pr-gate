@@ -126,6 +126,7 @@ def test_workflow_audit_includes_composite_metadata(tmp):
               'Refuse a commit whose scope names a workflow outside the ci type']
     ported = steps[setup + 1:setup + 4]
     assert [step.get('name') for step in ported] == checks, 'must follow setup-python directly'
+    assert set(ported[0]) == {'name', 'run'}
     marker = ported[0]['run']
     assert "git grep -nI -E '^(<{7}( |$)|>{7}( |$)|={7}$)' -- ." in marker
     assert '${{' not in marker
