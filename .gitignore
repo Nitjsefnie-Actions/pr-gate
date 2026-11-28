@@ -74,6 +74,7 @@ tests/*
 !tests/test_pr_body_elements.py
 !tests/test_pr_body_overflow.py
 !tests/test_pr_gate_context.py
+!tests/test_pr_gate_drafts.py
 !tests/test_pr_content.py
 !tests/test_pr_attribution.py
 !tests/test_pr_commits.py

@@ -33,12 +33,10 @@ concurrency:
   cancel-in-progress: false
 jobs:
   gate:
-    # Bot-authored pull requests are not gated, and a draft is checked when
-    # it is marked ready for review. GitHub reports a skipped job's check as
-    # success, so neither blocks a merge.
-    if: >-
-      github.event.pull_request.user.type != 'Bot'
-      && github.event.pull_request.draft == false
+    # Bot-authored pull requests are not gated: GitHub reports a skipped
+    # job's check as success. drafts: skip skips a draft its event and
+    # live state agree on.
+    if: github.event.pull_request.user.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -49,6 +47,7 @@ jobs:
           pull-request-number: ${{ github.event.pull_request.number }}
           pull-request-author: ${{ github.event.pull_request.user.login }}
           require-commit-attribution: 'true'
+          drafts: skip
 ```
 
 No consumer checkout is needed. The action executes only its own code through
@@ -70,6 +69,7 @@ standard library. For a self-hosted runner, install the tools before this step.
 | `require-commit-attribution` | Optional; defaults to `false`. Only `true` (case-insensitive, surrounding whitespace ignored) enables the commit check. |
 | `conventional-commits` | Optional; defaults to `true`. Only `false` (case-insensitive, surrounding whitespace ignored) disables the Conventional Commits check. |
 | `template-path` | Optional consumer path; defaults to `.github/PULL_REQUEST_TEMPLATE.md`. |
+| `drafts` | Optional; defaults to `judge`, which judges every run on an open pull request. Only `skip` (case-insensitive, surrounding whitespace ignored) passes a run without judging, and only when both its event and the pull request's live state say draft. |
 
 ## Branch checks
 

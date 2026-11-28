@@ -524,15 +524,15 @@ def run_gate(api, body=None, *, require_commit_attribution=False):
     return code, api.writes
 
 
-def _pull(state='open', merged=False):
-    return {'body': '', 'state': state, 'merged': merged}
+def _pull(state='open', merged=False, draft=False):
+    return {'body': '', 'state': state, 'merged': merged, 'draft': draft}
 
 
-def _api(*, state='open', merged=False, issues=None, **kwargs):
+def _api(*, state='open', merged=False, draft=False, issues=None, **kwargs):
     if issues is None:
         issues = {'101': _issue('alice')}
     return FakeApi(
-        pull=_pull(state, merged), issues=issues, **kwargs)
+        pull=_pull(state, merged, draft), issues=issues, **kwargs)
 
 
 def _gate_comment():

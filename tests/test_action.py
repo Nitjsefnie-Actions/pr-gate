@@ -76,6 +76,8 @@ def test_template_ref_requires_an_immutable_base_sha(tmp):
 def _expression(value, inputs):
     if value == '${{ github.action_path }}':
         return str(ROOT)
+    if value == '${{ github.event.pull_request.draft }}':
+        return inputs['event draft']
     match = re.fullmatch(r'\$\{\{ inputs\.([a-z-]+) \}\}', value)
     assert match, value
     return inputs[match[1]]
@@ -149,7 +151,9 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
         'PR_GATE_REPO': '${{ inputs.repository }}',
         'PR_GATE_REQUIRE_COMMIT_ATTRIBUTION': '${{ inputs.require-commit-attribution }}',
         'PR_GATE_CONVENTIONAL_COMMITS': '${{ inputs.conventional-commits }}',
-        'PR_GATE_TEMPLATE_PATH': '${{ inputs.template-path }}'}
+        'PR_GATE_TEMPLATE_PATH': '${{ inputs.template-path }}',
+        'PR_GATE_DRAFTS': '${{ inputs.drafts }}',
+        'PR_GATE_EVENT_DRAFT': '${{ github.event.pull_request.draft }}'}
     for index, (base, head) in enumerate(POLICY_REVISIONS):
         directory = Path(tmp) / str(index)
         directory.mkdir()
@@ -157,7 +161,8 @@ def test_composite_runs_packaged_code_without_a_consumer_checkout(tmp):
 
 
 def _run_packaged_action(tmp, base, head, *, require_commit_attribution='false',
-                         conventional_commits=None, commits=None):
+                         conventional_commits=None, commits=None, drafts=None,
+                         event_draft='false', live_draft=False, skipped=False):
     metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
     assert metadata['runs']['using'] == 'composite'
     for name in ('github-token', 'repository', 'pull-request-number', 'pull-request-author'):
@@ -171,7 +176,9 @@ def _run_packaged_action(tmp, base, head, *, require_commit_attribution='false',
               'pull-request-number': '42', 'pull-request-author': 'sasha',
               'template-path': 'policy/PR template.md',
               'require-commit-attribution': require_commit_attribution,
-              'conventional-commits': conventional_commits}
+              'conventional-commits': conventional_commits,
+              'drafts': metadata['inputs']['drafts']['default'] if drafts is None else drafts,
+              'event draft': event_draft}
     directory, _command = _write_gh_stub(tmp)
     fixture = _script_fixtures()
     fixture.update(repository=inputs['repository'], pull_number='42', expected_token='stub-token',
@@ -182,6 +189,7 @@ def _run_packaged_action(tmp, base, head, *, require_commit_attribution='false',
         fixture['commits'] = commits
         fixture['pull']['commits'] = len(commits)
     fixture['pull']['body'] = _valid_body()
+    fixture['pull']['draft'] = live_draft
     fixture['pull']['base'] = {'sha': base}
     fixture['pull']['head'] = {'sha': head}
     fixture_path = Path(tmp) / 'fixture.json'
@@ -200,6 +208,9 @@ def _run_packaged_action(tmp, base, head, *, require_commit_attribution='false',
     calls = [json.loads(line) for line in calls_path.read_text().splitlines()]
     assert result.returncode == 0, (result.stdout, result.stderr, calls)
     assert _recorded_writes(calls) == []
+    if skipped:
+        assert (result.stdout, len(calls)) == ('nothing to do\n', 1), calls
+        return calls
     assert any(call['argv'][4] ==
                f'repos/another-owner/project/contents/policy/PR%20template.md?ref={base}'
                for call in calls), calls
@@ -256,3 +267,16 @@ def test_conventional_commits_input_defaults_on_and_reaches_main(tmp):
         directory.mkdir()
         _run_packaged_action(directory, *POLICY_REVISIONS[0],
                              conventional_commits=value)
+
+
+def test_drafts_input_defaults_to_judging_and_skip_reaches_main(tmp):
+    metadata = yaml.safe_load((ROOT / 'action.yml').read_text(encoding='utf-8'))
+    assert metadata['inputs']['drafts']['default'] == 'judge'
+    # A live draft each time: only the input and the event's own flag differ.
+    for index, (drafts, event_draft, skipped) in enumerate((
+            (None, 'true', False), (' SkIp ', 'false', False), (' SkIp ', '', False),
+            (' SkIp ', 'true', True))):
+        directory = Path(tmp) / str(index)
+        directory.mkdir()
+        _run_packaged_action(directory, *POLICY_REVISIONS[0], drafts=drafts,
+                             event_draft=event_draft, live_draft=True, skipped=skipped)

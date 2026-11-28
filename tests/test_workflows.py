@@ -431,6 +431,8 @@ def test_documented_consumer_uses_the_canonical_sha_pinned_action(tmp):
     assert ' '.join(documented_job['if'].split()) == (
         ' '.join(shipped_job['if'].split())), (
         'README gate condition must equal the shipped workflow gate condition')
+    assert documented_job['steps'][0]['with'] == shipped_job['steps'][0]['with'], (
+        'README action inputs must equal the shipped workflow inputs')
 
 
 def test_required_checks_run_unfiltered_on_every_pull_request_and_main_push(tmp):
@@ -562,10 +564,8 @@ def test_pr_gate_consumes_reviewed_action_without_checkout(tmp):
     job = workflow['jobs']['gate']
     assert set(job) == {'if', 'runs-on', 'timeout-minutes', 'steps'}, (
         'pr gate must not add job overrides or suppress failures')
-    assert ' '.join(job['if'].split()) == (
-        "github.event.pull_request.user.type != 'Bot' "
-        '&& github.event.pull_request.draft == false'), (
-        'pr gate must skip exactly Bot authors and draft pull requests')
+    assert job['if'] == "github.event.pull_request.user.type != 'Bot'", (
+        'pr gate must skip exactly Bot authors; drafts: skip handles drafts')
     assert len(job['steps']) == 1, 'pr gate must execute only its pinned action'
     step = job['steps'][0]
     assert set(step) == {'uses', 'with'}, (
