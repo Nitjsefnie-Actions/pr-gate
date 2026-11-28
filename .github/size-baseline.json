@@ -1,16 +1,15 @@
 {
   "trees": {
-    "tests/": 9921
+    "tests/": 8617
   },
   "schema_version": 1,
   "baseline": {
     "tests/_prgate.py": 749,
-    "tests/test_gate_base_freshness.py": 630,
     "tests/test_pr_attribution.py": 970,
     "tests/test_pr_body.py": 541,
     "tests/test_pr_body_closing.py": 645,
     "tests/test_pr_gate.py": 736,
     "tests/test_ratchet_push.py": 515,
-    "tests/test_workflows.py": 1134
+    "tests/test_workflows.py": 1128
   }
 }

@@ -854,9 +854,7 @@ def test_security_policy_and_workflow_inventory_are_shipped(tmp):
         '.gitleaks.toml', 'pyrightconfig.json', 'pyright-baseline.json',
         '.pylintrc', 'requirements-lint.txt', 'setup.cfg',
         'requirements-actionlint.txt',
-        'scripts/ci/type_ratchet.py', 'tests/test_type_ratchet.py',
-        'scripts/ci/gate_base_freshness.py', 'tests/test_gate_base_freshness.py',
-        'scripts/ci/commit_scopes.py', 'tests/test_commit_scopes.py']
+        'scripts/ci/type_ratchet.py', 'tests/test_type_ratchet.py']
     ignore = (ROOT / '.gitignore').read_text(encoding='utf-8').splitlines()
     assert ignore[0] == '*'
     for name in required:

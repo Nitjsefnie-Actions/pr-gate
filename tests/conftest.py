@@ -60,13 +60,6 @@ def _private(directory=None):
 tmp = pytest.fixture(_private, name='tmp')
 
 
-@pytest.fixture(autouse=True)
-def _required_checks(monkeypatch):
-    """The freshness check's required checks without the network: matrix legs name one job."""
-    monkeypatch.setenv('PR_GATE_REQUIRED_CHECKS',
-                       'actionlint\ntest (ubuntu-latest, 3.15, 1/2)\ntest (macos-latest)\nreport\n')
-
-
 def pytest_sessionstart(session):
     """Sweep dead runs' tmps; root this run's files in one beside, never in, its parent run's."""
     system = os.environ.get('PR_GATE_TESTS_TEMP', tempfile.gettempdir())

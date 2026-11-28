@@ -39,14 +39,6 @@
     1330,
     2974
   ],
-  "scripts/ci/commit_scopes.py": [
-    5995,
-    11711
-  ],
-  "scripts/ci/gate_base_freshness.py": [
-    10129,
-    19813
-  ],
   "scripts/ci/pr_body_closing.py": [
     1499,
     2033

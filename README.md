@@ -73,27 +73,14 @@ standard library. For a self-hosted runner, install the tools before this step.
 
 ## Branch checks
 
-Two more actions run this repository's own branch checks in a consumer's
-workflow, after its checkout, on the runner's `python3` (standard library
-only). Both read the repository's default branch and fetch it themselves.
-
-- `Nitjsefnie-Actions/pr-gate/freshness` fails a pull request whose head
-  lacks a commit of `main` that touches a file a required check reads, the
-  set derived from the head's workflows and the jobs the default branch's
-  ruleset requires, read with the job's token. It passes on every other event.
-- `Nitjsefnie-Actions/pr-gate/commit-scopes` fails a commit in
-  `origin/main..HEAD` whose scope names a workflow while its type is not `ci`.
-
-```yaml
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: Nitjsefnie-Actions/pr-gate/freshness@<sha> # vX.Y.Z
-      - uses: Nitjsefnie-Actions/pr-gate/commit-scopes@<sha> # vX.Y.Z
-```
-
-Put them in a job the required aggregate already folds: a new job is a new
-required context only once the ruleset or the aggregate names it.
+The branch-base freshness check and the commit-scope check this repository
+runs on its own pull requests are separate actions,
+[Nitjsefnie-Actions/freshness](https://github.com/Nitjsefnie-Actions/freshness)
+and
+[Nitjsefnie-Actions/commit-scopes](https://github.com/Nitjsefnie-Actions/commit-scopes);
+their READMEs document how to run them. The `pr-gate/freshness` and
+`pr-gate/commit-scopes` sub-actions shipped in v3.1.0 to v3.3.0 still run
+from those releases' SHAs; this repository no longer ships them.
 
 ## Admission rules
 
